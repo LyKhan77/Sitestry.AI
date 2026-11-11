@@ -33,7 +33,19 @@
 - [x] Node unit suites, Playwright regressions, real-sample acceptance screenshots, GLB JSON inspection, and extraction baseline lock for Gatsu/Ancol/plan.jpeg.
 - [x] Review hardening pass 2: same-source history across guide invalidation; wall/stair pointer priority and screen-space vertex handles; bounded guide extraction budgets; inert narrow sidebar; derived stair field refresh and integer riser validation; complete L/U landing guardrails.
 
-## Active Phase: Phase 4 — Next Agent Handover & Engineering Improvements (Pending Grill Validation)
+## Active Phase: Phase 5 — Dock + Wizard UI Redesign (behind `?ui=v4`, branch `feat/dock-wizard-ui`)
+
+Spec: `docs/superpowers/specs/2026-11-11-dock-wizard-ui-design.md`. Plan: `docs/superpowers/plans/2026-11-11-dock-wizard-ui.md` (both uncommitted).
+
+- [ ] Task 1: Flag, compact header, bottom stage timeline
+- [ ] Task 2: Stage 3 dock, floating property panel, view pills
+- [ ] Task 3: Stage 4-5 dock, single camera set, Export menu, BoQ panel
+- [ ] Task 4: Command palette (`Ctrl/Cmd+K`)
+- [ ] Task 5: Stage 1 wizard card
+- [ ] Task 6: Stage 2 wizard with honest, progressive extraction reveal
+- [ ] Task 7: Responsive, accessibility, default flip to v4, docs
+
+## Pending Phase: Phase 4 — Next Agent Handover & Engineering Improvements (Pending Grill Validation)
 
 - [ ] Validate Phase 4 architectural priorities with the user via `grill-me` (Persistence & Project Save/Load, Automatic Polygon Room Cycle Detection `shapely.ops.polygonize`, Multi-Floor Elevation Stacking, and Automated Pytest Suite).
 - [ ] Save approved Phase 4 specification and implementation plan to `docs/superpowers/specs/` and `docs/superpowers/plans/` (uncommitted).
