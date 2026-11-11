@@ -4,7 +4,32 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ---
 
-## [v3.0.0] — 2026-11-11 (Current State)
+## [v3.1.0] — 2026-11-11
+
+### Added — Minimal Workspace, Guided Walls, Parametric Stairs
+- **Edit transactions and stable vertex editing (`frontend/js/store.js`, `canvas2d.js`, `app.js`)**:
+  - `beginTransaction` / `commitTransaction` / `cancelTransaction`; one successful gesture is one undo, cancel/no-op preserves redo, stale tokens cannot cancel newer edits, history remains capped at 45.
+  - Vertex drags keep the active Konva node alive; connected walls and hosted openings update during the gesture. Numeric X/Z meter fields edit canonical source-pixel nodes with finite-number validation.
+- **Manual wall drag and atomic topology (`frontend/js/annotationGeometry.js`)**:
+  - Pointer-down/move/up creates exactly one wall. Manual is default; endpoint snap (10 CSS px) and ortho assistance are separate opt-ins. Escape, pointer cancel, tool/source changes, and click-without-drag add no geometry or history.
+  - Junction planning reuses exact nodes, splits wall interiors, and remaps hosted openings so physical position, tag, and swing survive. Openings that straddle a junction or would remap outside `0.08..0.92` reject the whole transaction.
+- **Source-derived guided walls (`backend/blueprint_guides.py`, `/api/blueprint-guides`, `frontend/js/blueprintGuides.js`)**:
+  - Vector PDF pages are read at the canonical 2.0x matrix; rasters use bounded OpenCV edge/parallel pairing and filled-strip detection. Candidates carry `confidence` and `evidence`, with 25 MiB / 16 MP / 20k segment / 5k candidate limits and an 8-entry LRU.
+  - Guided walls highlight actual source centerlines. Loading/error/no-match fall back to manual preview. Source revision + ROI + scale + alignment keys guard late responses even when abort is ignored.
+- **Parametric stairs (`frontend/js/stairGeometry.js`, `store.js`, `canvas2d.js`, `viewer3d.js`)**:
+  - Straight, L, and U templates with lower-to-upper route endpoints, deterministic flights/landings, one riser schedule, explicit U flight run, and exposed-edge guardrails. Shared resolver drives preview, 2D, 3D, and GLB.
+  - Two-click placement, endpoint handles, group translation, contextual parameter editing, and explicit undoable legacy conversion. Legacy bbox formats are never auto-migrated or guessed.
+- **Commit-aware 3D sync (`frontend/js/sceneSync.js`)**:
+  - Preview edits do not rebuild 3D; commits coalesce; Split/3D entry and export flush the latest revision. Export is refused during an active transaction. Rebuilds dispose generated geometries, materials, and cloned textures.
+- **Focused workspace (`index.html`, `style.css`, `app.js`)**:
+  - Annotation canvas is at least 75% of the workspace at 1280/1440 px when nothing is selected. Empty selection hides the inspector; layers collapse on demand; stages expose only relevant tools; narrower layouts use dismissible overlays.
+- **Verification harness (`tests/`)**: Node `node:test` unit suites, Playwright browser regressions for vertex/wall/stair/source lifecycle/workspace/export, real-sample acceptance, and a locked extraction baseline for all three samples.
+
+### Unchanged / Boundaries
+- Existing extraction schema, source pixel/meter conventions, and legacy stair rendering remain intact.
+- Initials, persistence, multi-floor stacking, room polygonization, spiral stairs, code certification, slab openings, and headroom checks remain out of scope. Phase 4 handover tasks remain pending.
+
+## [v3.0.0] — 2026-11-11
 
 ### Added — Procedural Vision & Architectural CAD Engine (`backend/`)
 - **`TopologicalGraphBuilder` & `VectorCADExtractor` (`backend/cad_parser.py`)**:

@@ -63,7 +63,7 @@ export class SitestryStore extends EventTarget {
         height_m: null,
         steps: null,
         turn: "right",
-        heading_rad: 0,
+        heading_rad: null,
         landing_depth_m: 1.2,
         flight_run_m: null,
       },

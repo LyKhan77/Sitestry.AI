@@ -243,6 +243,13 @@ def _vector_segments(pdf_bytes: bytes, page_number: int) -> Tuple[int, int, List
     if page_number < 1 or page_number > len(doc):
         raise GuideError(422, "page_out_of_range", f"page_number must be 1..{len(doc)}.")
     page = doc[page_number - 1]
+    projected_pixels = int(page.rect.width * PDF_RENDER_FACTOR) * int(page.rect.height * PDF_RENDER_FACTOR)
+    if projected_pixels > MAX_RENDER_PIXELS:
+        raise GuideError(
+            413,
+            "image_too_large",
+            f"Rendered page has {projected_pixels} pixels; limit is {MAX_RENDER_PIXELS}.",
+        )
     matrix = fitz.Matrix(PDF_RENDER_FACTOR, PDF_RENDER_FACTOR)
     pix = page.get_pixmap(matrix=matrix, alpha=False)
     width, height = pix.width, pix.height
@@ -324,7 +331,9 @@ def _raster_segments(image: np.ndarray, roi: Dict[str, float]) -> Tuple[List[Dic
     )
     segments: List[Dict[str, Any]] = []
     if lines is not None:
-        for line in lines[:MAX_RAW_SEGMENTS]:
+        if len(lines) > MAX_RAW_SEGMENTS:
+            raise GuideError(422, "too_many_segments", "Raw raster segment limit exceeded.")
+        for line in lines:
             x1, y1, x2, y2 = [int(v) for v in np.ravel(line)[:4]]
             seg = _segment((x1 + x, y1 + y), (x2 + x, y2 + y))
             if seg:

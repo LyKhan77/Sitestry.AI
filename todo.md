@@ -22,6 +22,16 @@
 
 ---
 
+## Completed Phase: Phase 4A — Minimal Workspace, Manual/Guided Walls & Parametric Stairs (v3.1.0)
+
+- [x] Stable vertex edit transactions, one-gesture undo, redo preservation, numeric meter inspector, and 45-step history cap.
+- [x] Manual wall drag with optional endpoint snap/ortho, atomic wall split + opening remap, and rejection without partial changes.
+- [x] Five-stage focused workspace: 75% annotation canvas at 1280/1440, contextual inspector, on-demand layers, narrow overlay panels, and reduced-motion/focus/ARIA handling.
+- [x] Source-derived centerline detector for PDF and raster, bounded LRU endpoint, guided overlay, and stale-response guard tied to source revision/ROI/scale/alignment.
+- [x] Shared straight/L/U staircase resolver, two-click placement, endpoint/group editing, contextual parameters, and explicit legacy conversion.
+- [x] 2D/3D/GLB consumers of the shared resolver, commit-aware scene scheduler, export flush/guard, and resource disposal.
+- [x] Node unit suites, Playwright regressions, real-sample acceptance screenshots, GLB JSON inspection, and extraction baseline lock for Gatsu/Ancol/plan.jpeg.
+
 ## Active Phase: Phase 4 — Next Agent Handover & Engineering Improvements (Pending Grill Validation)
 
 - [ ] Validate Phase 4 architectural priorities with the user via `grill-me` (Persistence & Project Save/Load, Automatic Polygon Room Cycle Detection `shapely.ops.polygonize`, Multi-Floor Elevation Stacking, and Automated Pytest Suite).

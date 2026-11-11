@@ -359,6 +359,8 @@ async def blueprint_guides(
             raise HTTPException(status_code=404, detail="Sample file missing on disk.")
         source_bytes = fpath.read_bytes()
         source_kind = sample["source_type"]
+        if page_number is not None and page_number < 1:
+            raise HTTPException(status_code=422, detail="page_number must be 1-based.")
         p_num = page_number or sample["default_page"]
     else:
         source_bytes = await file.read(MAX_FILE_BYTES + 1)
@@ -369,6 +371,8 @@ async def blueprint_guides(
             source_kind = "pdf_vector"
         else:
             source_kind = "raster_image"
+        if page_number is not None and page_number < 1:
+            raise HTTPException(status_code=422, detail="page_number must be 1-based.")
         p_num = page_number or 1
 
     roi_px = None

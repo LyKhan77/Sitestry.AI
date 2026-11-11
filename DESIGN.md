@@ -578,3 +578,15 @@ When refining existing screens generated with this design system:
 - Form error-state full styling (red border weight, icon placement) visible on the tint token but not exhaustively extracted
 - Careers-page specific components (cup-name card, search radio grid) are referenced in token names but not covered by this extraction
 - Starbucks Visa Card / Starbucks-Card (SVC) detailed mockup specs are hinted at by `--svcRoundedCorners` and `--svcShadowFilter` tokens but not fully documented
+
+
+---
+
+## Progressive Disclosure Addendum (2026-11-11)
+
+- Annotation uses a compact tool strip inside a 232 px sidebar. The right Property Inspector is only present when an object is selected; empty selection returns the space to the 2D canvas.
+- Wall mode and assistance controls are grouped beside the tool strip: `Manual | Guided`, Endpoint Snap, Ortho Assistance. Assistance is opt-in and never merged into the default gesture.
+- Layer visibility and blueprint opacity are collapsed into an on-demand disclosure. Stair template parameters appear only while the Stair tool is active; selected-stair parameters appear in the contextual inspector.
+- Export actions are contextual to Build 3D / Installation. Page selection is contextual to Input. Annotation keeps one primary next-stage action.
+- Below 1100 px, the stage sidebar and inspector become dismissible overlays. A `Tools` button exposes the drawer; the inspector has an explicit close control. Focus states, `aria-expanded`, labels, and reduced-motion handling are preserved.
+- The Warm Cream/Green tokens, Plus Jakarta Sans, and IBM Plex Mono typography remain unchanged. No runtime framework migration was introduced.

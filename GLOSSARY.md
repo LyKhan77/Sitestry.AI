@@ -24,7 +24,12 @@ Canonical domain language for **Sitestry.AI** (2D Architectural & Engineering Fl
 - **Door Tag (`tag`)**: The alphanumeric architectural identifier printed on the drawing near a door or window (e.g., `DD-01`, `D-02`, `TD-04`, `W-01`).
 - **Swing Direction (`swing_dir`)**: The hinge and swing orientation of a door relative to its host Wall Segment (`in-left`, `in-right`, `out-left`, `out-right`).
 - **Structural Pillar / Column (`column`)**: A vertical load-bearing element (`h_beam` steel profile or `concrete` pillar) positioned on structural grid intersections (`grid_label`).
-- **Staircase (`stair`)**: A vertical circulation flight detected from periodic parallel step tread clusters (`steps` count, `direction`, `bbox_px`, `width_m`, `depth_m`, `height_m`).
+- **Staircase (`stair`)**: A vertical circulation object. Legacy extracted stairs carry `steps`, `direction`, and an ambiguous `bbox_px`; parametric stairs carry `template_version: 1`, `shape` (`straight`/`L`/`U`), `start_px`/`end_px` route endpoints, `width_m`, `height_m`, `steps`, `turn`, `heading_rad`, `landing_depth_m`, and `flight_run_m` for U.
+- **Parametric Stair Resolver (`resolveStairGeometry`)**: The single pure geometry source for flights, treads, landings, elevations, route, bounds, and guardrails. Preview, 2D, 3D, and GLB consume the same result.
+- **Lower / Upper Endpoint (`start_px` / `end_px`)**: Walking-route entrance and exit centers for parametric stairs, not opposite corners of a bounding box. Endpoint distance is not used as the U-stair total run.
+- **Edit Transaction (`beginTransaction` / `commitTransaction` / `cancelTransaction`)**: One gesture maps to at most one undo snapshot. Preview events (`geometryPreviewChanged`) update 2D without committing; `geometryChanged` carries a monotonic `revision`.
+- **Source Revision (`currentSource.revision`)**: Identity of the active sample/upload/page. Async extraction, render, and guide responses are discarded when it no longer matches.
+- **Blueprint Guide Candidate**: An advisory source-derived wall centerline with `confidence` and `evidence` (`parallel_edges` or `filled_strip`). Guidance is not editable geometry and never enters project JSON or undo.
 
 ---
 

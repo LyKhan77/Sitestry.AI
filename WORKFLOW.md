@@ -31,16 +31,23 @@ flowchart LR
 ### Stage 3: Review Annotation (`data-stage="3"`)
 - **Goal**: Human-in-the-Loop (HITL) 2D CAD verification and manual refinement before 3D extrusion.
 - **Capabilities**:
-  - Drag **Topological Nodes (`[V]`)** with `0°/90°` Ortho-Snap to adjust wall corners.
+  - Drag **Topological Nodes (`[V]`)** at any zoom; one completed drag is one undo. Shared nodes move every connected wall, and numeric meter fields provide precision editing while canonical coordinates remain source pixels.
   - Drag **Doors & Windows** directly along their host wall segment to fine-tune `offset_ratio`.
-  - Draw new chained walls (`[W]`), double-click any wall to split it into two segments, or attach `Single Door [D]`, `Double Door [B]`, `Window [N]`, `Pillar [P]`, `Stair [S]`, and `Room Zone [Z]`.
-  - Edit **Door Tag** (`DD-01`, `D-02`, `TD-01`), **Swing Direction** (`in-left`, `in-right`, `out-left`, `out-right`), wall material (`solid`, `cage_mesh`, `glass`), and dimensions in the Right Property Inspector.
+  - Draw walls with a single drag (`[W]`). Manual drag is the default; **Endpoint Snap (10 CSS px)** and **Ortho Assistance** are separate optional toggles. Starting/ending on a node reuses it; ending on a wall interior splits that wall atomically and remaps hosted openings so their physical position, tag, and swing stay unchanged. Infeasible splits are rejected without partial changes.
+  - **Guided wall mode** loads advisory wall-centerline candidates from the actual PDF vector page or raster bitmap (`POST /api/blueprint-guides`). Candidate highlighting is shown before commit. Loading, error, and no-match states keep manual preview available; guidance is never treated as existing annotation.
+  - Attach `Single Door [D]`, `Double Door [B]`, `Window [N]`, `Pillar [P]`, parametric `Stair [S]`, and `Room Zone [Z]`.
+  - Parametric stairs support **Straight, L, and U** templates. Click the lower entrance, preview flights/treads/landing/route, then click the upper exit. L/U expose heading, turn, landing depth, and U flight run; invalid configurations keep an editable preview and a field-specific reason instead of moving endpoints. Legacy extracted stairs remain on the legacy path until an explicit, undoable conversion.
+  - Edit **Door Tag** (`DD-01`, `D-02`, `TD-01`), **Swing Direction** (`in-left`, `in-right`, `out-left`, `out-right`), wall material (`solid`, `cage_mesh`, `glass`), and dimensions in the contextual Right Property Inspector.
+  - The inspector is hidden when nothing is selected, so the 2D canvas occupies at least 75% of the workspace at 1280 px and wider. Layer/opacity controls live in an on-demand disclosure; below 1100 px tools and properties become dismissible overlays.
 
 ### Stage 4: Build 3D (`data-stage="4"`)
 - **Goal**: Procedurally extrude the verified 2D structural graph into an interactive 3D WebGL Digital Twin (`Viewer3DEngine`).
 - **3D CSG & Architectural Geometry**:
   - Real boolean subtraction (`three-bvh-csg`) cuts door openings (`0.0m` to `2.15m`) and elevated window openings (`0.95m` sill to `2.20m` lintel, preserving bottom sill and top lintel walls).
-  - Generates 3D door frames, semi-open swinging door leaves, mullioned glass windows, stepped 3D staircases with dual safety handrails, steel H-Beam columns, and 60x60cm Raised Floor Plenums.
+  - Generates 3D door frames, semi-open swinging door leaves, mullioned glass windows, steel H-Beam columns, and 60x60cm Raised Floor Plenums.
+  - Parametric stairs are built directly from the shared resolver: one mesh per riser tread, explicit landings, and guardrails along exposed edges. The same flight/riser schedule drives 2D and 3D.
+  - Scene rebuilds are commit-aware: preview drags do not rebuild 3D, several commits coalesce, and entering 3D or exporting flushes the latest revision. Generated geometry/materials are disposed on rebuild.
+  - **Export guard**: `.JSON` and `.GLB` export are refused while an edit transaction is active, so tentative geometry is never serialized.
 
 ### Stage 5: Installation Equipment (`data-stage="5"`)
 - **Goal**: Manual installation of Telecommunication CME / Data Center MEP hardware inside the verified 3D building structure (`Split 2D | 3D Sync` view).

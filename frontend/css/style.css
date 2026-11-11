@@ -1713,3 +1713,57 @@ body[data-tool="stair"] #stairSettingsCard {
 .stair-convert-panel.hidden {
   display: none;
 }
+
+@media (max-width: 1100px) {
+  .top-ribbon {
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .brand-cluster {
+    min-width: 0;
+  }
+
+  .brand-sub,
+  .version-pill,
+  .step-desc,
+  .step-divider {
+    display: none;
+  }
+
+  .step-item {
+    padding: 5px 8px;
+    gap: 6px;
+  }
+
+  .step-num {
+    width: 20px;
+    height: 20px;
+    font-size: 10px;
+  }
+
+  .step-title {
+    font-size: 10.5px;
+  }
+
+  .workspace-bar {
+    padding: 0 8px;
+    gap: 6px;
+  }
+
+  .tool-hint-banner {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .telemetry-bar {
+    padding: 0 8px;
+    font-size: 9.5px;
+    gap: 6px;
+  }
+
+  .telemetry-bar .tele-item:nth-child(3) {
+    display: none;
+  }
+}

@@ -700,6 +700,10 @@ class SitestryStudioApp {
   initResponsiveWorkspace() {
     document.getElementById("btnCloseInspector")?.addEventListener("click", () => {
       store.selectObject(null, null);
+      const toolsBtn = document.getElementById("btnToggleTools");
+      if (toolsBtn && getComputedStyle(toolsBtn).display !== "none") {
+        toolsBtn.focus();
+      }
     });
 
     const toolsBtn = document.getElementById("btnToggleTools");
@@ -993,6 +997,7 @@ class SitestryStudioApp {
 
     if (!sel || !obj) {
       document.body.dataset.inspector = "closed";
+      document.getElementById("rightInspector")?.setAttribute("aria-hidden", "true");
       badge.textContent = "NO SELECTION";
       container.innerHTML = `
         <div class="insp-empty">
@@ -1004,6 +1009,7 @@ class SitestryStudioApp {
     }
 
     document.body.dataset.inspector = "open";
+    document.getElementById("rightInspector")?.setAttribute("aria-hidden", "false");
     badge.textContent = `${sel.kind.toUpperCase()} #${obj.id}`;
 
     if (sel.kind === "wall") {

@@ -1616,7 +1616,31 @@ export class Canvas2DEngine {
         start_px: this.stairDraft.startPx,
         end_px: { x_px: cursorPt.x, y_px: cursorPt.y },
       });
-      if (preview.ok) {
+      if (!preview.ok) {
+        this.overlayLayer.add(
+          new Konva.Line({
+            points: [
+              this.stairDraft.startPx.x_px,
+              this.stairDraft.startPx.y_px,
+              cursorPt.x,
+              cursorPt.y,
+            ],
+            stroke: "#d62b1f",
+            strokeWidth: 2,
+            dash: [6, 4],
+          })
+        );
+        this.overlayLayer.add(
+          new Konva.Text({
+            x: cursorPt.x + 10,
+            y: cursorPt.y - 14,
+            text: preview.error?.message || "Konfigurasi tangga tidak feasible.",
+            fontSize: 10 / Math.max(0.3, this.stage.scaleX()),
+            fontFamily: "IBM Plex Mono",
+            fill: "#b91c1c",
+          })
+        );
+      } else {
         this.drawStairGeometry(preview.geometry, this.overlayLayer, { preview: true });
         this.overlayLayer.add(
           new Konva.Text({
