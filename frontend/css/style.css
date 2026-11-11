@@ -1930,3 +1930,243 @@ body[data-ui="v4"] .tl-step:not(.active) .tl-label {
     transition: none;
   }
 }
+
+/* ---- v4 dock: view switch and 3D camera presets only where they apply ---- */
+body[data-ui="v4"][data-stage="1"] .view-mode-group,
+body[data-ui="v4"][data-stage="2"] .view-mode-group {
+  display: none;
+}
+
+body[data-ui="v4"][data-stage="1"] #btnCamPerspective,
+body[data-ui="v4"][data-stage="1"] #btnCamTop,
+body[data-ui="v4"][data-stage="1"] #btnCamWalk,
+body[data-ui="v4"][data-stage="2"] #btnCamPerspective,
+body[data-ui="v4"][data-stage="2"] #btnCamTop,
+body[data-ui="v4"][data-stage="2"] #btnCamWalk,
+body[data-ui="v4"][data-stage="3"] #btnCamPerspective,
+body[data-ui="v4"][data-stage="3"] #btnCamTop,
+body[data-ui="v4"][data-stage="3"] #btnCamWalk {
+  display: none;
+}
+
+/* ---- v4 Stage 3 dock workbench (wide viewports; narrow keeps the legacy drawer) ---- */
+.dock-more {
+  display: none;
+}
+
+.dock-flyout {
+  display: contents;
+}
+
+@media (min-width: 1101px) {
+  body[data-ui="v4"][data-stage="3"] .studio-body {
+    display: block;
+    position: relative;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .center-workspace {
+    position: relative;
+  }
+
+  /* 56px icon rail floating over the canvas */
+  body[data-ui="v4"][data-stage="3"] .stage-sidebar {
+    position: absolute;
+    left: 12px;
+    top: 56px;
+    width: 56px;
+    height: auto;
+    padding: 6px;
+    gap: 6px;
+    z-index: 30;
+    background: var(--bg-white);
+    border: 0;
+    border-radius: 12px;
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.14), 0 0 6px rgba(0, 0, 0, 0.24);
+    overflow: visible;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .stage-panel {
+    min-height: 0;
+    gap: 6px;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .stage-hero-banner,
+  body[data-ui="v4"][data-stage="3"] .stage-cta-footer,
+  body[data-ui="v4"][data-stage="3"] #stagePanel3 > .surface-card > .card-header-label,
+  body[data-ui="v4"][data-stage="3"] .tool-group-label {
+    display: none;
+  }
+
+  body[data-ui="v4"][data-stage="3"] #stagePanel3 > .surface-card {
+    padding: 0;
+    gap: 6px;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .tool-grid-2col {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .tool-btn,
+  body[data-ui="v4"][data-stage="3"] .dock-more {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border-radius: 10px;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .dock-more {
+    border: 1.5px solid transparent;
+    background: var(--bg-warm-cream);
+    color: var(--text-espresso);
+    cursor: pointer;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .dock-more[aria-expanded="true"] {
+    background: var(--green-light);
+    border-color: var(--green-accent);
+  }
+
+  body[data-ui="v4"][data-stage="3"] .tool-btn:focus-visible,
+  body[data-ui="v4"][data-stage="3"] .dock-more:focus-visible {
+    outline: 2px solid var(--green-accent);
+    outline-offset: 2px;
+  }
+
+  /* Tool names stay available to assistive tech (aria-label) but leave the rail. */
+  body[data-ui="v4"][data-stage="3"] .tool-btn > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .history-action-bar {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    margin-top: 0;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .btn-history {
+    width: 44px;
+    padding: 4px 0;
+    font-size: 11px;
+    line-height: 1.15;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .pane-badge {
+    display: none;
+  }
+
+  /* Flyout: secondary controls beside the rail (wall assist, stair parameters, layers) */
+  body[data-ui="v4"][data-stage="3"] .dock-flyout {
+    display: none;
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 0;
+    width: 272px;
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+    padding: 10px;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--bg-white);
+    border-radius: 12px;
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.14), 0 0 6px rgba(0, 0, 0, 0.24);
+    z-index: 35;
+  }
+
+  body[data-ui="v4"][data-stage="3"][data-dock="open"] .dock-flyout,
+  body[data-ui="v4"][data-stage="3"][data-tool="stair"] .dock-flyout {
+    display: flex;
+  }
+
+  /* Stair tool alone: show just the stair parameters unless the flyout was opened. */
+  body[data-ui="v4"][data-stage="3"][data-tool="stair"]:not([data-dock="open"]) .dock-flyout > :not(#stairSettingsCard) {
+    display: none;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .dock-flyout .surface-card {
+    background: var(--bg-warm-cream);
+    box-shadow: none;
+  }
+
+  /* Floating view/hint row over the canvas */
+  body[data-ui="v4"][data-stage="3"] .workspace-bar {
+    position: absolute;
+    top: 10px;
+    left: 84px;
+    right: 12px;
+    height: auto;
+    min-height: 36px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    align-items: flex-start;
+    justify-content: flex-start;
+    z-index: 25;
+    pointer-events: none;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .workspace-bar > * {
+    pointer-events: auto;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .camera-presets-group {
+    margin-left: auto;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .view-mode-group {
+    background: var(--bg-white);
+    box-shadow: var(--shadow-whisper);
+  }
+
+  body[data-ui="v4"][data-stage="3"] .tool-hint-banner {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 640px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    padding: 6px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: var(--shadow-whisper);
+  }
+
+  body[data-ui="v4"][data-stage="3"] .split-container {
+    height: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Property panel floats next to the selection; uiV4.js sets left/top/max-height. */
+  body[data-ui="v4"][data-stage="3"] .right-inspector {
+    position: absolute;
+    top: 52px;
+    right: 12px;
+    width: 320px;
+    height: auto;
+    border: 0;
+    border-radius: 12px;
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.14), 0 0 6px rgba(0, 0, 0, 0.24);
+    z-index: 40;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .inspector-body {
+    min-height: 0;
+  }
+
+  body[data-ui="v4"][data-stage="3"] .right-inspector .insp-field input,
+  body[data-ui="v4"][data-stage="3"] .right-inspector .insp-field select {
+    min-width: 0;
+    width: 100%;
+  }
+}

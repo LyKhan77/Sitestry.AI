@@ -13,7 +13,7 @@ import { api } from "./api.js";
 import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
 import { BlueprintGuideSession } from "./blueprintGuides.js";
-import { initUiFlag, syncTimeline } from "./uiV4.js";
+import { initUiFlag, initV4Dock, syncDock, syncTimeline } from "./uiV4.js";
 import {
   isParametricStair,
   STAIR_MAX_RISERS,
@@ -80,6 +80,7 @@ class SitestryStudioApp {
     this.initKeyboardShortcuts();
     this.initSplitResizer();
     this.initResponsiveWorkspace();
+    initV4Dock(this);
 
     store.addEventListener("geometryChanged", () => {
       this.updateTelemetryAndStageMetrics();
@@ -266,6 +267,7 @@ class SitestryStudioApp {
     this.updateTelemetryAndStageMetrics();
     this.renderInspector();
     syncTimeline(step);
+    syncDock(step);
 
     setTimeout(() => {
       this.canvas2d.resize();

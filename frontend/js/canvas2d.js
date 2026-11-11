@@ -201,6 +201,63 @@ export class Canvas2DEngine {
     }
   }
 
+  /** World-space bounding box of the selected object ({x1,y1,x2,y2}), or null when unresolvable. */
+  selectedWorldBox() {
+    const sel = this.store.ui.selected;
+    const obj = this.store.getSelectedObject();
+    if (!sel || !obj) return null;
+    const pt = (p) => (Array.isArray(p) ? [p[0], p[1]] : [p?.x_px ?? p?.x, p?.y_px ?? p?.y]);
+    let pts = [];
+    if (sel.kind === "node" || sel.kind === "column" || sel.kind === "equipment") {
+      pts = [[obj.x_px, obj.y_px]];
+    } else if (sel.kind === "wall" || sel.kind === "opening") {
+      const wall = sel.kind === "wall" ? obj : this.store.project.walls.find((w) => w.id === obj.wall_id);
+      const n1 = wall && this.store.getNodeById(wall.start_node);
+      const n2 = wall && this.store.getNodeById(wall.end_node);
+      if (!n1 || !n2) return null;
+      if (sel.kind === "wall") pts = [[n1.x_px, n1.y_px], [n2.x_px, n2.y_px]];
+      else {
+        const r = obj.offset_ratio ?? 0.5;
+        pts = [[n1.x_px + (n2.x_px - n1.x_px) * r, n1.y_px + (n2.y_px - n1.y_px) * r]];
+      }
+    } else if (sel.kind === "room") {
+      pts = (obj.polygon_px || []).map(pt);
+    } else if (sel.kind === "tray") {
+      pts = (obj.points_px || []).map(pt);
+    } else if (sel.kind === "stair") {
+      pts = [obj.start_px, obj.end_px].filter(Boolean).map(pt);
+      if (!pts.length && Array.isArray(obj.bbox_px) && obj.bbox_px.length >= 4) {
+        const b = obj.bbox_px;
+        pts = [[b[0], b[1]], [b[2], b[3]]];
+      }
+    }
+    pts = pts.filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
+    if (!pts.length) return null;
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+  }
+
+  /** Screen rect (px, relative to #pane2D) of the selected object, or null when none/unresolvable. */
+  selectedScreenRect() {
+    const box = this.selectedWorldBox();
+    const pane = document.getElementById("pane2D");
+    if (!box || !pane) return null;
+    const transform = this.stage.getAbsoluteTransform();
+    const a = transform.point({ x: box.x1, y: box.y1 });
+    const b = transform.point({ x: box.x2, y: box.y2 });
+    const paneRect = pane.getBoundingClientRect();
+    const hostRect = this.container.getBoundingClientRect();
+    const dx = hostRect.left - paneRect.left;
+    const dy = hostRect.top - paneRect.top;
+    return {
+      x: Math.min(a.x, b.x) + dx,
+      y: Math.min(a.y, b.y) + dy,
+      width: Math.abs(b.x - a.x),
+      height: Math.abs(b.y - a.y),
+    };
+  }
+
   getWorldPointerPosition() {
     const transform = this.stage.getAbsoluteTransform().copy();
     transform.invert();
