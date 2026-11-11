@@ -31,6 +31,7 @@
 - [x] Shared straight/L/U staircase resolver, two-click placement, endpoint/group editing, contextual parameters, and explicit legacy conversion.
 - [x] 2D/3D/GLB consumers of the shared resolver, commit-aware scene scheduler, export flush/guard, and resource disposal.
 - [x] Node unit suites, Playwright regressions, real-sample acceptance screenshots, GLB JSON inspection, and extraction baseline lock for Gatsu/Ancol/plan.jpeg.
+- [x] Review hardening pass 2: same-source history across guide invalidation; wall/stair pointer priority and screen-space vertex handles; bounded guide extraction budgets; inert narrow sidebar; derived stair field refresh and integer riser validation; complete L/U landing guardrails.
 
 ## Active Phase: Phase 4 — Next Agent Handover & Engineering Improvements (Pending Grill Validation)
 

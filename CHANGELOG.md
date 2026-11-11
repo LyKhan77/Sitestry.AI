@@ -30,6 +30,13 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
   - Blueprint image loads are revision-guarded. Unknown stair template versions render an explicit error instead of falling back to legacy bbox rendering.
   - `/api/blueprint-guides` validates ROI before cache lookup, pre-checks raster header dimensions before full decode, and runs detection in a threadpool.
   - U landings sit beyond the turn edge, eliminating landing/flight overlap and coplanar z-fighting.
+- **Review hardening (second pass)**:
+  - Guide-cache invalidation is decoupled from the loaded-source marker. Changing ROI/scale or switching Guided→Manual and re-extracting the same source now keeps same-source undo/redo, while a genuine source switch still resets history.
+  - Wall and stair tools own the pointer over existing nodes, openings, columns, and stairs; those objects no longer drag or select during a drawing gesture. Vertex handles divide radius and hit stroke by the stage scale so targets stay screen-space at every zoom.
+  - The blueprint guide detector enforces segment, drawing-strip, Hough, and contour budgets while iterating drawings and returns HTTP 422 immediately when a limit is exceeded.
+  - The off-canvas sidebar below 1100 px is `inert`, `aria-hidden`, and `visibility: hidden` while closed, and keyboard focus cannot enter it.
+  - Stair shape/turn edits refresh derived `heading_rad` and `flight_run_m` inspector fields without replacing the focused control. Fractional or out-of-range risers are rejected with visible feedback and no transaction.
+  - L and U landing guardrails now cover every exposed perimeter span outside flight attachments, including the L second-flight side and the U far edge and inter-flight gap, without crossing the walking route.
 - **Verification harness (`tests/`)**: Node `node:test` unit suites, Playwright browser regressions for vertex/wall/stair/source lifecycle/workspace/export, real-sample acceptance, and a locked extraction baseline for all three samples.
 
 ### Unchanged / Boundaries
