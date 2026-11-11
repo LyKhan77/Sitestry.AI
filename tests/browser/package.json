@@ -1,0 +1,12 @@
+{
+  "name": "sitestry-os3-browser-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "setup": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0"
+  }
+}

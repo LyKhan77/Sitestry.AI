@@ -1247,22 +1247,38 @@ class SitestryStudioApp {
         store.updateSelectedProperty({ elevation_m: parseFloat(e.target.value) || 2.65 });
       document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
     } else {
+      const scale = store.project.metadata.scale_px_per_meter || 30.68;
       container.innerHTML = `
         <div class="insp-card">
           <div class="insp-title">Titik Sudut (${obj.id})</div>
           <div class="insp-row-2">
             <div class="insp-field">
-              <label>X (px)</label>
-              <input type="number" value="${obj.x_px}" disabled />
+              <label>X (meter)</label>
+              <input type="number" id="inpNodeXm" step="0.01" value="${(obj.x_px / scale).toFixed(3)}" />
             </div>
             <div class="insp-field">
-              <label>Y (px)</label>
-              <input type="number" value="${obj.y_px}" disabled />
+              <label>Z (meter)</label>
+              <input type="number" id="inpNodeZm" step="0.01" value="${(obj.y_px / scale).toFixed(3)}" />
             </div>
           </div>
+          <p class="insp-helper">Koordinat kanonik tetap disimpan dalam source pixel (2.0x render). Input meter dikonversi melalui skala aktif.</p>
           <button id="btnDelObj" class="insp-action-btn danger">Hapus Titik Sudut</button>
         </div>
       `;
+      const applyNodeMeters = () => {
+        const xm = parseFloat(document.getElementById("inpNodeXm").value);
+        const zm = parseFloat(document.getElementById("inpNodeZm").value);
+        if (!Number.isFinite(xm) || !Number.isFinite(zm)) {
+          this.showToast("Koordinat vertex harus berupa angka finite.");
+          this.renderInspector();
+          return;
+        }
+        if (!store.setNodePosition(obj.id, xm * scale, zm * scale)) {
+          this.renderInspector();
+        }
+      };
+      document.getElementById("inpNodeXm").onchange = applyNodeMeters;
+      document.getElementById("inpNodeZm").onchange = applyNodeMeters;
       document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
     }
   }

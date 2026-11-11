@@ -65,6 +65,77 @@ export class SitestryStore extends EventTarget {
     this.undoStack = [];
     this.redoStack = [];
     this.maxHistory = 45;
+
+    // Commit revision and one-shot edit transaction state.
+    // The source identity lives outside project/undo because it is not geometry.
+    this.revision = 0;
+    this.activeTransaction = null;
+    this._transactionCounter = 0;
+    this.currentSource = {
+      revision: 0,
+      kind: "sample",
+      file: null,
+      sampleId: "gatsu_p4",
+      pageNumber: 4,
+      imageWidthPx: 1584,
+      imageHeightPx: 1224,
+      alignment: null,
+    };
+  }
+
+  // ==================== EDIT TRANSACTIONS ====================
+  beginTransaction(label = "edit") {
+    if (this.activeTransaction) return null;
+    this._transactionCounter += 1;
+    const token = {
+      id: `tx_${this._transactionCounter}`,
+      label,
+      snapshot: JSON.stringify(this.project),
+      selection: this.ui.selected ? { ...this.ui.selected } : null,
+    };
+    this.activeTransaction = token;
+    return token;
+  }
+
+  commitTransaction(token) {
+    if (!token || this.activeTransaction !== token) return false;
+    this.activeTransaction = null;
+    const after = JSON.stringify(this.project);
+    if (after === token.snapshot) {
+      this.emit("geometryPreviewChanged", { source: "transaction-noop", token: token.id });
+      return false;
+    }
+    this.undoStack.push(token.snapshot);
+    if (this.undoStack.length > this.maxHistory) {
+      this.undoStack.shift();
+    }
+    this.redoStack = [];
+    this.revision += 1;
+    this.emit("geometryChanged", { source: "transaction", label: token.label, revision: this.revision });
+    return true;
+  }
+
+  cancelTransaction(token) {
+    if (!token || this.activeTransaction !== token) return false;
+    this.project = JSON.parse(token.snapshot);
+    this.ui.selected = token.selection;
+    this.activeTransaction = null;
+    this.emit("geometryPreviewChanged", { source: "transaction-cancel", token: token.id });
+    this.emit("selectionChanged", { selected: this.ui.selected });
+    return true;
+  }
+
+  notifyGeometryChange(source, affectedIds = []) {
+    if (this.activeTransaction) {
+      this.emit("geometryPreviewChanged", {
+        source,
+        token: this.activeTransaction.id,
+        affectedIds,
+      });
+      return;
+    }
+    this.revision += 1;
+    this.emit("geometryChanged", { source, revision: this.revision });
   }
 
   emit(eventName, detail = {}) {
@@ -73,35 +144,47 @@ export class SitestryStore extends EventTarget {
 
   // ==================== SNAPSHOT & UNDO / REDO ====================
   pushHistorySnapshot() {
+    // During an explicit transaction the pre-gesture snapshot is owned by the
+    // transaction token; intermediate mutation must not create extra undo steps.
+    if (this.activeTransaction) return false;
     const snap = JSON.stringify(this.project);
     if (this.undoStack.length > 0 && this.undoStack[this.undoStack.length - 1] === snap) {
-      return;
+      return false;
     }
     this.undoStack.push(snap);
     if (this.undoStack.length > this.maxHistory) {
       this.undoStack.shift();
     }
     this.redoStack = [];
+    return true;
   }
 
   undo() {
+    if (this.activeTransaction) {
+      this.cancelTransaction(this.activeTransaction);
+    }
     if (this.undoStack.length === 0) return false;
     this.redoStack.push(JSON.stringify(this.project));
     const prev = JSON.parse(this.undoStack.pop());
     this.project = prev;
     this.ui.selected = null;
-    this.emit("geometryChanged", { source: "undo" });
+    this.revision += 1;
+    this.emit("geometryChanged", { source: "undo", revision: this.revision });
     this.emit("selectionChanged", { selected: null });
     return true;
   }
 
   redo() {
+    if (this.activeTransaction) {
+      this.cancelTransaction(this.activeTransaction);
+    }
     if (this.redoStack.length === 0) return false;
     this.undoStack.push(JSON.stringify(this.project));
     const next = JSON.parse(this.redoStack.pop());
     this.project = next;
     this.ui.selected = null;
-    this.emit("geometryChanged", { source: "redo" });
+    this.revision += 1;
+    this.emit("geometryChanged", { source: "redo", revision: this.revision });
     this.emit("selectionChanged", { selected: null });
     return true;
   }
@@ -237,7 +320,26 @@ export class SitestryStore extends EventTarget {
 
     node.x_px = Math.round(tx * 10) / 10;
     node.y_px = Math.round(ty * 10) / 10;
-    this.emit("geometryChanged", { source: "moveNode", nodeId });
+    const affectedIds = this.project.walls
+      .filter((w) => w.start_node === nodeId || w.end_node === nodeId)
+      .map((w) => w.id);
+    this.notifyGeometryChange("moveNode", affectedIds);
+  }
+
+  setNodePosition(nodeId, x_px, y_px) {
+    const x = Number(x_px);
+    const y = Number(y_px);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    const node = this.getNodeById(nodeId);
+    if (!node) return false;
+    if (node.x_px === Math.round(x * 10) / 10 && node.y_px === Math.round(y * 10) / 10) {
+      return false;
+    }
+    const token = this.beginTransaction("node-numeric-edit");
+    if (!token) return false;
+    node.x_px = Math.round(x * 10) / 10;
+    node.y_px = Math.round(y * 10) / 10;
+    return this.commitTransaction(token);
   }
 
   addWallSegment(x1, y1, x2, y2, wallType = "solid") {

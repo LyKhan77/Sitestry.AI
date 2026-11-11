@@ -43,6 +43,10 @@ export class Canvas2DEngine {
     this.roomDragStart = null;
     this.trayDraftPoints = [];
     this.cursorPosPx = { x: 0, y: 0 };
+    this.isDraggingNode = false;
+    this.dragTransaction = null;
+    this.wallVisuals = [];
+    this.guideVisuals = [];
 
     this.bindStageEvents();
     this.bindStoreEvents();
@@ -53,18 +57,57 @@ export class Canvas2DEngine {
       this.loadBlueprintImage(e.detail.dataUrl);
     });
     this.store.addEventListener("geometryChanged", () => {
+      if (this.isDraggingNode) {
+        this.syncDraggedGeometry();
+        return;
+      }
       this.renderAll();
     });
+    this.store.addEventListener("geometryPreviewChanged", () => {
+      if (this.isDraggingNode) {
+        this.syncDraggedGeometry();
+      }
+    });
     this.store.addEventListener("selectionChanged", () => {
+      // Selection must never destroy the Konva node that is being dragged.
+      if (this.isDraggingNode) return;
       this.renderAll();
     });
     this.store.addEventListener("roiChanged", () => {
       this.renderRoiOverlay();
     });
     this.store.addEventListener("toolChanged", () => {
+      this.cancelNodeDrag();
       this.clearTempDrawing();
       this.renderAll();
     });
+  }
+
+  syncDraggedGeometry() {
+    for (const visual of this.wallVisuals) {
+      const n1 = this.store.getNodeById(visual.wall.start_node);
+      const n2 = this.store.getNodeById(visual.wall.end_node);
+      if (!n1 || !n2) continue;
+      const points = [n1.x_px, n1.y_px, n2.x_px, n2.y_px];
+      visual.lines.forEach((line) => line.points(points));
+      const dx = n2.x_px - n1.x_px;
+      const dy = n2.y_px - n1.y_px;
+      for (const { group, ratio } of visual.openings) {
+        group.position({ x: n1.x_px + dx * ratio, y: n1.y_px + dy * ratio });
+        group.rotation((Math.atan2(dy, dx) * 180) / Math.PI);
+      }
+    }
+    this.cadLayer.batchDraw();
+  }
+
+  cancelNodeDrag() {
+    if (!this.isDraggingNode) return false;
+    const token = this.dragTransaction;
+    this.isDraggingNode = false;
+    this.dragTransaction = null;
+    if (token) this.store.cancelTransaction(token);
+    this.renderAll();
+    return true;
   }
 
   loadBlueprintImage(dataUrl) {
@@ -225,11 +268,17 @@ export class Canvas2DEngine {
 
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
+        this.cancelNodeDrag();
         this.clearTempDrawing();
       } else if (e.key === "Enter" && this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
         this.store.addCableTray(this.trayDraftPoints);
         this.clearTempDrawing();
       }
+    });
+
+    window.addEventListener("pointercancel", () => {
+      this.cancelNodeDrag();
+      this.clearTempDrawing();
     });
   }
 
@@ -387,6 +436,8 @@ export class Canvas2DEngine {
 
   renderCadTopology() {
     this.cadLayer.destroyChildren();
+    this.wallVisuals = [];
+    const wallVisualMap = new Map();
     const layers = this.store.ui.layers;
     const sel = this.store.ui.selected;
     const scale = this.store.project.metadata.scale_px_per_meter || 30.68;
@@ -460,6 +511,10 @@ export class Canvas2DEngine {
 
         this.cadLayer.add(wallOuter);
         this.cadLayer.add(wallFill);
+
+        const wallVisual = { wall, lines: [wallOuter, wallFill], openings: [] };
+        this.wallVisuals.push(wallVisual);
+        wallVisualMap.set(wall.id, wallVisual);
 
         // Metric wall dimension label when selected
         const lenPx = Math.hypot(n2.x_px - n1.x_px, n2.y_px - n1.y_px);
@@ -681,6 +736,11 @@ export class Canvas2DEngine {
           }
         });
 
+        const openingVisual = wallVisualMap.get(w.id);
+        if (openingVisual) {
+          openingVisual.openings.push({ group: opGroup, ratio: op.offset_ratio ?? 0.5 });
+        }
+
         this.cadLayer.add(opGroup);
       }
 
@@ -704,12 +764,22 @@ export class Canvas2DEngine {
         });
 
         circle.on("dragstart", () => {
-          this.store.pushHistorySnapshot();
+          this.isDraggingNode = true;
+          this.dragTransaction = this.store.beginTransaction("vertex-drag");
           this.store.selectObject("node", node.id);
         });
 
         circle.on("dragmove", () => {
           this.store.moveNode(node.id, circle.x(), circle.y(), true);
+        });
+
+        circle.on("dragend", () => {
+          const token = this.dragTransaction;
+          this.isDraggingNode = false;
+          this.dragTransaction = null;
+          if (token) this.store.commitTransaction(token);
+          this.store.selectObject("node", node.id);
+          this.renderAll();
         });
 
         this.cadLayer.add(circle);
