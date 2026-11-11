@@ -33,7 +33,7 @@
 - [x] Node unit suites, Playwright regressions, real-sample acceptance screenshots, GLB JSON inspection, and extraction baseline lock for Gatsu/Ancol/plan.jpeg.
 - [x] Review hardening pass 2: same-source history across guide invalidation; wall/stair pointer priority and screen-space vertex handles; bounded guide extraction budgets; inert narrow sidebar; derived stair field refresh and integer riser validation; complete L/U landing guardrails.
 
-## Active Phase: Phase 5 — Dock + Wizard UI Redesign (behind `?ui=v4`, branch `feat/dock-wizard-ui`)
+## Completed Phase: Phase 5 — Dock + Wizard UI Redesign (behind `?ui=v4`, branch `feat/dock-wizard-ui`)
 
 Spec: `docs/superpowers/specs/2026-11-11-dock-wizard-ui-design.md`. Plan: `docs/superpowers/plans/2026-11-11-dock-wizard-ui.md` (both uncommitted).
 
@@ -43,7 +43,7 @@ Spec: `docs/superpowers/specs/2026-11-11-dock-wizard-ui-design.md`. Plan: `docs/
 - [x] Task 4: Command palette (`Ctrl/Cmd+K`) (commit 77e3e99; 38/38 specs incl. v4-palette 8/8)
 - [x] Task 5: Stage 1 wizard card (commit 89ce201; 21/21 specs incl. v4-wizard 4/4)
 - [x] Task 6: Stage 2 wizard with honest, progressive extraction reveal (commits ec7c654, 606717a; 33/33 specs incl. v4-wizard 12/12)
-- [ ] Task 7: Responsive, accessibility, default flip to v4, docs
+- [x] Task 7: Responsive, accessibility, default flip to v4, docs (commits 0d50ee5, 381dee7; full Playwright suite 98/98)
 
 ## Pending Phase: Phase 4 — Next Agent Handover & Engineering Improvements (Pending Grill Validation)
 
