@@ -16,24 +16,29 @@ test.describe("vertex drag", () => {
   });
 
   test("node handle radius and hit stroke remain screen-space while zooming", async ({ page }) => {
+    const readMetrics = () =>
+      page.evaluate(() => {
+        const engine = window.sitestryApp.canvas2d;
+        const scale = engine.stage.scaleX();
+        const visual = engine.nodeVisuals[0];
+        return {
+          scale,
+          screenRadius: visual.circle.radius() * scale,
+          screenHit: visual.circle.hitStrokeWidth() * scale,
+          selected: visual.selected,
+        };
+      });
+    const before = await readMetrics();
     const box = await page.locator("#konvaContainer").boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, -400);
     await page.waitForTimeout(250);
-    const metrics = await page.evaluate(() => {
-      const engine = window.sitestryApp.canvas2d;
-      const scale = engine.stage.scaleX();
-      const visual = engine.nodeVisuals[0];
-      return {
-        scale,
-        screenRadius: visual.circle.radius() * scale,
-        screenHit: visual.circle.hitStrokeWidth() * scale,
-        selected: visual.selected,
-      };
-    });
-    expect(metrics.selected).toBe(false);
-    expect(metrics.screenRadius).toBeCloseTo(3.8, 1);
-    expect(metrics.screenHit).toBeCloseTo(10, 1);
+    const after = await readMetrics();
+    expect(before.selected).toBe(false);
+    expect(before.screenRadius).toBeCloseTo(3.8, 2);
+    expect(after.scale).not.toBe(before.scale);
+    expect(after.screenRadius).toBeCloseTo(before.screenRadius, 4);
+    expect(after.screenHit).toBeCloseTo(before.screenHit, 4);
   });
 
   for (const zoom of [0.5, 1, 2]) {

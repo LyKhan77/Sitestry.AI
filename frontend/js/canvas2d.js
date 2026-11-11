@@ -9,6 +9,8 @@
 import { computeWallPreview } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 
+const NODE_HIT_DIAMETER_PX = 11;
+
 export class Canvas2DEngine {
   constructor(containerId, store) {
     this.container = document.getElementById(containerId);
@@ -225,8 +227,11 @@ export class Canvas2DEngine {
   syncNodeHandleScale() {
     const nodeScale = this.stageScale();
     for (const { circle, selected } of this.nodeVisuals) {
-      circle.radius((selected ? 6.0 : 3.8) / nodeScale);
-      circle.hitStrokeWidth(10 / nodeScale);
+      const radiusCss = selected ? 6.0 : 3.8;
+      // Keep the total target at a fixed screen diameter. An unbounded stroke
+      // would let nearby vertices capture each other's centers.
+      circle.radius(radiusCss / nodeScale);
+      circle.hitStrokeWidth(Math.max(0, NODE_HIT_DIAMETER_PX - radiusCss * 2) / nodeScale);
       circle.strokeWidth(1.8 / nodeScale);
     }
     this.cadLayer.batchDraw();
@@ -1009,17 +1014,18 @@ export class Canvas2DEngine {
       for (const node of this.store.project.nodes) {
         const isSelected = sel?.kind === "node" && sel?.id === node.id;
         const nodeScale = this.stageScale();
+        const radiusCss = isSelected ? 6.0 : 3.8;
         const circle = new Konva.Circle({
           x: node.x_px,
           y: node.y_px,
           // Handles and their hit stroke are screen-space: source-pixel radii
           // would shrink below a usable target when the drawing is zoomed out.
-          radius: (isSelected ? 6.0 : 3.8) / nodeScale,
+          radius: radiusCss / nodeScale,
           fill: isSelected ? "#cba258" : "#ffffff",
           stroke: isSelected ? "#006241" : "#1E3932",
           strokeWidth: 1.8 / nodeScale,
           draggable: !this.isDrawingTool(),
-          hitStrokeWidth: 10 / nodeScale,
+          hitStrokeWidth: Math.max(0, NODE_HIT_DIAMETER_PX - radiusCss * 2) / nodeScale,
         });
         this.nodeVisuals.push({ circle, selected: isSelected });
 
