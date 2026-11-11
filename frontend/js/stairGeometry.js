@@ -64,6 +64,51 @@ function quad(origin, u, v, a0, a1, c0, c1, scale) {
   ];
 }
 
+function exposedSpans(start, end, cuts) {
+  let spans = [[Math.min(start, end), Math.max(start, end)]];
+  for (const [cutStart, cutEnd] of cuts) {
+    const next = [];
+    for (const [spanStart, spanEnd] of spans) {
+      if (cutEnd <= spanStart || cutStart >= spanEnd) {
+        next.push([spanStart, spanEnd]);
+        continue;
+      }
+      if (cutStart > spanStart) next.push([spanStart, Math.min(cutStart, spanEnd)]);
+      if (cutEnd < spanEnd) next.push([Math.max(cutEnd, spanStart), spanEnd]);
+    }
+    spans = next;
+  }
+  return spans.filter(([spanStart, spanEnd]) => spanEnd - spanStart > STAIR_EPSILON);
+}
+
+function pushLandingRail(
+  rails,
+  origin,
+  u,
+  v,
+  scale,
+  elevation,
+  fixedAxis,
+  fixedValue,
+  from,
+  to
+) {
+  const start =
+    fixedAxis === "u"
+      ? at(origin, u, v, fixedValue, from, scale)
+      : at(origin, u, v, from, fixedValue, scale);
+  const end =
+    fixedAxis === "u"
+      ? at(origin, u, v, fixedValue, to, scale)
+      : at(origin, u, v, to, fixedValue, scale);
+  rails.push({
+    start_px: start,
+    end_px: end,
+    start_elevation_m: elevation,
+    end_elevation_m: elevation,
+  });
+}
+
 function polygonCentroid(points) {
   let x = 0;
   let y = 0;
@@ -357,22 +402,38 @@ export function resolveStairGeometry(stair, scalePxPerMeter) {
         footprint_px: landingFootprint,
       },
     ];
-    const guardrails = [
-      ...flight1.guardrail_edges,
-      ...flight2Aligned.guardrail_edges,
-      {
-        start_px: at(start, u, v, along - landing / 2, -landing / 2, scale),
-        end_px: at(start, u, v, along + landing / 2, -landing / 2, scale),
-        start_elevation_m: landingElevation,
-        end_elevation_m: landingElevation,
-      },
-      {
-        start_px: at(start, u, v, along + landing / 2, -landing / 2, scale),
-        end_px: at(start, u, v, along + landing / 2, landing / 2, scale),
-        start_elevation_m: landingElevation,
-        end_elevation_m: landingElevation,
-      },
-    ];
+    const guardrails = [...flight1.guardrail_edges, ...flight2Aligned.guardrail_edges];
+    const landingAlong0 = along - landing / 2;
+    const landingAlong1 = along + landing / 2;
+    const landingAcross0 = -landing / 2;
+    const landingAcross1 = landing / 2;
+    // Near edge: flight 1 attaches over the flight width, so rail only the exposed sides.
+    for (const [v0, v1] of exposedSpans(landingAcross0, landingAcross1, [
+      [-width / 2, width / 2],
+    ])) {
+      pushLandingRail(
+        guardrails, start, u, v, scale, landingElevation, "u", landingAlong0, v0, v1
+      );
+    }
+    // Far edge is fully exposed.
+    for (const [v0, v1] of exposedSpans(landingAcross0, landingAcross1, [])) {
+      pushLandingRail(
+        guardrails, start, u, v, scale, landingElevation, "u", landingAlong1, v0, v1
+      );
+    }
+    // Low side and the second-flight side, excluding the flight 2 attachment.
+    for (const [a0, a1] of exposedSpans(landingAlong0, landingAlong1, [])) {
+      pushLandingRail(
+        guardrails, start, u, v, scale, landingElevation, "v", landingAcross0, a0, a1
+      );
+    }
+    for (const [a0, a1] of exposedSpans(landingAlong0, landingAlong1, [
+      [along - width / 2, along + width / 2],
+    ])) {
+      pushLandingRail(
+        guardrails, start, u, v, scale, landingElevation, "v", landingAcross1, a0, a1
+      );
+    }
     const route = [
       start,
       at(start, u, v, along - landing / 2, 0, scale),
@@ -441,22 +502,35 @@ export function resolveStairGeometry(stair, scalePxPerMeter) {
       footprint_px: landingFootprint,
     },
   ];
-  const guardrails = [
-    ...flight1.guardrail_edges,
-    ...flight2.guardrail_edges,
-    {
-      start_px: at(start, u, v, run1, -width / 2, scale),
-      end_px: at(start, u, v, run1 + landing, -width / 2, scale),
-      start_elevation_m: n1 * riserHeight,
-      end_elevation_m: n1 * riserHeight,
-    },
-    {
-      start_px: at(start, u, v, run1, across + width / 2, scale),
-      end_px: at(start, u, v, run1 + landing, across + width / 2, scale),
-      start_elevation_m: n1 * riserHeight,
-      end_elevation_m: n1 * riserHeight,
-    },
-  ];
+  const guardrails = [...flight1.guardrail_edges, ...flight2.guardrail_edges];
+  const landingElevation = n1 * riserHeight;
+  const landingAlong0 = run1;
+  const landingAlong1 = run1 + landing;
+  const landingAcross0 = -width / 2;
+  const landingAcross1 = across + width / 2;
+  // Near edge: both flights attach, leaving the central gap exposed.
+  for (const [v0, v1] of exposedSpans(landingAcross0, landingAcross1, [
+    [-width / 2, width / 2],
+    [across - width / 2, across + width / 2],
+  ])) {
+    pushLandingRail(
+      guardrails, start, u, v, scale, landingElevation, "u", landingAlong0, v0, v1
+    );
+  }
+  // Far edge and both sides are fully exposed.
+  for (const [v0, v1] of exposedSpans(landingAcross0, landingAcross1, [])) {
+    pushLandingRail(
+      guardrails, start, u, v, scale, landingElevation, "u", landingAlong1, v0, v1
+    );
+  }
+  for (const [a0, a1] of exposedSpans(landingAlong0, landingAlong1, [])) {
+    pushLandingRail(
+      guardrails, start, u, v, scale, landingElevation, "v", landingAcross0, a0, a1
+    );
+    pushLandingRail(
+      guardrails, start, u, v, scale, landingElevation, "v", landingAcross1, a0, a1
+    );
+  }
   const route = [
     start,
     at(start, u, v, run1, 0, scale),

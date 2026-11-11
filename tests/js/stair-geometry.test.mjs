@@ -252,6 +252,104 @@ test("guardrails never span the entrance or exit width", () => {
   }
 });
 
+function pointOnSegment(point, edge, tolerance = 1e-4) {
+  const ax = edge.start_px.x_px;
+  const ay = edge.start_px.y_px;
+  const bx = edge.end_px.x_px;
+  const by = edge.end_px.y_px;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq < 1e-12) return false;
+  const cross = (point.x_px - ax) * dy - (point.y_px - ay) * dx;
+  if (Math.abs(cross) > tolerance * Math.sqrt(lengthSq)) return false;
+  const dot = (point.x_px - ax) * dx + (point.y_px - ay) * dy;
+  return dot >= -tolerance && dot <= lengthSq + tolerance;
+}
+
+function assertGuardrailCovers(result, a, b, label) {
+  for (const t of [0.1, 0.5, 0.9]) {
+    const point = {
+      x_px: a.x_px + (b.x_px - a.x_px) * t,
+      y_px: a.y_px + (b.y_px - a.y_px) * t,
+    };
+    const covered = result.guardrail_edges.some((edge) => pointOnSegment(point, edge));
+    assert.ok(covered, `${label} is not covered at t=${t}`);
+  }
+}
+
+test("L landing closes exposed near and second-flight attachment edges", () => {
+  const result = resolveStairGeometry(
+    stair({
+      shape: "L",
+      end_px: { x_px: 24, y_px: 24 },
+      heading_rad: 0,
+      landing_depth_m: 1.6,
+      steps: 10,
+    }),
+    SCALE
+  );
+  assert.equal(result.ok, true);
+  // Landing u: 16..32 px, v: -8..8 px. Flight 1 attaches at u=16 over v=-6..6.
+  assertGuardrailCovers(result, { x_px: 16, y_px: -8 }, { x_px: 16, y_px: -6 }, "L near lower");
+  assertGuardrailCovers(result, { x_px: 16, y_px: 6 }, { x_px: 16, y_px: 8 }, "L near upper");
+  // Flight 2 attaches at v=8 over u=18..30.
+  assertGuardrailCovers(result, { x_px: 16, y_px: 8 }, { x_px: 18, y_px: 8 }, "L high lower");
+  assertGuardrailCovers(result, { x_px: 30, y_px: 8 }, { x_px: 32, y_px: 8 }, "L high upper");
+  assertGuardrailCovers(result, { x_px: 16, y_px: -8 }, { x_px: 32, y_px: -8 }, "L low side");
+  assertGuardrailCovers(result, { x_px: 32, y_px: -8 }, { x_px: 32, y_px: 8 }, "L far side");
+});
+
+test("U landing closes the far edge and the gap between flights", () => {
+  const result = resolveStairGeometry(
+    stair({
+      shape: "U",
+      start_px: { x_px: 0, y_px: 0 },
+      end_px: { x_px: 0, y_px: 24 },
+      heading_rad: 0,
+      turn: "right",
+      flight_run_m: 3,
+      steps: 12,
+    }),
+    SCALE
+  );
+  assert.equal(result.ok, true);
+  // Landing u: 30..42 px, v: -6..30 px. Flights attach at u=30 over -6..6 and 18..30.
+  assertGuardrailCovers(result, { x_px: 30, y_px: 6 }, { x_px: 30, y_px: 18 }, "U near gap");
+  assertGuardrailCovers(result, { x_px: 42, y_px: -6 }, { x_px: 42, y_px: 30 }, "U far edge");
+  assertGuardrailCovers(result, { x_px: 30, y_px: -6 }, { x_px: 42, y_px: -6 }, "U low side");
+  assertGuardrailCovers(result, { x_px: 30, y_px: 30 }, { x_px: 42, y_px: 30 }, "U high side");
+});
+
+test("landing guardrails never cross the walking route", () => {
+  for (const shape of ["L", "U"]) {
+    const result = resolveStairGeometry(
+      stair({
+        shape,
+        end_px: shape === "L" ? { x_px: 24, y_px: 24 } : { x_px: 0, y_px: 24 },
+        heading_rad: 0,
+        landing_depth_m: shape === "L" ? 1.6 : 1.2,
+        flight_run_m: shape === "U" ? 3 : null,
+        steps: 10,
+      }),
+      SCALE
+    );
+    assert.equal(result.ok, true, shape);
+    for (let index = 0; index < result.route_px.length - 1; index += 1) {
+      const a = result.route_px[index];
+      const b = result.route_px[index + 1];
+      for (const t of [0.05, 0.25, 0.5, 0.75, 0.95]) {
+        const point = {
+          x_px: a.x_px + (b.x_px - a.x_px) * t,
+          y_px: a.y_px + (b.y_px - a.y_px) * t,
+        };
+        const blocked = result.guardrail_edges.some((edge) => pointOnSegment(point, edge));
+        assert.ok(!blocked, `${shape} route segment ${index} is blocked at t=${t}`);
+      }
+    }
+  }
+});
+
 test("isParametricStair discriminates only template_version 1", () => {
   assert.equal(isParametricStair(stair()), true);
   assert.equal(isParametricStair({ width_m: 2 }), false);
