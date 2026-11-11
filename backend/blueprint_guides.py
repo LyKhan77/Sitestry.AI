@@ -257,17 +257,34 @@ def _vector_segments(pdf_bytes: bytes, page_number: int) -> Tuple[int, int, List
 
     segments: List[Dict[str, Any]] = []
     strips: List[Dict[str, Any]] = []
+
+    def add_segment(seg: Optional[Dict[str, Any]]) -> None:
+        if not seg:
+            return
+        segments.append(seg)
+        # Enforce the budget while consuming drawings, not after materialising
+        # every line/rect/quad on the page.
+        if len(segments) > MAX_RAW_SEGMENTS:
+            raise GuideError(422, "too_many_segments", "Raw drawing segment limit exceeded.")
+
+    def add_strip(candidate: Optional[Dict[str, Any]]) -> None:
+        if not candidate:
+            return
+        strips.append(candidate)
+        if len(strips) > MAX_CANDIDATES:
+            raise GuideError(422, "too_many_candidates", "Drawing candidate limit exceeded.")
+
     for drawing in page.get_drawings():
         for item in drawing.get("items", []):
             kind = item[0]
             if kind == "l":
                 p1, p2 = item[1], item[2]
-                seg = _segment(
-                    (p1.x * PDF_RENDER_FACTOR, p1.y * PDF_RENDER_FACTOR),
-                    (p2.x * PDF_RENDER_FACTOR, p2.y * PDF_RENDER_FACTOR),
+                add_segment(
+                    _segment(
+                        (p1.x * PDF_RENDER_FACTOR, p1.y * PDF_RENDER_FACTOR),
+                        (p2.x * PDF_RENDER_FACTOR, p2.y * PDF_RENDER_FACTOR),
+                    )
                 )
-                if seg:
-                    segments.append(seg)
             elif kind == "re":
                 rect = item[1]
                 quad = (
@@ -277,13 +294,9 @@ def _vector_segments(pdf_bytes: bytes, page_number: int) -> Tuple[int, int, List
                     (rect.x0 * PDF_RENDER_FACTOR, rect.y1 * PDF_RENDER_FACTOR),
                 )
                 if drawing.get("fill") is not None:
-                    cand = _strip_candidate(quad)
-                    if cand:
-                        strips.append(cand)
+                    add_strip(_strip_candidate(quad))
                 for i in range(4):
-                    seg = _segment(quad[i], quad[(i + 1) % 4])
-                    if seg:
-                        segments.append(seg)
+                    add_segment(_segment(quad[i], quad[(i + 1) % 4]))
             elif kind == "qu":
                 quad = item[1]
                 pts = (
@@ -293,15 +306,9 @@ def _vector_segments(pdf_bytes: bytes, page_number: int) -> Tuple[int, int, List
                     (quad.ll.x * PDF_RENDER_FACTOR, quad.ll.y * PDF_RENDER_FACTOR),
                 )
                 if drawing.get("fill") is not None:
-                    cand = _strip_candidate(pts)
-                    if cand:
-                        strips.append(cand)
+                    add_strip(_strip_candidate(pts))
                 for i in range(4):
-                    seg = _segment(pts[i], pts[(i + 1) % 4])
-                    if seg:
-                        segments.append(seg)
-    if len(segments) > MAX_RAW_SEGMENTS:
-        raise GuideError(422, "too_many_segments", "Raw drawing segment limit exceeded.")
+                    add_segment(_segment(pts[i], pts[(i + 1) % 4]))
     return width, height, segments, strips
 
 
@@ -355,11 +362,15 @@ def _raster_segments(image: np.ndarray, roi: Dict[str, float]) -> Tuple[List[Dic
             seg = _segment((x1 + x, y1 + y), (x2 + x, y2 + y))
             if seg:
                 segments.append(seg)
+                if len(segments) > MAX_RAW_SEGMENTS:
+                    raise GuideError(422, "too_many_segments", "Raw raster segment limit exceeded.")
 
     strips: List[Dict[str, Any]] = []
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    for contour in contours[:MAX_RAW_SEGMENTS]:
+    if len(contours) > MAX_RAW_SEGMENTS:
+        raise GuideError(422, "too_many_segments", "Raw raster contour limit exceeded.")
+    for contour in contours:
         area = cv2.contourArea(contour)
         if area < 120:
             continue
@@ -388,6 +399,8 @@ def _raster_segments(image: np.ndarray, roi: Dict[str, float]) -> Tuple[List[Dic
             "evidence": "filled_strip",
         }
         strips.append(center)
+        if len(strips) > MAX_CANDIDATES:
+            raise GuideError(422, "too_many_candidates", "Raster candidate limit exceeded.")
     return segments, strips
 
 

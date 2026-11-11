@@ -180,6 +180,140 @@ class BlueprintGuideDetectorTest(unittest.TestCase):
             bg.extract_blueprint_guides_cached(pdf, "pdf_vector", 1, roi, 10.0)
         self.assertLessEqual(len(bg._CACHE), bg.MAX_CACHE_ENTRIES)
 
+    def test_vector_iteration_stops_at_segment_budget(self):
+        class DrawingStream:
+            def __init__(self, total):
+                self.total = total
+                self.consumed = 0
+
+            def __iter__(self):
+                for index in range(self.total):
+                    self.consumed += 1
+                    yield {
+                        "items": [
+                            (
+                                "l",
+                                fitz.Point(10, index % 200),
+                                fitz.Point(110, index % 200),
+                            )
+                        ],
+                        "fill": None,
+                    }
+
+        class FakePage:
+            rect = type("Rect", (), {"width": 400.0, "height": 300.0})()
+
+            def __init__(self, stream):
+                self.stream = stream
+
+            def get_pixmap(self, *args, **kwargs):
+                return type("Pixmap", (), {"width": 800, "height": 600})()
+
+            def get_drawings(self):
+                return self.stream
+
+        class FakeDoc:
+            def __init__(self, page):
+                self.page = page
+
+            def __len__(self):
+                return 1
+
+            def __getitem__(self, index):
+                return self.page
+
+        stream = DrawingStream(10_000)
+        page = FakePage(stream)
+        with mock.patch.object(bg, "MAX_RAW_SEGMENTS", 50):
+            with mock.patch.object(bg.fitz, "open", return_value=FakeDoc(page)):
+                with self.assertRaises(bg.GuideError) as ctx:
+                    bg.extract_blueprint_guides(b"fake-pdf", "pdf_vector", 1, None, 10.0)
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.code, "too_many_segments")
+        self.assertLessEqual(stream.consumed, 51)
+        self.assertGreater(stream.consumed, 0)
+
+    def test_vector_iteration_stops_at_strip_budget(self):
+        class DrawingStream:
+            def __init__(self, total):
+                self.total = total
+                self.consumed = 0
+
+            def __iter__(self):
+                for index in range(self.total):
+                    self.consumed += 1
+                    yield {
+                        "items": [("re", fitz.Rect(10, index * 12, 210, index * 12 + 10))],
+                        "fill": (0, 0, 0),
+                    }
+
+        class FakePage:
+            rect = type("Rect", (), {"width": 400.0, "height": 300.0})()
+
+            def __init__(self, stream):
+                self.stream = stream
+
+            def get_pixmap(self, *args, **kwargs):
+                return type("Pixmap", (), {"width": 800, "height": 600})()
+
+            def get_drawings(self):
+                return self.stream
+
+        class FakeDoc:
+            def __init__(self, page):
+                self.page = page
+
+            def __len__(self):
+                return 1
+
+            def __getitem__(self, index):
+                return self.page
+
+        stream = DrawingStream(10_000)
+        with mock.patch.object(bg, "MAX_CANDIDATES", 2):
+            with mock.patch.object(bg.fitz, "open", return_value=FakeDoc(FakePage(stream))):
+                with self.assertRaises(bg.GuideError) as ctx:
+                    bg.extract_blueprint_guides(b"fake-pdf", "pdf_vector", 1, None, 10.0)
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.code, "too_many_candidates")
+        self.assertLessEqual(stream.consumed, 3)
+
+    def test_raster_hough_limit_is_checked_before_iteration(self):
+        class UniterableLines:
+            def __len__(self):
+                return 2
+
+            def __iter__(self):
+                raise AssertionError("Hough lines must not be iterated past the budget check")
+
+        image = np.full((40, 40, 3), 255, dtype=np.uint8)
+        with mock.patch.object(bg, "MAX_RAW_SEGMENTS", 1):
+            with mock.patch.object(bg.cv2, "HoughLinesP", return_value=UniterableLines()):
+                with self.assertRaises(bg.GuideError) as ctx:
+                    bg._raster_segments(image, {"x": 0, "y": 0, "width": 40, "height": 40})
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.code, "too_many_segments")
+
+    def test_raster_contour_limit_is_checked_before_iteration(self):
+        class UniterableContours:
+            def __len__(self):
+                return 2
+
+            def __iter__(self):
+                raise AssertionError("Contours must not be iterated past the budget check")
+
+            def __getitem__(self, item):
+                raise AssertionError("Contours must not be sliced before the budget check")
+
+        image = np.full((40, 40, 3), 255, dtype=np.uint8)
+        with mock.patch.object(bg, "MAX_RAW_SEGMENTS", 1):
+            with mock.patch.object(bg.cv2, "HoughLinesP", return_value=None):
+                with mock.patch.object(bg.cv2, "findContours", return_value=(UniterableContours(), None)):
+                    with self.assertRaises(bg.GuideError) as ctx:
+                        bg._raster_segments(image, {"x": 0, "y": 0, "width": 40, "height": 40})
+        self.assertEqual(ctx.exception.status_code, 422)
+        self.assertEqual(ctx.exception.code, "too_many_segments")
+
     def test_finite_positions_and_bounded_candidates(self):
         pdf = make_pdf([((50, 50), (350, 50), 1), ((50, 54), (350, 54), 1)])
         result = bg.extract_blueprint_guides(pdf, "pdf_vector", 1, None, 10.0)
