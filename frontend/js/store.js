@@ -308,10 +308,12 @@ export class SitestryStore extends EventTarget {
   }
 
   clearGuideCandidates() {
+    // Guide cache is advisory and independent from the geometry history. ROI or
+    // mode changes may drop candidates, but the loaded source revision must stay
+    // intact so re-extracting the same source preserves undo/redo.
     this.guideCandidates = [];
     this.guideStatus = "idle";
     this.guideError = null;
-    this._loadedSourceRevision = 0;
     this.emit("guidesChanged", { status: "idle", error: null, candidates: [] });
   }
 
