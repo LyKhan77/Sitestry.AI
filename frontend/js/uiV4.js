@@ -222,6 +222,179 @@ export function renderBoqPanel(boq, equipments) {
   return `<div class="boq-panel-title">BoQ live</div><div class="struct-summary-grid">${renderBoqGrid(boq)}</div>${rows}`;
 }
 
+// ==================== COMMAND PALETTE ====================
+const STAGE_NAMES = ["Input", "Process Extraction", "Review Annotation", "Build 3D", "Installation Equipment"];
+const LAYER_ACTIONS = [
+  ["chkLayerBlueprint", "Blueprint asli"],
+  ["chkLayerRoi", "Batas ROI"],
+  ["chkLayerWalls", "Dinding, pintu & jendela"],
+  ["chkLayerColumns", "Pilar / kolom"],
+  ["chkLayerTrays", "Tangga & jalur tray"],
+  ["chkLayerRooms", "Label & poligon ruangan"],
+  ["chkLayerGrid", "Grid raised floor"],
+  ["chkLayerEquipments", "Perangkat CME"],
+];
+
+export const PALETTE_ACTIONS = [
+  ...STAGE_NAMES.map((name, i) => ({
+    id: `stage-${i + 1}`,
+    label: `Pindah ke Stage ${i + 1}: ${name}`,
+    keywords: "stage step langkah pindah",
+    run: (app) => app.setWorkflowStage(i + 1),
+  })),
+  ...[
+    ["2d", "2D Blueprint & CAD"],
+    ["split", "Split 2D | 3D"],
+    ["3d", "3D Digital Twin"],
+  ].map(([mode, name]) => ({
+    id: `view-${mode}`,
+    label: `Tampilan: ${name}`,
+    keywords: "view tampilan",
+    when: () => store.ui.step >= 3,
+    run: (app) => app.setViewMode(mode),
+  })),
+  {
+    id: "run-extraction",
+    label: "Jalankan ulang ekstraksi",
+    keywords: "extract ekstraksi run",
+    when: () => store.ui.step <= 2,
+    run: (app) => app.runExtractionPipeline(),
+  },
+  {
+    id: "undo",
+    label: "Undo",
+    keywords: "batal",
+    when: () => store.undoStack.length > 0,
+    run: () => store.undo(),
+  },
+  {
+    id: "redo",
+    label: "Redo",
+    keywords: "ulang",
+    when: () => store.redoStack.length > 0,
+    run: () => store.redo(),
+  },
+  {
+    id: "export-json",
+    label: "Export JSON",
+    keywords: "download simpan",
+    when: () => store.ui.step >= 4,
+    run: () => document.getElementById("btnExportJson")?.click(),
+  },
+  {
+    id: "export-glb",
+    label: "Export .GLB",
+    keywords: "download 3d model",
+    when: () => store.ui.step >= 4,
+    run: () => document.getElementById("btnExportGlb")?.click(),
+  },
+  ...LAYER_ACTIONS.map(([checkboxId, name]) => ({
+    id: `layer-${checkboxId}`,
+    label: `Layer: ${name}`,
+    keywords: "layer toggle tampil sembunyi",
+    when: () => store.ui.step >= 3,
+    run: () => document.getElementById(checkboxId)?.click(),
+  })),
+];
+
+/** Case-insensitive substring match over label + keywords; keeps the original order. */
+export function filterActions(query, actions) {
+  const q = query.trim().toLowerCase();
+  if (!q) return actions.slice();
+  return actions.filter((a) => `${a.label} ${a.keywords || ""}`.toLowerCase().includes(q));
+}
+
+let paletteApp = null;
+let paletteFocus = null;
+let paletteMatches = [];
+let paletteIndex = 0;
+
+function renderPalette() {
+  const input = document.getElementById("cmdInput");
+  const list = document.getElementById("cmdList");
+  const available = PALETTE_ACTIONS.filter((a) => !a.when || a.when(paletteApp));
+  paletteMatches = filterActions(input.value, available);
+  paletteIndex = clamp(paletteIndex, 0, Math.max(0, paletteMatches.length - 1));
+  list.innerHTML = paletteMatches
+    .map(
+      (a, i) =>
+        `<li role="option" id="cmdOpt-${i}" data-index="${i}" aria-selected="${i === paletteIndex}">${a.label}</li>`
+    )
+    .join("");
+  input.setAttribute("aria-activedescendant", paletteMatches.length ? `cmdOpt-${paletteIndex}` : "");
+}
+
+export function closePalette() {
+  const dialog = document.getElementById("cmdPalette");
+  if (!dialog || dialog.hidden) return;
+  dialog.hidden = true;
+  const back = paletteFocus;
+  paletteFocus = null;
+  if (back && back !== document.body && document.contains(back)) back.focus();
+}
+
+export function openPalette(app) {
+  const dialog = document.getElementById("cmdPalette");
+  const input = document.getElementById("cmdInput");
+  if (!dialog || !input) return;
+  paletteApp = app;
+  paletteFocus = document.activeElement;
+  paletteIndex = 0;
+  input.value = "";
+  dialog.hidden = false;
+  renderPalette();
+  input.focus();
+}
+
+function runPaletteAction(index) {
+  const action = paletteMatches[index];
+  if (!action) return;
+  closePalette();
+  action.run(paletteApp);
+}
+
+function initPalette(app) {
+  const dialog = document.getElementById("cmdPalette");
+  const input = document.getElementById("cmdInput");
+  const list = document.getElementById("cmdList");
+  if (!dialog || !input || !list) return;
+
+  window.addEventListener("keydown", (e) => {
+    if (!isV4() || !(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "k") return;
+    e.preventDefault();
+    if (dialog.hidden) openPalette(app);
+    else closePalette();
+  });
+
+  input.addEventListener("input", () => {
+    paletteIndex = 0;
+    renderPalette();
+  });
+  input.addEventListener("keydown", (e) => {
+    const n = paletteMatches.length;
+    if (e.key === "ArrowDown" && n) paletteIndex = (paletteIndex + 1) % n;
+    else if (e.key === "ArrowUp" && n) paletteIndex = (paletteIndex - 1 + n) % n;
+    else if (e.key === "Enter") {
+      e.preventDefault();
+      runPaletteAction(paletteIndex);
+      return;
+    } else if (e.key === "Escape") {
+      closePalette();
+    } else if (e.key !== "Tab") return;
+    // Arrows re-render the highlight; Escape/Tab are handled here so nothing leaks to global shortcuts.
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dialog.hidden) renderPalette();
+  });
+  list.addEventListener("click", (e) => {
+    const li = e.target.closest("[data-index]");
+    if (li) runPaletteAction(Number(li.dataset.index));
+  });
+  dialog.addEventListener("mousedown", (e) => {
+    if (e.target === dialog) closePalette();
+  });
+}
+
 /** Wire the v4 dock: icons, flyout toggle, Escape, and floating-inspector tracking. */
 export function initV4Dock(app) {
   if (!isV4()) return;
@@ -230,6 +403,7 @@ export function initV4Dock(app) {
   buildDockFlyout(4, [".cam-toggles-row", ".surface-card:has(#stage4SummaryGrid)"]);
   buildDockFlyout(5, [".eq-catalog-grid", ".preset-cme-row", "label.layer-check-row"]);
   initExportMenu();
+  initPalette(app);
   syncDock(store.ui.step);
 
   const toggle = document.getElementById("btnDockPanel");
