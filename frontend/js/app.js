@@ -13,6 +13,7 @@ import { api } from "./api.js";
 import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
 import { BlueprintGuideSession } from "./blueprintGuides.js";
+import { initUiFlag, syncTimeline } from "./uiV4.js";
 import {
   isParametricStair,
   STAIR_MAX_RISERS,
@@ -66,6 +67,7 @@ class SitestryStudioApp {
     this.extractionSeq = 0;
     this.guideSession = new BlueprintGuideSession(store, (args) => api.fetchBlueprintGuides(args));
 
+    initUiFlag();
     this.initStageNavigation();
     this.initStage1InputControls();
     this.initStage2ExtractionControls();
@@ -146,6 +148,18 @@ class SitestryStudioApp {
     document.getElementById("btnNextToStage2")?.addEventListener("click", async () => {
       await this.runExtractionPipeline();
       this.setWorkflowStage(2);
+    });
+
+    // v4 bottom timeline: direct jump, Back, and Next (stage 1 reuses the legacy extraction handler).
+    document.querySelectorAll(".tl-step").forEach((btn) => {
+      btn.addEventListener("click", () => this.setWorkflowStage(Number(btn.dataset.step)));
+    });
+    document.getElementById("tlBack")?.addEventListener("click", () => {
+      if (store.ui.step > 1) this.setWorkflowStage(store.ui.step - 1);
+    });
+    document.getElementById("tlNext")?.addEventListener("click", () => {
+      if (store.ui.step === 1) document.getElementById("btnNextToStage2")?.click();
+      else if (store.ui.step < 5) this.setWorkflowStage(store.ui.step + 1);
     });
 
     document.getElementById("btnNextToStage3")?.addEventListener("click", () => {
@@ -251,6 +265,7 @@ class SitestryStudioApp {
     this.canvas2d.renderAll();
     this.updateTelemetryAndStageMetrics();
     this.renderInspector();
+    syncTimeline(step);
 
     setTimeout(() => {
       this.canvas2d.resize();

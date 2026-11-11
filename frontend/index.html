@@ -638,6 +638,19 @@
     </aside>
   </main>
 
+  <!-- ==================== V4 BOTTOM STAGE TIMELINE (visible only when body[data-ui="v4"]) ==================== -->
+  <nav id="stageTimeline" class="stage-timeline" aria-label="Workflow stages">
+    <button type="button" id="tlBack" class="tl-nav" aria-label="Stage sebelumnya">&larr; Back</button>
+    <ol class="tl-steps">
+      <li><button type="button" class="tl-step" data-step="1" aria-label="Stage 1: Input"><span class="tl-num">1</span><span class="tl-label">Input</span></button></li>
+      <li><button type="button" class="tl-step" data-step="2" aria-label="Stage 2: Process Extraction"><span class="tl-num">2</span><span class="tl-label">Extraction</span></button></li>
+      <li><button type="button" class="tl-step" data-step="3" aria-label="Stage 3: Review Annotation"><span class="tl-num">3</span><span class="tl-label">Review</span></button></li>
+      <li><button type="button" class="tl-step" data-step="4" aria-label="Stage 4: Build 3D"><span class="tl-num">4</span><span class="tl-label">Build 3D</span></button></li>
+      <li><button type="button" class="tl-step" data-step="5" aria-label="Stage 5: Installation Equipment"><span class="tl-num">5</span><span class="tl-label">Installation</span></button></li>
+    </ol>
+    <button type="button" id="tlNext" class="tl-nav tl-next" aria-label="Stage berikutnya">Next &rarr;</button>
+  </nav>
+
   <!-- ==================== MULTI-PAGE PDF PAGE SELECTOR MODAL ==================== -->
   <div id="pdfPageModal" class="modal-backdrop hidden">
     <div class="modal-card">

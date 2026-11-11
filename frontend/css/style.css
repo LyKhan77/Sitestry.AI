@@ -1780,3 +1780,153 @@ body[data-tool="stair"] #stairSettingsCard {
   color: var(--text-warm-muted);
   padding-top: 2px;
 }
+
+/* ==================== V4 DOCK + WIZARD (flag: body[data-ui="v4"]) ==================== */
+/* Every rule below is gated by the flag; legacy UI is untouched when it is off. */
+.stage-timeline {
+  display: none;
+}
+
+body[data-ui="v4"] .top-ribbon {
+  height: 44px;
+  padding: 0 14px;
+  gap: 12px;
+}
+
+body[data-ui="v4"] .stepper-nav,
+body[data-ui="v4"] .brand-sub,
+body[data-ui="v4"] .version-pill {
+  display: none;
+}
+
+body[data-ui="v4"] .brand-cluster {
+  min-width: 0;
+}
+
+body[data-ui="v4"] .brand-emblem {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+body[data-ui="v4"] .brand-name {
+  font-size: 15px;
+}
+
+body[data-ui="v4"] .studio-body {
+  height: calc(100vh - 44px);
+}
+
+body[data-ui="v4"] .stage-timeline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: fixed;
+  left: 50%;
+  bottom: 48px;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 6px 8px;
+  background: var(--bg-white);
+  border-radius: 50px;
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.14), 0 0 6px rgba(0, 0, 0, 0.24);
+}
+
+body[data-ui="v4"] .tl-steps {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  list-style: none;
+}
+
+body[data-ui="v4"] .tl-step,
+body[data-ui="v4"] .tl-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 50px;
+  background: transparent;
+  color: var(--text-warm-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+body[data-ui="v4"] .tl-nav {
+  border-color: var(--border-hairline);
+  padding: 0 14px;
+}
+
+body[data-ui="v4"] .tl-next {
+  background: var(--green-accent);
+  border-color: var(--green-accent);
+  color: #fff;
+}
+
+body[data-ui="v4"] .tl-nav:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+body[data-ui="v4"] .tl-step:active,
+body[data-ui="v4"] .tl-nav:not(:disabled):active {
+  transform: scale(0.95);
+}
+
+body[data-ui="v4"] .tl-step:focus-visible,
+body[data-ui="v4"] .tl-nav:focus-visible {
+  outline: 2px solid var(--green-accent);
+  outline-offset: 2px;
+}
+
+body[data-ui="v4"] .tl-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--bg-ceramic);
+  color: var(--text-warm-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+body[data-ui="v4"] .tl-step.done .tl-num {
+  background: var(--green-light);
+  color: var(--green-starbucks);
+}
+
+body[data-ui="v4"] .tl-step.active {
+  color: var(--green-house);
+}
+
+body[data-ui="v4"] .tl-step.active .tl-num {
+  background: var(--green-accent);
+  color: #fff;
+}
+
+/* Only the active step shows its label, keeping the pill compact. */
+body[data-ui="v4"] .tl-step:not(.active) .tl-label {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  body[data-ui="v4"] .stage-sidebar,
+  body[data-ui="v4"] .right-inspector,
+  body[data-ui="v4"][data-stage="3"][data-inspector="open"] .right-inspector {
+    top: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-ui="v4"] .tl-step,
+  body[data-ui="v4"] .tl-nav {
+    transition: none;
+  }
+}
