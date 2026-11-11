@@ -102,6 +102,14 @@
       <button id="btnExportGlb" class="btn-outline-pill" title="Export 3D Model (.GLB)">
         Export .GLB
       </button>
+      <!-- V4: single Export menu (Stage 4-5 only); items reuse the legacy export handlers -->
+      <div id="exportMenu" class="export-menu">
+        <button type="button" id="btnExportMenu" class="btn-outline-pill" aria-haspopup="menu" aria-expanded="false" aria-controls="exportMenuList">Export &#9662;</button>
+        <ul id="exportMenuList" class="export-menu-list" role="menu" hidden>
+          <li role="none"><button type="button" role="menuitem" id="miExportJson">Export JSON</button></li>
+          <li role="none"><button type="button" role="menuitem" id="miExportGlb">Export .GLB</button></li>
+        </ul>
+      </div>
     </div>
   </header>
 
@@ -548,9 +556,9 @@
 
         <div class="camera-presets-group">
           <button id="btnZoomFit2D" class="cam-btn" title="Pas-kan Denah 2D ke Layar">2D Fit</button>
-          <button id="btnCamPerspective" class="cam-btn" title="Kamera Orbit 3D">3D Orbit</button>
-          <button id="btnCamTop" class="cam-btn" title="Kamera Atas 3D">3D Top</button>
-          <button id="btnCamWalk" class="cam-btn" title="Kamera Interior Eye-Level">Eye View</button>
+          <button id="btnCamPerspective" class="cam-btn" data-camera-preset="perspective" title="Kamera Orbit 3D">3D Orbit</button>
+          <button id="btnCamTop" class="cam-btn" data-camera-preset="top" title="Kamera Atas 3D">3D Top</button>
+          <button id="btnCamWalk" class="cam-btn" data-camera-preset="walk" title="Kamera Interior Eye-Level">Eye View</button>
         </div>
       </div>
 
@@ -607,6 +615,9 @@
           </div>
         </div>
       </div>
+
+      <!-- V4 BoQ panel (Stage 5 only), filled by updateTelemetryAndStageMetrics -->
+      <aside id="boqPanel" class="boq-panel" aria-label="Bill of Quantities"></aside>
 
       <!-- BOTTOM TELEMETRY BAR (HOUSE GREEN #1E3932) -->
       <footer class="telemetry-bar">

@@ -13,7 +13,14 @@ import { api } from "./api.js";
 import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
 import { BlueprintGuideSession } from "./blueprintGuides.js";
-import { initUiFlag, initV4Dock, syncDock, syncTimeline } from "./uiV4.js";
+import {
+  initUiFlag,
+  initV4Dock,
+  renderBoqGrid,
+  renderBoqPanel,
+  syncDock,
+  syncTimeline,
+} from "./uiV4.js";
 import {
   isParametricStair,
   STAIR_MAX_RISERS,
@@ -1026,26 +1033,11 @@ class SitestryStudioApp {
 
     // Update Stage 4 Structural Summary Grid
     const s4Grid = document.getElementById("stage4SummaryGrid");
-    if (s4Grid) {
-      s4Grid.innerHTML = `
-        <div class="boq-box">
-          <div class="boq-val">${boq.solidWallMeters} m</div>
-          <div class="boq-lbl">Panjang Dinding</div>
-        </div>
-        <div class="boq-box">
-          <div class="boq-val">${boq.doorsCount} / ${boq.windowsCount}</div>
-          <div class="boq-lbl">Pintu / Jendela</div>
-        </div>
-        <div class="boq-box">
-          <div class="boq-val">${boq.columnsCount} unit</div>
-          <div class="boq-lbl">Pilar Struktur</div>
-        </div>
-        <div class="boq-box">
-          <div class="boq-val">${boq.stairsCount} unit</div>
-          <div class="boq-lbl">Tangga (Stairs)</div>
-        </div>
-      `;
-    }
+    if (s4Grid) s4Grid.innerHTML = renderBoqGrid(boq);
+
+    // v4 Stage 5 BoQ panel (hidden by CSS outside v4 stage 5)
+    const boqPanel = document.getElementById("boqPanel");
+    if (boqPanel) boqPanel.innerHTML = renderBoqPanel(boq, p.equipments);
   }
 
   // ==================== CONTEXTUAL PROPERTY INSPECTOR ====================

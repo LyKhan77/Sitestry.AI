@@ -87,10 +87,14 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 /** Place #rightInspector beside the selected object, flipped/clamped to stay inside #pane2D. */
 export function positionFloatingInspector(app) {
   const insp = document.getElementById("rightInspector");
-  const pane = document.getElementById("pane2D");
+  const pane2d = document.getElementById("pane2D");
   const host = document.getElementById("studioBody");
-  if (!insp || !pane || !host) return;
-  const active = isV4() && store.ui.step === 3 && window.matchMedia(DOCK_MIN_WIDTH).matches;
+  if (!insp || !pane2d || !host) return;
+  // In 3D-only mode #pane2D is display:none; clamp to the whole split area instead.
+  const pane2dVisible = pane2d.offsetWidth > 10;
+  const pane = pane2dVisible ? pane2d : document.getElementById("splitContainer");
+  const step = store.ui.step;
+  const active = isV4() && step >= 3 && step <= 5 && window.matchMedia(DOCK_MIN_WIDTH).matches;
   if (!active) {
     ["left", "top", "right", "maxHeight"].forEach((p) => (insp.style[p] = ""));
     return;
@@ -105,7 +109,7 @@ export function positionFloatingInspector(app) {
   insp.style.maxHeight = `${Math.max(160, p.height - TOP - BOTTOM)}px`;
   const w = insp.offsetWidth;
   const ht = insp.offsetHeight;
-  const rect = app.canvas2d.selectedScreenRect();
+  const rect = pane2dVisible ? app.canvas2d.selectedScreenRect() : null;
   let x = rect ? rect.x + rect.width + GAP : p.width - w - MARGIN;
   const y = rect ? rect.y : TOP;
   if (rect && x + w > p.width - MARGIN) x = rect.x - GAP - w;
@@ -118,10 +122,12 @@ export function positionFloatingInspector(app) {
 
 /** Collapse the dock flyout and refresh its toggle for the stage that just became active. */
 export function syncDock(step) {
-  document.body.dataset.dock = "closed";
+  // Stages 4-5 carry their main controls in the flyout, so it starts open there.
+  const open = step >= 4;
+  document.body.dataset.dock = open ? "open" : "closed";
   const btn = document.getElementById("btnDockPanel");
   if (btn) {
-    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-expanded", String(open));
     btn.setAttribute("aria-controls", `dockFlyout${step}`);
   }
 }
@@ -139,11 +145,91 @@ function buildDockFlyout(stage, selectors) {
   panel.appendChild(flyout);
 }
 
+// ==================== EXPORT MENU & BoQ ====================
+/** Single Export menu (Stage 4-5). Items click the legacy buttons so export logic stays in one place. */
+function initExportMenu() {
+  const trigger = document.getElementById("btnExportMenu");
+  const list = document.getElementById("exportMenuList");
+  if (!trigger || !list) return;
+  const items = Array.from(list.querySelectorAll('[role="menuitem"]'));
+  const setOpen = (open, focusTarget) => {
+    list.hidden = !open;
+    trigger.setAttribute("aria-expanded", String(open));
+    if (open) items[0]?.focus();
+    else if (focusTarget) trigger.focus();
+  };
+  trigger.addEventListener("click", () => setOpen(list.hidden));
+  list.addEventListener("keydown", (e) => {
+    const i = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") items[(i + 1) % items.length].focus();
+    else if (e.key === "ArrowUp") items[(i - 1 + items.length) % items.length].focus();
+    else if (e.key === "Escape") setOpen(false, true);
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  document.addEventListener("click", (e) => {
+    if (!list.hidden && !e.target.closest("#exportMenu")) setOpen(false);
+  });
+  document.getElementById("miExportJson")?.addEventListener("click", () => {
+    document.getElementById("btnExportJson")?.click();
+    setOpen(false, true);
+  });
+  document.getElementById("miExportGlb")?.addEventListener("click", () => {
+    document.getElementById("btnExportGlb")?.click();
+    setOpen(false, true);
+  });
+}
+
+const EQUIPMENT_LABELS = {
+  rack: "Server Rack 42U",
+  ups: "UPS 250kVA",
+  battery: "Lithium Battery Bank",
+  rectifier: "DC Rectifier",
+  panel: "ACPDB / SDP Panel",
+  pac: "PAC Precision Cooling",
+};
+
+/** Count equipments per `category`, in first-seen order. */
+export function equipmentTotals(equipments) {
+  const counts = new Map();
+  for (const eq of equipments) counts.set(eq.category, (counts.get(eq.category) || 0) + 1);
+  return Array.from(counts, ([category, count]) => ({ category, count }));
+}
+
+/** Structural summary boxes (shared by the Stage 4 flyout grid and the Stage 5 BoQ panel). */
+export function renderBoqGrid(boq) {
+  const box = (val, lbl) => `<div class="boq-box"><div class="boq-val">${val}</div><div class="boq-lbl">${lbl}</div></div>`;
+  return (
+    box(`${boq.solidWallMeters} m`, "Panjang Dinding") +
+    box(`${boq.doorsCount} / ${boq.windowsCount}`, "Pintu / Jendela") +
+    box(`${boq.columnsCount} unit`, "Pilar Struktur") +
+    box(`${boq.stairsCount} unit`, "Tangga (Stairs)")
+  );
+}
+
+/** Stage 5 BoQ panel: structural summary plus one row per equipment category. */
+export function renderBoqPanel(boq, equipments) {
+  const totals = equipmentTotals(equipments);
+  const rows = totals.length
+    ? totals
+        .map(
+          (t) =>
+            `<div class="boq-eq-row"><span>${EQUIPMENT_LABELS[t.category] || t.category}</span><strong>${t.count}</strong></div>`
+        )
+        .join("")
+    : '<div class="boq-eq-empty">Belum ada perangkat terpasang.</div>';
+  return `<div class="boq-panel-title">BoQ live</div><div class="struct-summary-grid">${renderBoqGrid(boq)}</div>${rows}`;
+}
+
 /** Wire the v4 dock: icons, flyout toggle, Escape, and floating-inspector tracking. */
 export function initV4Dock(app) {
   if (!isV4()) return;
   decorateToolButtons();
   buildDockFlyout(3, [".wall-assist-bar", "#stairSettingsCard", ".layer-card"]);
+  buildDockFlyout(4, [".cam-toggles-row", ".surface-card:has(#stage4SummaryGrid)"]);
+  buildDockFlyout(5, [".eq-catalog-grid", ".preset-cme-row", "label.layer-check-row"]);
+  initExportMenu();
   syncDock(store.ui.step);
 
   const toggle = document.getElementById("btnDockPanel");
@@ -157,7 +243,8 @@ export function initV4Dock(app) {
     if (e.key !== "Escape") return;
     if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
     if (document.body.dataset.dock === "open") {
-      syncDock(store.ui.step);
+      document.body.dataset.dock = "closed";
+      toggle?.setAttribute("aria-expanded", "false");
       toggle?.focus();
     } else if (store.ui.selected) {
       store.selectObject(null, null);
