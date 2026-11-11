@@ -35,3 +35,7 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Brainstorm visual companion (throwaway mockups)
+.superpowers/
+.impeccable/
