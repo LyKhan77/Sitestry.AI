@@ -13,7 +13,11 @@ import { api } from "./api.js";
 import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
 import { BlueprintGuideSession } from "./blueprintGuides.js";
-import { isParametricStair } from "./stairGeometry.js";
+import {
+  isParametricStair,
+  STAIR_MAX_RISERS,
+  STAIR_MIN_RISERS,
+} from "./stairGeometry.js";
 
 const TOOL_HINTS = {
   select:
@@ -548,7 +552,15 @@ class SitestryStudioApp {
     bindStairDefault("selStairTurnDefault", "turn", (v) => v);
     bindStairDefault("inpStairWidthDefault", "width_m", (v) => (v === "" ? null : parseFloat(v)));
     bindStairDefault("inpStairHeightDefault", "height_m", (v) => (v === "" ? null : parseFloat(v)));
-    bindStairDefault("inpStairStepsDefault", "steps", (v) => (v === "" ? null : parseInt(v, 10)));
+    bindStairDefault("inpStairStepsDefault", "steps", (v) => {
+      const steps = Number(v);
+      return v === "" ||
+        !Number.isInteger(steps) ||
+        steps < STAIR_MIN_RISERS ||
+        steps > STAIR_MAX_RISERS
+        ? null
+        : steps;
+    });
     bindStairDefault("inpStairLandingDefault", "landing_depth_m", (v) => (v === "" ? null : parseFloat(v)));
     bindStairDefault("inpStairRunDefault", "flight_run_m", (v) => (v === "" ? null : parseFloat(v)));
 
@@ -1319,12 +1331,35 @@ class SitestryStudioApp {
           el.textContent = message;
           el.classList.remove("hidden");
         };
+        const clearStairError = () => {
+          const el = errEl();
+          if (!el) return;
+          el.classList.add("hidden");
+        };
+        const syncStairDerivedFields = () => {
+          const current = store.project.stairs.find((item) => item.id === obj.id);
+          if (!isParametricStair(current)) return;
+          const headingEl = document.getElementById("inpStairHeading");
+          if (headingEl) {
+            const degrees =
+              ((((Number(current.heading_rad) || 0) * 180) / Math.PI) % 360 + 360) % 360;
+            headingEl.value = degrees.toFixed(1);
+          }
+          const runEl = document.getElementById("inpStairRun");
+          if (runEl) runEl.value = current.flight_run_m ?? "";
+          const titleEl = container.querySelector(".insp-title");
+          if (titleEl) {
+            titleEl.textContent = `Tangga Parametrik (v1) — ${current.shape.toUpperCase()}`;
+          }
+        };
         const applyStairPatch = (patch) => {
           const result = store.updateParametricStair(obj.id, patch);
           if (!result.ok) {
             showStairError(result.error?.message || "Parameter tangga tidak valid.");
             return false;
           }
+          clearStairError();
+          syncStairDerivedFields();
           return true;
         };
         const numValue = (id) => {
@@ -1361,11 +1396,21 @@ class SitestryStudioApp {
           if (value !== null) applyStairPatch({ height_m: value });
         };
         document.getElementById("inpStairSteps").onchange = (e) => {
-          const value = parseInt(e.target.value, 10);
-          if (!Number.isInteger(value)) {
-            showStairError("Jumlah riser harus bilangan bulat 4..128.");
+          const raw = e.target.value.trim();
+          const value = Number(raw);
+          if (
+            raw === "" ||
+            !Number.isInteger(value) ||
+            value < STAIR_MIN_RISERS ||
+            value > STAIR_MAX_RISERS
+          ) {
+            e.target.setAttribute("aria-invalid", "true");
+            showStairError(
+              `Jumlah riser harus bilangan bulat ${STAIR_MIN_RISERS}..${STAIR_MAX_RISERS}.`
+            );
             return;
           }
+          e.target.removeAttribute("aria-invalid");
           applyStairPatch({ steps: value });
         };
         document.getElementById("inpStairHeading").onchange = (e) => {

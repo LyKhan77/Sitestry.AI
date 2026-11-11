@@ -736,8 +736,12 @@ export class SitestryStore extends EventTarget {
     const turn = parameters.turn || defaults.turn || "right";
     const height = Number(parameters.height_m ?? defaults.height_m ?? meta.default_wall_height_m ?? 3.8);
     const rawSteps = parameters.steps ?? defaults.steps;
-    const stepsInput = rawSteps === null || rawSteps === undefined || rawSteps === "" ? NaN : Number(rawSteps);
-    const steps = Number.isInteger(stepsInput) || Number.isFinite(stepsInput)
+    const hasExplicitSteps =
+      rawSteps !== null && rawSteps !== undefined && rawSteps !== "";
+    const stepsInput = hasExplicitSteps ? Number(rawSteps) : NaN;
+    // Explicit fractional/out-of-range values must reach the resolver and be
+    // rejected instead of being rounded or replaced by a hidden default.
+    const steps = hasExplicitSteps
       ? stepsInput
       : Math.max(STAIR_MIN_RISERS, Math.min(STAIR_MAX_RISERS, Math.round(height / STAIR_DEFAULT_RISER_M)));
     const width = Number(parameters.width_m ?? defaults.width_m ?? 1.2);

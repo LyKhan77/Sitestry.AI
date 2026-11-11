@@ -60,6 +60,89 @@ test.describe("parametric stair editing", () => {
     expect(state.landings).toBe(1);
   });
 
+  test("shape and turn changes refresh derived heading and run fields without losing focus", async ({ page }) => {
+    await addStair(page, "L", { x: 1200, y: 900 }, { x: 1260, y: 960 });
+    await page.waitForTimeout(200);
+    expect((await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      return store.getSelectedObject()?.shape;
+    }))).toBe("L");
+    expect(await page.inputValue("#inpStairRun")).toBe("");
+
+    await page.locator("#selStairShape").focus();
+    await page.locator("#selStairShape").selectOption("U");
+    await page.waitForTimeout(250);
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("selStairShape");
+
+    const derived = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const stair = store.getSelectedObject();
+      return {
+        headingDeg: ((((Number(stair.heading_rad) || 0) * 180) / Math.PI) % 360 + 360) % 360,
+        run: stair.flight_run_m,
+      };
+    });
+    expect(Number(await page.inputValue("#inpStairHeading"))).toBeCloseTo(derived.headingDeg, 1);
+    expect(Number(await page.inputValue("#inpStairRun"))).toBeCloseTo(derived.run, 4);
+
+    await page.locator("#selStairTurn").focus();
+    await page.locator("#selStairTurn").selectOption("left");
+    await page.waitForTimeout(250);
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("selStairTurn");
+    const turned = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const stair = store.getSelectedObject();
+      return ((((Number(stair.heading_rad) || 0) * 180) / Math.PI) % 360 + 360) % 360;
+    });
+    expect(Number(await page.inputValue("#inpStairHeading"))).toBeCloseTo(turned, 1);
+  });
+
+  test("fractional or out-of-range riser input is rejected without committing", async ({ page }) => {
+    await addStair(page, "straight", { x: 1200, y: 900 }, { x: 1300, y: 900 });
+    await page.waitForTimeout(200);
+    const before = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const stair = store.getSelectedObject();
+      return { steps: stair.steps, undo: store.undoStack.length };
+    });
+
+    for (const invalid of ["4.5", "3", "129", ""]) {
+      await page.locator("#inpStairSteps").fill(invalid);
+      await page.locator("#inpStairSteps").press("Tab");
+      await page.waitForTimeout(150);
+      const state = await page.evaluate(async () => {
+        const { store } = await import("/js/store.js");
+        const stair = store.getSelectedObject();
+        const error = document.getElementById("stairParamError");
+        return {
+          steps: stair.steps,
+          undo: store.undoStack.length,
+          errorHidden: error.classList.contains("hidden"),
+          errorText: error.textContent,
+        };
+      });
+      expect(state.steps).toBe(before.steps);
+      expect(state.undo).toBe(before.undo);
+      expect(state.errorHidden).toBe(false);
+      expect(state.errorText).toMatch(/bilangan bulat 4\.\.128/);
+    }
+
+    await page.locator("#inpStairSteps").fill("12");
+    await page.locator("#inpStairSteps").press("Tab");
+    await page.waitForTimeout(250);
+    const after = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      return {
+        steps: store.getSelectedObject().steps,
+        undo: store.undoStack.length,
+        errorHidden: document.getElementById("stairParamError").classList.contains("hidden"),
+      };
+    });
+    expect(after.steps).toBe(12);
+    expect(after.undo).toBe(before.undo + 1);
+    expect(after.errorHidden).toBe(true);
+  });
+
   test("escape and tool switch do not create stairs or history", async ({ page }) => {
     const before = await stairCounts(page);
     await page.evaluate(async () => {
