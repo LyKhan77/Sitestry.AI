@@ -6,6 +6,8 @@
  * Multi-Line Window Glazing Symbols (W-xx), and Stage 5 CME Equipments / Cable Ladders.
  */
 
+import { computeWallPreview } from "./annotationGeometry.js";
+
 export class Canvas2DEngine {
   constructor(containerId, store) {
     this.container = document.getElementById(containerId);
@@ -47,9 +49,13 @@ export class Canvas2DEngine {
     this.dragTransaction = null;
     this.wallVisuals = [];
     this.guideVisuals = [];
+    this.wallDrag = null;
+    this.spacePan = false;
+    this.panState = null;
 
     this.bindStageEvents();
     this.bindStoreEvents();
+    this.syncStageDraggable();
   }
 
   bindStoreEvents() {
@@ -79,6 +85,7 @@ export class Canvas2DEngine {
     this.store.addEventListener("toolChanged", () => {
       this.cancelNodeDrag();
       this.clearTempDrawing();
+      this.syncStageDraggable();
       this.renderAll();
     });
   }
@@ -169,7 +176,19 @@ export class Canvas2DEngine {
     return transform.point(pos);
   }
 
+  syncStageDraggable() {
+    const tool = this.store.ui.activeTool;
+    this.stage.draggable(tool === "select");
+  }
+
+  clearWallDrag() {
+    this.wallDrag = null;
+    this.overlayLayer.destroyChildren();
+    this.overlayLayer.batchDraw();
+  }
+
   clearTempDrawing() {
+    this.wallDrag = null;
     this.wallChainNode = null;
     this.rulerPoints = [];
     this.roomDragStart = null;
@@ -213,13 +232,34 @@ export class Canvas2DEngine {
       if (cursorEl) {
         cursorEl.textContent = `X: ${xm}m, Z: ${ym}m (${Math.round(pt.x)}, ${Math.round(pt.y)} px)`;
       }
-      this.renderTempOverlay(pt);
+      if (this.wallDrag) {
+        this.wallDrag.cursorPx = pt;
+        this.renderTempOverlay(pt);
+      } else {
+        this.renderTempOverlay(pt);
+      }
     });
 
     this.stage.on("mousedown", (e) => {
+      if (e.evt.button === 1 || (e.evt.button === 0 && this.spacePan)) {
+        e.evt.preventDefault();
+        const pos = this.stage.position();
+        this.panState = {
+          startX: e.evt.clientX,
+          startY: e.evt.clientY,
+          stageX: pos.x,
+          stageY: pos.y,
+        };
+        return;
+      }
       if (e.evt.button !== 0) return;
       const tool = this.store.ui.activeTool;
       const pt = this.getWorldPointerPosition();
+
+      if (tool === "wall") {
+        this.beginWallDrag(pt);
+        return;
+      }
 
       if (e.target === this.stage) {
         if (tool === "select") {
@@ -258,7 +298,7 @@ export class Canvas2DEngine {
     });
 
     this.stage.on("dblclick", () => {
-      if (this.store.ui.activeTool === "wall" && this.wallChainNode) {
+      if (this.store.ui.activeTool === "wall") {
         this.clearTempDrawing();
       } else if (this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
         this.store.addCableTray(this.trayDraftPoints);
@@ -266,7 +306,33 @@ export class Canvas2DEngine {
       }
     });
 
+    this.stage.on("mouseup", (e) => {
+      if (this.wallDrag && (e.evt.button === 0 || e.evt.button === undefined)) {
+        this.finishWallDrag(this.getWorldPointerPosition());
+      }
+    });
+
+    this.stage.on("mouseleave", () => {
+      if (this.wallDrag) this.clearWallDrag();
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!this.panState) return;
+      this.stage.position({
+        x: this.panState.stageX + (e.clientX - this.panState.startX),
+        y: this.panState.stageY + (e.clientY - this.panState.startY),
+      });
+      this.stage.batchDraw();
+    });
+
+    window.addEventListener("mouseup", () => {
+      this.panState = null;
+    });
+
     window.addEventListener("keydown", (e) => {
+      if (e.code === "Space") {
+        this.spacePan = true;
+      }
       if (e.key === "Escape") {
         this.cancelNodeDrag();
         this.clearTempDrawing();
@@ -276,10 +342,58 @@ export class Canvas2DEngine {
       }
     });
 
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "Space") this.spacePan = false;
+    });
+
     window.addEventListener("pointercancel", () => {
       this.cancelNodeDrag();
       this.clearTempDrawing();
     });
+  }
+
+  buildWallPreview(cursorPt) {
+    const preview = computeWallPreview({
+      startPx: this.wallDrag.startPx,
+      endPx: cursorPt,
+      viewScale: this.stage.scaleX(),
+      mode: this.store.ui.wallMode || "manual",
+      assistance: {
+        endpointSnap: Boolean(this.store.ui.endpointSnap),
+        ortho: Boolean(this.store.ui.orthoSnap),
+      },
+      guides: this.store.guideCandidates || [],
+      project: this.store.project,
+    });
+    this.wallDrag.preview = preview;
+    return preview;
+  }
+
+  beginWallDrag(pt) {
+    if (this.wallDrag) return;
+    this.wallDrag = {
+      startPx: { x_px: pt.x, y_px: pt.y },
+      cursorPx: { x_px: pt.x, y_px: pt.y },
+      preview: null,
+    };
+    this.buildWallPreview(pt);
+    this.renderTempOverlay(pt);
+  }
+
+  finishWallDrag(pt) {
+    if (!this.wallDrag) return;
+    const preview = this.buildWallPreview(pt);
+    const screenLength = Math.hypot(
+      preview.endPx.x_px - preview.startPx.x_px,
+      preview.endPx.y_px - preview.startPx.y_px
+    ) * this.stage.scaleX();
+    if (screenLength >= 3) {
+      const result = this.store.insertWall(preview, { type: "solid" });
+      if (!result.ok) {
+        this.store.emit("toast", { message: result.error });
+      }
+    }
+    this.clearWallDrag();
   }
 
   handleWallToolClick(pt) {
@@ -486,6 +600,7 @@ export class Canvas2DEngine {
         const handleSelectWall = (ev) => {
           ev.cancelBubble = true;
           const tool = this.store.ui.activeTool;
+          if (tool === "wall") return;
           if (tool === "door") {
             const pt = this.getWorldPointerPosition();
             this.store.addOpeningOnNearestWall(pt.x, pt.y, "single_door");
@@ -558,7 +673,7 @@ export class Canvas2DEngine {
           x: ox,
           y: oy,
           rotation: angleDeg,
-          draggable: true,
+          draggable: this.store.ui.activeTool !== "wall",
         });
 
         // White wall cut-out mask
@@ -754,12 +869,13 @@ export class Canvas2DEngine {
           fill: isSelected ? "#cba258" : "#ffffff",
           stroke: isSelected ? "#006241" : "#1E3932",
           strokeWidth: 1.8,
-          draggable: true,
+          draggable: this.store.ui.activeTool !== "wall",
           hitStrokeWidth: 10,
         });
 
         circle.on("click", (ev) => {
           ev.cancelBubble = true;
+          if (this.store.ui.activeTool === "wall") return;
           this.store.selectObject("node", node.id);
         });
 
@@ -1175,21 +1291,60 @@ export class Canvas2DEngine {
     this.overlayLayer.destroyChildren();
     const tool = this.store.ui.activeTool;
 
-    if (tool === "wall" && this.wallChainNode) {
-      let tx = cursorPt.x;
-      let ty = cursorPt.y;
-      if (this.store.ui.orthoSnap) {
-        const dx = Math.abs(tx - this.wallChainNode.x);
-        const dy = Math.abs(ty - this.wallChainNode.y);
-        if (dx < dy * 0.18) tx = this.wallChainNode.x;
-        else if (dy < dx * 0.18) ty = this.wallChainNode.y;
+    if (tool === "wall" && this.wallDrag) {
+      const preview = this.buildWallPreview({ x_px: cursorPt.x, y_px: cursorPt.y });
+      if (preview.guideId) {
+        const guide = (this.store.guideCandidates || []).find((g) => g.id === preview.guideId);
+        const ga = guide ? (guide.start_px.x_px ?? guide.start_px.x) : null;
+        const gb = guide ? (guide.end_px.x_px ?? guide.end_px.x) : null;
+        if (guide && Number.isFinite(ga)) {
+          this.overlayLayer.add(
+            new Konva.Line({
+              points: [ga, guide.start_px.y_px ?? guide.start_px.y, gb, guide.end_px.y_px ?? guide.end_px.y],
+              stroke: "#cba258",
+              strokeWidth: 2,
+              dash: [9, 5],
+              opacity: 0.9,
+            })
+          );
+        }
       }
       this.overlayLayer.add(
         new Konva.Line({
-          points: [this.wallChainNode.x, this.wallChainNode.y, tx, ty],
-          stroke: "#00754A",
+          points: [
+            preview.startPx.x_px,
+            preview.startPx.y_px,
+            preview.endPx.x_px,
+            preview.endPx.y_px,
+          ],
+          stroke: preview.valid ? "#00754A" : "#d62b1f",
           strokeWidth: 4,
           dash: [6, 4],
+          lineCap: "round",
+        })
+      );
+      for (const point of [preview.startPx, preview.endPx]) {
+        this.overlayLayer.add(
+          new Konva.Circle({
+            x: point.x_px,
+            y: point.y_px,
+            radius: 5 / Math.max(0.15, this.stage.scaleX()),
+            fill: preview.valid ? "#cba258" : "#d62b1f",
+            stroke: "#006241",
+            strokeWidth: 1.4,
+          })
+        );
+      }
+      this.overlayLayer.add(
+        new Konva.Text({
+          x: preview.endPx.x_px + 10,
+          y: preview.endPx.y_px - 14,
+          text: preview.feedback,
+          fontSize: 10 / Math.max(0.3, this.stage.scaleX()),
+          fontFamily: "IBM Plex Mono",
+          fontStyle: "bold",
+          fill: preview.valid ? "#006241" : "#b91c1c",
+          listening: false,
         })
       );
     } else if (tool === "ruler" && this.rulerPoints.length === 1) {

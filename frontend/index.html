@@ -298,6 +298,21 @@
             </button>
           </div>
 
+          <div class="wall-assist-bar">
+            <div class="segmented-control" role="group" aria-label="Wall drawing mode">
+              <button type="button" class="mode-btn active" data-wall-mode="manual">Manual</button>
+              <button type="button" class="mode-btn" data-wall-mode="guided" id="btnWallModeGuided" disabled title="Guided tersedia setelah sumber blueprint terhubung">Guided</button>
+            </div>
+            <label class="layer-check-row compact">
+              <input type="checkbox" id="chkEndpointSnap" />
+              <span>Endpoint snap (10 px)</span>
+            </label>
+            <label class="layer-check-row compact">
+              <input type="checkbox" id="chkOrthoSnap" />
+              <span>Ortho assistance</span>
+            </label>
+          </div>
+
           <div class="history-action-bar">
             <button id="btnUndo" class="btn-history" title="Undo (Ctrl+Z)">&#8630; Undo</button>
             <button id="btnRedo" class="btn-history" title="Redo (Ctrl+Y)">&#8631; Redo</button>
@@ -345,10 +360,6 @@
               <input type="checkbox" id="chkLayerRoi" checked />
               <span class="swatch swatch-roi"></span>
               <span>Batas ROI Ekstraksi</span>
-            </label>
-            <label class="layer-check-row">
-              <input type="checkbox" id="chkOrthoSnap" checked />
-              <span>Ortho-Snap Sudut 0&deg;/90&deg; Aktif</span>
             </label>
           </div>
         </div>

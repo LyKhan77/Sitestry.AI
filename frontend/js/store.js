@@ -5,6 +5,8 @@
  * the 5 Segmented Workflow Stages, 2D Konva CAD Canvas, and 3D Three.js Digital Twin.
  */
 
+import { planWallInsertion, planWallSplit } from "./annotationGeometry.js";
+
 export class SitestryStore extends EventTarget {
   constructor() {
     super();
@@ -41,7 +43,21 @@ export class SitestryStore extends EventTarget {
       activeTool: "roi", // "select" | "roi" | "ruler" | "wall" | "column" | "door" | "double_door" | "window" | "room" | "stair" | "equipment" | "tray"
       pendingEquipmentCategory: "rack",
       selected: null, // { kind: "wall"|"node"|"column"|"opening"|"room"|"equipment"|"tray"|"stair", id: string }
-      orthoSnap: true,
+      wallMode: "manual", // "manual" | "guided"
+      endpointSnap: false,
+      orthoSnap: false,
+      panelOpen: false,
+      stairDefaults: {
+        shape: "straight",
+        width_m: 1.2,
+        height_m: null,
+        steps: null,
+        turn: "right",
+        heading_rad: 0,
+        landing_depth_m: 1.2,
+        flight_run_m: null,
+      },
+      guideStatus: "idle",
       blueprintOpacity: 0.68,
       show3DLabels: true,
       xrayWalls: false,
@@ -375,37 +391,63 @@ export class SitestryStore extends EventTarget {
     return newWall;
   }
 
-  splitWall(wallId, splitX = null, splitY = null) {
-    const idx = this.project.walls.findIndex((w) => w.id === wallId);
-    if (idx === -1) return null;
-    const w = this.project.walls[idx];
-    const n1 = this.getNodeById(w.start_node);
-    const n2 = this.getNodeById(w.end_node);
-    if (!n1 || !n2) return null;
+  allocateId(prefix = "id") {
+    this._idCounter = (this._idCounter || 0) + 1;
+    return `${prefix}_${Date.now().toString(36)}_${this._idCounter}`;
+  }
 
-    this.pushHistorySnapshot();
+  applyGeometryPatch(patch) {
+    this.project.nodes = patch.nodes;
+    this.project.walls = patch.walls;
+    this.project.openings = patch.openings;
+  }
+
+  insertWall(preview, properties = {}) {
+    const token = this.beginTransaction("insert-wall");
+    if (!token) return { ok: false, error: "Transaksi lain sedang aktif." };
+    const plan = planWallInsertion({
+      project: this.project,
+      preview,
+      properties,
+      allocateId: (prefix) => this.allocateId(prefix),
+    });
+    if (!plan.ok) {
+      this.cancelTransaction(token);
+      return plan;
+    }
+    this.applyGeometryPatch(plan.patch);
+    const wall = this.project.walls.find((w) => w.id === plan.wallId) || null;
+    if (wall) this.selectObject("wall", wall.id);
+    this.commitTransaction(token);
+    return { ok: true, wall };
+  }
+
+  splitWall(wallId, splitX = null, splitY = null) {
+    const wall = this.project.walls.find((w) => w.id === wallId);
+    if (!wall) return null;
+    const n1 = this.getNodeById(wall.start_node);
+    const n2 = this.getNodeById(wall.end_node);
+    if (!n1 || !n2) return null;
     const mx = splitX !== null ? splitX : (n1.x_px + n2.x_px) / 2;
     const my = splitY !== null ? splitY : (n1.y_px + n2.y_px) / 2;
 
-    const midNode = this.findOrCreateNode(mx, my, 2);
-
-    const w1 = {
-      ...w,
-      id: `${w.id}_a`,
-      start_node: n1.id,
-      end_node: midNode.id,
-    };
-    const w2 = {
-      ...w,
-      id: `${w.id}_b`,
-      start_node: midNode.id,
-      end_node: n2.id,
-    };
-
-    this.project.walls.splice(idx, 1, w1, w2);
-    this.selectObject("node", midNode.id);
-    this.emit("geometryChanged", { source: "splitWall" });
-    return midNode;
+    const token = this.beginTransaction("split-wall");
+    if (!token) return null;
+    const plan = planWallSplit(
+      this.project,
+      wallId,
+      { x_px: mx, y_px: my },
+      (prefix) => this.allocateId(prefix)
+    );
+    if (!plan.ok) {
+      this.cancelTransaction(token);
+      this.emit("toast", { message: plan.error });
+      return null;
+    }
+    this.applyGeometryPatch(plan.patch);
+    this.commitTransaction(token);
+    this.selectObject("node", plan.midNodeId);
+    return this.getNodeById(plan.midNodeId);
   }
 
   addColumn(x_px, y_px) {

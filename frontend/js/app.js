@@ -19,7 +19,7 @@ const TOOL_HINTS = {
   roi: "Mode: <strong>ROI Crop Box [C]</strong> — Geser sudut kanan-bawah kotak hijau untuk mengecualikan Kop Surat / Title Block.",
   ruler:
     "Mode: <strong>2-Point Ruler [R]</strong> — Klik Titik A dan Titik B pada jarak yang diketahui (misal Grid Kolom 6000mm atau Tile 600mm).",
-  wall: "Mode: <strong>Draw Wall [W]</strong> — Klik titik awal dan akhir untuk menggambar dinding berantai. Double-click atau Esc untuk selesai.",
+  wall: "Mode: <strong>Draw Wall [W]</strong> — Drag dari titik awal ke titik akhir; lepas untuk membuat satu dinding. Endpoint snap dan ortho bersifat opsional. Space-drag atau middle-drag untuk pan.",
   door: "Mode: <strong>Single Door [D]</strong> — Klik tepat pada segmen garis dinding untuk memasang Pintu Single beserta Swing Arc & Door Tag.",
   double_door:
     "Mode: <strong>Double Door [B]</strong> — Klik tepat pada segmen garis dinding untuk memasang Pintu Double (DD-xx).",
@@ -441,6 +441,23 @@ class SitestryStudioApp {
     document.getElementById("chkOrthoSnap")?.addEventListener("change", (e) => {
       store.ui.orthoSnap = e.target.checked;
     });
+    document.getElementById("chkEndpointSnap")?.addEventListener("change", (e) => {
+      store.ui.endpointSnap = e.target.checked;
+    });
+    document.querySelectorAll("[data-wall-mode]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+        store.ui.wallMode = btn.dataset.wallMode;
+        document.querySelectorAll("[data-wall-mode]").forEach((b) => {
+          b.classList.toggle("active", b.dataset.wallMode === store.ui.wallMode);
+          b.setAttribute("aria-pressed", String(b.dataset.wallMode === store.ui.wallMode));
+        });
+      });
+    });
+    const chkEndpoint = document.getElementById("chkEndpointSnap");
+    if (chkEndpoint) chkEndpoint.checked = Boolean(store.ui.endpointSnap);
+    const chkOrtho = document.getElementById("chkOrthoSnap");
+    if (chkOrtho) chkOrtho.checked = Boolean(store.ui.orthoSnap);
   }
 
   syncLayerCheckboxes() {

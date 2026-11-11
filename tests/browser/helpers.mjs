@@ -76,6 +76,44 @@ export async function centerNodeAtViewport(page, nodeId, zoom) {
   );
 }
 
+export async function worldToScreen(page, wx, wy, zoom = 1) {
+  return page.evaluate(
+    ({ x, y, z }) => {
+      const engine = window.sitestryApp.canvas2d;
+      const stage = engine.stage;
+      stage.scale({ x: z, y: z });
+      stage.position({ x: stage.width() / 2 - x * z, y: stage.height() / 2 - y * z });
+      stage.batchDraw();
+      const box = stage.container().getBoundingClientRect();
+      return { x: box.left + stage.width() / 2, y: box.top + stage.height() / 2 };
+    },
+    { x: wx, y: wy, z: zoom }
+  );
+}
+
+export async function worldPointsToScreen(page, points, zoom = 1) {
+  return page.evaluate(
+    ({ pts, z }) => {
+      const engine = window.sitestryApp.canvas2d;
+      const stage = engine.stage;
+      const anchor = pts[0];
+      stage.scale({ x: z, y: z });
+      stage.position({ x: stage.width() / 2 - anchor.x * z, y: stage.height() / 2 - anchor.y * z });
+      stage.batchDraw();
+      const box = stage.container().getBoundingClientRect();
+      const originX = box.left + stage.position().x;
+      const originY = box.top + stage.position().y;
+      return pts.map((p) => ({ x: originX + p.x * z, y: originY + p.y * z }));
+    },
+    { pts: points, z: zoom }
+  );
+}
+
+export async function setTool(page, tool) {
+  await page.evaluate((value) => window.sitestryApp.canvas2d.store.setActiveTool(value), tool);
+  await page.waitForTimeout(120);
+}
+
 export async function dragBy(page, point, dx, dy) {
   await page.mouse.move(point.x, point.y);
   await page.mouse.down();
