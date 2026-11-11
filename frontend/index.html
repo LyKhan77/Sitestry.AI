@@ -321,6 +321,52 @@
           </div>
         </div>
 
+        <div class="surface-card" id="stairSettingsCard">
+          <div class="card-header-label">TANGGA PARAMETRIK (LURUS / L / U)</div>
+          <div class="insp-row-2">
+            <div class="insp-field">
+              <label for="selStairShapeDefault">Bentuk</label>
+              <select id="selStairShapeDefault">
+                <option value="straight">Lurus</option>
+                <option value="L">L</option>
+                <option value="U">U</option>
+              </select>
+            </div>
+            <div class="insp-field">
+              <label for="selStairTurnDefault">Arah Putar</label>
+              <select id="selStairTurnDefault">
+                <option value="right">Kanan</option>
+                <option value="left">Kiri</option>
+              </select>
+            </div>
+          </div>
+          <div class="insp-row-2">
+            <div class="insp-field">
+              <label for="inpStairWidthDefault">Lebar Flight (m)</label>
+              <input type="number" id="inpStairWidthDefault" step="0.05" min="0.6" value="1.2" />
+            </div>
+            <div class="insp-field">
+              <label for="inpStairHeightDefault">Total Rise (m, kosong=default)</label>
+              <input type="number" id="inpStairHeightDefault" step="0.1" min="0.5" placeholder="auto" />
+            </div>
+          </div>
+          <div class="insp-row-2">
+            <div class="insp-field">
+              <label for="inpStairStepsDefault">Riser (kosong=auto)</label>
+              <input type="number" id="inpStairStepsDefault" step="1" min="4" max="128" placeholder="auto" />
+            </div>
+            <div class="insp-field">
+              <label for="inpStairLandingDefault">Landing Depth (m)</label>
+              <input type="number" id="inpStairLandingDefault" step="0.05" min="0.6" value="1.2" />
+            </div>
+          </div>
+          <div class="insp-field">
+            <label for="inpStairRunDefault">U Flight Run (m, kosong=auto)</label>
+            <input type="number" id="inpStairRunDefault" step="0.05" min="0.5" placeholder="auto" />
+          </div>
+          <p class="insp-helper">Klik titik masuk bawah, lalu klik titik keluar atas. Parameter terlihat dan dapat diedit setelah penempatan.</p>
+        </div>
+
         <div class="surface-card layer-card">
           <details class="layer-details" id="layerDetails">
           <summary class="card-header-label">VISIBILITAS LAYER &amp; OPACITY</summary>

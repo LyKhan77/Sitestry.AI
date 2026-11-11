@@ -1681,3 +1681,35 @@ body[data-stage="4"][data-inspector="closed"] .right-inspector,
 body[data-stage="5"][data-inspector="closed"] .right-inspector {
   display: none;
 }
+
+#stairSettingsCard {
+  display: none;
+}
+
+body[data-tool="stair"] #stairSettingsCard {
+  display: flex;
+}
+
+.insp-error {
+  background: rgba(214, 43, 31, 0.08);
+  border: 1px solid rgba(214, 43, 31, 0.35);
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 11px;
+}
+
+.stair-convert-panel {
+  background: var(--bg-warm-cream);
+  border: 1px dashed var(--border-green-subtle);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.stair-convert-panel.hidden {
+  display: none;
+}

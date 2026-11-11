@@ -6,6 +6,16 @@
  */
 
 import { planWallInsertion, planWallSplit } from "./annotationGeometry.js";
+import {
+  resolveStairGeometry,
+  computeDefaultHeading,
+  isParametricStair,
+  suggestLegacyConversion,
+  STAIR_DEFAULT_LANDING_M,
+  STAIR_DEFAULT_RISER_M,
+  STAIR_MAX_RISERS,
+  STAIR_MIN_RISERS,
+} from "./stairGeometry.js";
 
 export class SitestryStore extends EventTarget {
   constructor() {
@@ -691,6 +701,192 @@ export class SitestryStore extends EventTarget {
     this.selectObject("tray", tray.id);
     this.emit("geometryChanged", { source: "addTray" });
     return tray;
+  }
+
+  buildStairParameters(parameters = {}) {
+    const meta = this.project.metadata;
+    const defaults = this.ui.stairDefaults || {};
+    const start = parameters.start_px || { x_px: 0, y_px: 0 };
+    const end = parameters.end_px || { x_px: 0, y_px: 0 };
+    const shape = parameters.shape || defaults.shape || "straight";
+    const turn = parameters.turn || defaults.turn || "right";
+    const height = Number(parameters.height_m ?? defaults.height_m ?? meta.default_wall_height_m ?? 3.8);
+    const rawSteps = parameters.steps ?? defaults.steps;
+    const stepsInput = rawSteps === null || rawSteps === undefined || rawSteps === "" ? NaN : Number(rawSteps);
+    const steps = Number.isInteger(stepsInput)
+      ? Math.max(STAIR_MIN_RISERS, Math.min(STAIR_MAX_RISERS, stepsInput))
+      : Math.max(STAIR_MIN_RISERS, Math.min(STAIR_MAX_RISERS, Math.round(height / STAIR_DEFAULT_RISER_M)));
+    const width = Number(parameters.width_m ?? defaults.width_m ?? 1.2);
+    const landing = Math.max(
+      width,
+      Number(parameters.landing_depth_m ?? defaults.landing_depth_m ?? STAIR_DEFAULT_LANDING_M)
+    );
+    const explicitHeading = Number(parameters.heading_rad ?? defaults.heading_rad);
+    const heading = Number.isFinite(explicitHeading)
+      ? explicitHeading
+      : computeDefaultHeading(start, end, shape, turn);
+    const run = Number(parameters.flight_run_m ?? defaults.flight_run_m);
+    return {
+      shape,
+      start_px: { x_px: Number(start.x_px), y_px: Number(start.y_px) },
+      end_px: { x_px: Number(end.x_px), y_px: Number(end.y_px) },
+      width_m: width,
+      height_m: height,
+      steps,
+      turn,
+      heading_rad: heading,
+      landing_depth_m: landing,
+      flight_run_m: shape === "U" && Number.isFinite(run) && run > 0
+        ? run
+        : shape === "U"
+        ? Math.max(1, Math.floor(steps / 2) * 0.28)
+        : null,
+      name: parameters.name || null,
+      id: parameters.id || null,
+    };
+  }
+
+  stairDerived(stair, geometry) {
+    const points = geometry.footprint_px.flat();
+    const xs = points.map((p) => p.x_px);
+    const ys = points.map((p) => p.y_px);
+    const x_px = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const y_px = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const ux = Math.cos(Number(stair.heading_rad) || 0);
+    const uy = Math.sin(Number(stair.heading_rad) || 0);
+    const projections = points.map((p) => (p.x_px - x_px) * ux + (p.y_px - y_px) * uy);
+    return {
+      x_px: Math.round(x_px * 10) / 10,
+      y_px: Math.round(y_px * 10) / 10,
+      depth_m: Math.max(...projections) - Math.min(...projections),
+    };
+  }
+
+  previewParametricStair(parameters = {}) {
+    const built = this.buildStairParameters(parameters);
+    const stair = {
+      id: built.id || "stair_preview",
+      name: built.name || "Parametric Stair",
+      template_version: 1,
+      shape: built.shape,
+      start_px: built.start_px,
+      end_px: built.end_px,
+      width_m: built.width_m,
+      height_m: built.height_m,
+      steps: built.steps,
+      turn: built.turn,
+      heading_rad: built.heading_rad,
+      landing_depth_m: built.landing_depth_m,
+      flight_run_m: built.flight_run_m,
+    };
+    const geometry = resolveStairGeometry(stair, this.project.metadata.scale_px_per_meter || 30.68);
+    if (!geometry.ok) {
+      return { ok: false, error: geometry, parameters: stair };
+    }
+    Object.assign(stair, this.stairDerived(stair, geometry));
+    return { ok: true, stair, geometry, parameters: stair };
+  }
+
+  addParametricStair(parameters = {}) {
+    const preview = this.previewParametricStair(parameters);
+    if (!preview.ok) return preview;
+    const token = this.beginTransaction("add-parametric-stair");
+    if (!token) return { ok: false, error: { message: "Transaksi lain sedang aktif." } };
+    const stair = {
+      ...preview.stair,
+      id: this.allocateId("stair"),
+      name: parameters.name || `Parametric Staircase #${this.project.stairs.length + 1}`,
+    };
+    this.project.stairs.push(stair);
+    this.selectObject("stair", stair.id);
+    this.commitTransaction(token);
+    return { ok: true, stair };
+  }
+
+  updateParametricStair(id, patch = {}) {
+    const stair = this.project.stairs.find((item) => item.id === id);
+    if (!stair) return { ok: false, error: { message: "Stair tidak ditemukan." } };
+    if (!isParametricStair(stair)) {
+      return { ok: false, error: { code: "legacy_stair", message: "Stair legacy harus dikonversi eksplisit." } };
+    }
+    const merged = { ...stair, ...patch, id: stair.id, template_version: 1 };
+    const geometry = resolveStairGeometry(merged, this.project.metadata.scale_px_per_meter || 30.68);
+    if (!geometry.ok) return { ok: false, error: geometry };
+    const token = this.beginTransaction("update-parametric-stair");
+    if (!token) return { ok: false, error: { message: "Transaksi lain sedang aktif." } };
+    Object.assign(stair, merged);
+    Object.assign(stair, this.stairDerived(stair, geometry));
+    this.commitTransaction(token);
+    return { ok: true, stair, geometry };
+  }
+
+  previewStairEndpoint(id, which, pointPx) {
+    const stair = this.project.stairs.find((item) => item.id === id);
+    if (!stair || !isParametricStair(stair)) return { ok: false };
+    if (which !== "start_px" && which !== "end_px") return { ok: false };
+    const x = Number(pointPx.x_px ?? pointPx.x);
+    const y = Number(pointPx.y_px ?? pointPx.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false };
+    const merged = { ...stair, [which]: { x_px: x, y_px: y } };
+    const geometry = resolveStairGeometry(merged, this.project.metadata.scale_px_per_meter || 30.68);
+    if (!geometry.ok) return { ok: false, error: geometry };
+    stair[which] = { x_px: x, y_px: y };
+    Object.assign(stair, this.stairDerived(stair, geometry));
+    this.notifyGeometryChange("stair-endpoint", [stair.id]);
+    return { ok: true, geometry };
+  }
+
+  translateParametricStair(id, deltaPx) {
+    const stair = this.project.stairs.find((item) => item.id === id);
+    if (!stair || !isParametricStair(stair)) return { ok: false };
+    const dx = Number(deltaPx?.dx ?? deltaPx?.x ?? 0);
+    const dy = Number(deltaPx?.dy ?? deltaPx?.y ?? 0);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return { ok: false };
+    const moved = {
+      ...stair,
+      start_px: { x_px: stair.start_px.x_px + dx, y_px: stair.start_px.y_px + dy },
+      end_px: { x_px: stair.end_px.x_px + dx, y_px: stair.end_px.y_px + dy },
+    };
+    const geometry = resolveStairGeometry(moved, this.project.metadata.scale_px_per_meter || 30.68);
+    if (!geometry.ok) return { ok: false, error: geometry };
+    const token = this.beginTransaction("translate-stair");
+    if (!token) return { ok: false };
+    Object.assign(stair, moved);
+    Object.assign(stair, this.stairDerived(stair, geometry));
+    this.commitTransaction(token);
+    return { ok: true, stair };
+  }
+
+  suggestLegacyStairConversion(id) {
+    const stair = this.project.stairs.find((item) => item.id === id);
+    if (!stair || isParametricStair(stair)) return null;
+    return suggestLegacyConversion(stair, this.project.metadata.scale_px_per_meter || 30.68);
+  }
+
+  convertLegacyStair(id, parameters = null) {
+    const index = this.project.stairs.findIndex((item) => item.id === id);
+    if (index === -1) return { ok: false, error: { message: "Stair tidak ditemukan." } };
+    const legacy = this.project.stairs[index];
+    if (isParametricStair(legacy)) return { ok: false, error: { message: "Stair sudah parametrik." } };
+    const suggested = parameters || this.suggestLegacyStairConversion(id);
+    if (!suggested) return { ok: false, error: { message: "Parameter konversi tidak tersedia." } };
+    const preview = this.previewParametricStair({
+      ...suggested,
+      id: legacy.id,
+      name: legacy.name,
+    });
+    if (!preview.ok) return preview;
+    const token = this.beginTransaction("convert-legacy-stair");
+    if (!token) return { ok: false, error: { message: "Transaksi lain sedang aktif." } };
+    const converted = {
+      ...preview.stair,
+      id: legacy.id,
+      name: legacy.name || preview.stair.name,
+    };
+    this.project.stairs.splice(index, 1, converted);
+    this.selectObject("stair", converted.id);
+    this.commitTransaction(token);
+    return { ok: true, stair: converted };
   }
 
   addStaircase(x_px, y_px) {

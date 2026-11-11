@@ -7,6 +7,7 @@
  */
 
 import { computeWallPreview } from "./annotationGeometry.js";
+import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 
 export class Canvas2DEngine {
   constructor(containerId, store) {
@@ -52,6 +53,10 @@ export class Canvas2DEngine {
     this.wallDrag = null;
     this.spacePan = false;
     this.panState = null;
+    this.stairDraft = null;
+    this.isDraggingStair = false;
+    this.stairDragTransaction = null;
+    this.stairEndpointValid = true;
 
     this.bindStageEvents();
     this.bindStoreEvents();
@@ -67,6 +72,7 @@ export class Canvas2DEngine {
         this.syncDraggedGeometry();
         return;
       }
+      if (this.isDraggingStair) return;
       this.renderAll();
     });
     this.store.addEventListener("geometryPreviewChanged", () => {
@@ -75,8 +81,8 @@ export class Canvas2DEngine {
       }
     });
     this.store.addEventListener("selectionChanged", () => {
-      // Selection must never destroy the Konva node that is being dragged.
-      if (this.isDraggingNode) return;
+      // Selection must never destroy the handle that is being dragged.
+      if (this.isDraggingNode || this.isDraggingStair) return;
       this.renderAll();
     });
     this.store.addEventListener("roiChanged", () => {
@@ -115,6 +121,16 @@ export class Canvas2DEngine {
       }
     }
     this.cadLayer.batchDraw();
+  }
+
+  cancelStairDrag() {
+    if (!this.isDraggingStair) return false;
+    const token = this.stairDragTransaction;
+    this.isDraggingStair = false;
+    this.stairDragTransaction = null;
+    if (token) this.store.cancelTransaction(token);
+    this.renderAll();
+    return true;
   }
 
   cancelNodeDrag() {
@@ -191,6 +207,91 @@ export class Canvas2DEngine {
     this.stage.draggable(tool === "select");
   }
 
+  handleStairClick(pt) {
+    if (!this.stairDraft) {
+      this.stairDraft = { startPx: { x_px: pt.x, y_px: pt.y }, cursorPx: { x_px: pt.x, y_px: pt.y } };
+      this.renderTempOverlay(pt);
+      return;
+    }
+    const defaults = this.store.ui.stairDefaults || {};
+    const result = this.store.addParametricStair({
+      ...defaults,
+      start_px: this.stairDraft.startPx,
+      end_px: { x_px: pt.x, y_px: pt.y },
+    });
+    if (result.ok) {
+      this.stairDraft = null;
+      this.overlayLayer.destroyChildren();
+      this.overlayLayer.batchDraw();
+    } else {
+      this.stairDraft.error = result.error?.message || "Konfigurasi tangga tidak valid.";
+      this.store.emit("toast", { message: this.stairDraft.error });
+      this.renderTempOverlay(pt);
+    }
+  }
+
+  drawStairGeometry(geometry, layer, options = {}) {
+    if (!geometry?.ok) return;
+    const preview = Boolean(options.preview);
+    const selected = Boolean(options.selected);
+    const stroke = preview ? "#cba258" : selected ? "#00754A" : "#b45309";
+    const fill = preview ? "rgba(203, 162, 88, 0.16)" : "rgba(203, 162, 88, 0.22)";
+
+    for (const flight of geometry.flights) {
+      const flat = flight.footprint_px.flatMap((p) => [p.x_px, p.y_px]);
+      layer.add(
+        new Konva.Line({
+          points: flat,
+          closed: true,
+          fill,
+          stroke,
+          strokeWidth: preview ? 1.4 : 1.2,
+          listening: false,
+        })
+      );
+      for (const tread of flight.treads) {
+        layer.add(
+          new Konva.Line({
+            points: [
+              tread.footprint_px[0].x_px,
+              tread.footprint_px[0].y_px,
+              tread.footprint_px[1].x_px,
+              tread.footprint_px[1].y_px,
+            ],
+            stroke: stroke,
+            strokeWidth: 0.9,
+            opacity: 0.75,
+            listening: false,
+          })
+        );
+      }
+    }
+    for (const landing of geometry.landings) {
+      const flat = landing.footprint_px.flatMap((p) => [p.x_px, p.y_px]);
+      layer.add(
+        new Konva.Line({
+          points: flat,
+          closed: true,
+          fill: preview ? "rgba(0, 117, 74, 0.2)" : "rgba(0, 117, 74, 0.16)",
+          stroke: "#006241",
+          strokeWidth: 1.3,
+          listening: false,
+        })
+      );
+    }
+    layer.add(
+      new Konva.Arrow({
+        points: geometry.route_px.flatMap((p) => [p.x_px, p.y_px]),
+        pointerLength: 7,
+        pointerWidth: 6,
+        stroke: "#78350f",
+        fill: "#78350f",
+        strokeWidth: 1.4,
+        listening: false,
+      })
+    );
+  }
+
   clearWallDrag() {
     this.wallDrag = null;
     this.overlayLayer.destroyChildren();
@@ -199,6 +300,7 @@ export class Canvas2DEngine {
 
   clearTempDrawing() {
     this.wallDrag = null;
+    this.stairDraft = null;
     this.wallChainNode = null;
     this.rulerPoints = [];
     this.roomDragStart = null;
@@ -268,6 +370,10 @@ export class Canvas2DEngine {
 
       if (tool === "wall") {
         this.beginWallDrag(pt);
+        return;
+      }
+      if (tool === "stair") {
+        this.handleStairClick(pt);
         return;
       }
 
@@ -610,7 +716,7 @@ export class Canvas2DEngine {
         const handleSelectWall = (ev) => {
           ev.cancelBubble = true;
           const tool = this.store.ui.activeTool;
-          if (tool === "wall") return;
+          if (tool === "wall" || tool === "stair") return;
           if (tool === "door") {
             const pt = this.getWorldPointerPosition();
             this.store.addOpeningOnNearestWall(pt.x, pt.y, "single_door");
@@ -885,7 +991,7 @@ export class Canvas2DEngine {
 
         circle.on("click", (ev) => {
           ev.cancelBubble = true;
-          if (this.store.ui.activeTool === "wall") return;
+          if (this.store.ui.activeTool === "wall" || this.store.ui.activeTool === "stair") return;
           this.store.selectObject("node", node.id);
         });
 
@@ -987,6 +1093,140 @@ export class Canvas2DEngine {
     this.cadLayer.batchDraw();
   }
 
+  renderParametricStair2D(st, isSelected) {
+    const scale = this.store.project.metadata.scale_px_per_meter || 30.68;
+    const geometry = resolveStairGeometry(st, scale);
+    const group = new Konva.Group({
+      x: 0,
+      y: 0,
+      draggable: this.store.ui.activeTool !== "wall" && this.store.ui.activeTool !== "stair",
+    });
+    group.userData = { sitestryKind: "stair", sitestryId: st.id };
+
+    if (!geometry.ok) {
+      group.add(
+        new Konva.Text({
+          x: st.x_px - 40,
+          y: st.y_px - 8,
+          width: 120,
+          align: "center",
+          text: `INVALID STAIR: ${geometry.message}`,
+          fontSize: 9,
+          fontFamily: "IBM Plex Mono",
+          fill: "#b91c1c",
+          listening: false,
+        })
+      );
+      this.cmeLayer.add(group);
+      return;
+    }
+
+    group.add(
+      new Konva.Rect({
+        x: geometry.bounds_px.x_min,
+        y: geometry.bounds_px.y_min,
+        width: Math.max(1, geometry.bounds_px.x_max - geometry.bounds_px.x_min),
+        height: Math.max(1, geometry.bounds_px.y_max - geometry.bounds_px.y_min),
+        fill: "rgba(0, 0, 0, 0.001)",
+        listening: true,
+      })
+    );
+    this.drawStairGeometry(geometry, group, { selected: isSelected });
+
+    group.add(
+      new Konva.Text({
+        x: geometry.bounds_px.x_min,
+        y: geometry.bounds_px.y_min - 14,
+        width: Math.max(90, geometry.bounds_px.x_max - geometry.bounds_px.x_min),
+        text: `${st.name || "STAIRS"} · ${st.shape.toUpperCase()}`,
+        fontSize: 8.5,
+        fontFamily: "IBM Plex Mono",
+        fontStyle: "bold",
+        fill: "#78350f",
+        listening: false,
+      })
+    );
+
+    const handleRadius = 6 / Math.max(0.15, this.stage.scaleX());
+    if (isSelected) {
+      for (const which of ["start_px", "end_px"]) {
+        const point = st[which];
+        const handle = new Konva.Circle({
+          x: point.x_px,
+          y: point.y_px,
+          radius: handleRadius,
+          fill: which === "start_px" ? "#cba258" : "#00754A",
+          stroke: "#ffffff",
+          strokeWidth: 1.5,
+          draggable: this.store.ui.activeTool === "select",
+        });
+        handle.on("click", (ev) => {
+          ev.cancelBubble = true;
+          this.store.selectObject("stair", st.id);
+        });
+        handle.on("dragstart", () => {
+          this.isDraggingStair = true;
+          this.stairEndpointValid = true;
+          this.stairDragTransaction = this.store.beginTransaction("stair-endpoint");
+          this.store.selectObject("stair", st.id);
+        });
+        handle.on("dragmove", () => {
+          const result = this.store.previewStairEndpoint(st.id, which, {
+            x_px: handle.x(),
+            y_px: handle.y(),
+          });
+          this.stairEndpointValid = result.ok;
+          if (result.ok) {
+            const fresh = resolveStairGeometry(st, scale);
+            if (fresh.ok) {
+              // Draw the live preview on the overlay so the active handle is
+              // never destroyed mid-drag; the committed layer rebuilds on dragend.
+              this.overlayLayer.destroyChildren();
+              this.drawStairGeometry(fresh, this.overlayLayer, { preview: true });
+              this.overlayLayer.batchDraw();
+            }
+          }
+        });
+        handle.on("dragend", () => {
+          const token = this.stairDragTransaction;
+          const valid = this.stairEndpointValid;
+          this.isDraggingStair = false;
+          this.stairDragTransaction = null;
+          if (valid && token) {
+            this.store.commitTransaction(token);
+          } else if (token) {
+            this.store.cancelTransaction(token);
+            this.store.emit("toast", {
+              message: "Endpoint tangga tidak feasible; perubahan dibatalkan.",
+            });
+          }
+          this.overlayLayer.destroyChildren();
+          this.overlayLayer.batchDraw();
+          this.store.selectObject("stair", st.id);
+          this.renderAll();
+        });
+        group.add(handle);
+      }
+    }
+
+    group.on("click", (ev) => {
+      ev.cancelBubble = true;
+      this.store.selectObject("stair", st.id);
+    });
+
+    group.on("dragend", () => {
+      const dx = group.x();
+      const dy = group.y();
+      group.position({ x: 0, y: 0 });
+      if (dx !== 0 || dy !== 0) {
+        this.store.translateParametricStair(st.id, { dx, dy });
+      }
+      this.renderAll();
+    });
+
+    this.cmeLayer.add(group);
+  }
+
   renderCmeAndTrays() {
     this.cmeLayer.destroyChildren();
     const layers = this.store.ui.layers;
@@ -1029,6 +1269,10 @@ export class Canvas2DEngine {
       // 2. Render Architectural Stepped Stairs
       for (const st of this.store.project.stairs) {
         const isSelected = sel?.kind === "stair" && sel?.id === st.id;
+        if (isParametricStair(st)) {
+          this.renderParametricStair2D(st, isSelected);
+          continue;
+        }
         let wPx = Math.max(24, (st.width_m || 2.4) * scale);
         let dPx = Math.max(24, (st.depth_m || 3.0) * scale);
         if (st.bbox_px && st.bbox_px.length === 4) {
@@ -1039,7 +1283,7 @@ export class Canvas2DEngine {
         const stGroup = new Konva.Group({
           x: st.x_px,
           y: st.y_px,
-          draggable: true,
+          draggable: this.store.ui.activeTool !== "wall" && this.store.ui.activeTool !== "stair",
         });
 
         stGroup.add(
@@ -1123,6 +1367,14 @@ export class Canvas2DEngine {
         });
 
         stGroup.on("dragend", () => {
+          if (isParametricStair(st)) {
+            const dx = stGroup.x();
+            const dy = stGroup.y();
+            stGroup.position({ x: 0, y: 0 });
+            this.store.translateParametricStair(st.id, { dx, dy });
+            this.renderAll();
+            return;
+          }
           this.store.pushHistorySnapshot();
           const dx = stGroup.x() - st.x_px;
           const dy = stGroup.y() - st.y_px;
@@ -1357,6 +1609,27 @@ export class Canvas2DEngine {
           listening: false,
         })
       );
+    } else if (tool === "stair" && this.stairDraft) {
+      const defaults = this.store.ui.stairDefaults || {};
+      const preview = this.store.previewParametricStair({
+        ...defaults,
+        start_px: this.stairDraft.startPx,
+        end_px: { x_px: cursorPt.x, y_px: cursorPt.y },
+      });
+      if (preview.ok) {
+        this.drawStairGeometry(preview.geometry, this.overlayLayer, { preview: true });
+        this.overlayLayer.add(
+          new Konva.Text({
+            x: preview.geometry.bounds_px.x_min,
+            y: preview.geometry.bounds_px.y_min - 16,
+            text: `${preview.stair.shape.toUpperCase()} · ${preview.stair.steps} risers · ${preview.stair.width_m.toFixed(2)} m`,
+            fontSize: 10 / Math.max(0.3, this.stage.scaleX()),
+            fontFamily: "IBM Plex Mono",
+            fontStyle: "bold",
+            fill: "#006241",
+          })
+        );
+      }
     } else if (tool === "ruler" && this.rulerPoints.length === 1) {
       const p1 = this.rulerPoints[0];
       const distPx = Math.hypot(cursorPt.x - p1.x, cursorPt.y - p1.y);

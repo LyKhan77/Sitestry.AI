@@ -13,6 +13,7 @@ import { api } from "./api.js";
 import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
 import { BlueprintGuideSession } from "./blueprintGuides.js";
+import { isParametricStair } from "./stairGeometry.js";
 
 const TOOL_HINTS = {
   select:
@@ -29,7 +30,7 @@ const TOOL_HINTS = {
   column:
     "Mode: <strong>Add Pillar [P]</strong> — Klik pada denah untuk menempatkan Kolom Struktur H-Beam atau Beton.",
   stair:
-    "Mode: <strong>Add Stairs [S]</strong> — Klik pada denah untuk menempatkan Tangga Arsitektural.",
+    "Mode: <strong>Parametric Stairs [S]</strong> — Pilih Lurus/L/U, klik titik masuk bawah lalu titik keluar atas. Preview menampilkan flight, landing, tread, dan arah naik; parameter dapat diedit di inspector.",
   room: "Mode: <strong>Room Zone [Z]</strong> — Klik dua sudut berlawanan untuk membuat Zona Ruangan & Label 3D.",
   equipment:
     "Mode: <strong>Place CME Equipment [E]</strong> — Klik pada denah untuk memasang Rak Server 42U, UPS, Battery, Rectifier, Panel, atau PAC.",
@@ -513,6 +514,21 @@ class SitestryStudioApp {
         }
       });
     });
+    const bindStairDefault = (id, key, parser) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener("change", () => {
+        store.ui.stairDefaults[key] = parser(el.value);
+      });
+    };
+    bindStairDefault("selStairShapeDefault", "shape", (v) => v);
+    bindStairDefault("selStairTurnDefault", "turn", (v) => v);
+    bindStairDefault("inpStairWidthDefault", "width_m", (v) => (v === "" ? null : parseFloat(v)));
+    bindStairDefault("inpStairHeightDefault", "height_m", (v) => (v === "" ? null : parseFloat(v)));
+    bindStairDefault("inpStairStepsDefault", "steps", (v) => (v === "" ? null : parseInt(v, 10)));
+    bindStairDefault("inpStairLandingDefault", "landing_depth_m", (v) => (v === "" ? null : parseFloat(v)));
+    bindStairDefault("inpStairRunDefault", "flight_run_m", (v) => (v === "" ? null : parseFloat(v)));
+
     const chkEndpoint = document.getElementById("chkEndpointSnap");
     if (chkEndpoint) chkEndpoint.checked = Boolean(store.ui.endpointSnap);
     const chkOrtho = document.getElementById("chkOrthoSnap");
@@ -537,6 +553,7 @@ class SitestryStudioApp {
   }
 
   syncActiveToolUI(tool) {
+    document.body.dataset.tool = tool;
     document.querySelectorAll(".tool-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.tool === tool);
     });
@@ -1160,9 +1177,177 @@ class SitestryStudioApp {
         store.updateSelectedProperty({ depth_m: parseFloat(e.target.value) || 0.55 });
       document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
     } else if (sel.kind === "stair") {
+      const scale = store.project.metadata.scale_px_per_meter || 30.68;
+      if (isParametricStair(obj)) {
+        const headingDeg = ((((Number(obj.heading_rad) || 0) * 180) / Math.PI) % 360 + 360) % 360;
+        container.innerHTML = `
+          <div class="insp-card">
+            <div class="insp-title">Tangga Parametrik (v1) — ${obj.shape.toUpperCase()}</div>
+            <div class="insp-field">
+              <label for="inpStairName">Nama Tangga</label>
+              <input type="text" id="inpStairName" value="${obj.name || "Staircase"}" />
+            </div>
+            <div class="insp-row-2">
+              <div class="insp-field">
+                <label for="selStairShape">Bentuk</label>
+                <select id="selStairShape">
+                  <option value="straight" ${obj.shape === "straight" ? "selected" : ""}>Lurus</option>
+                  <option value="L" ${obj.shape === "L" ? "selected" : ""}>L</option>
+                  <option value="U" ${obj.shape === "U" ? "selected" : ""}>U</option>
+                </select>
+              </div>
+              <div class="insp-field">
+                <label for="selStairTurn">Arah Putar</label>
+                <select id="selStairTurn">
+                  <option value="right" ${obj.turn === "right" ? "selected" : ""}>Kanan</option>
+                  <option value="left" ${obj.turn === "left" ? "selected" : ""}>Kiri</option>
+                </select>
+              </div>
+            </div>
+            <div class="insp-row-2">
+              <div class="insp-field">
+                <label for="inpStairW">Lebar Flight (m)</label>
+                <input type="number" id="inpStairW" step="0.05" value="${obj.width_m}" />
+              </div>
+              <div class="insp-field">
+                <label for="inpStairH">Total Rise (m)</label>
+                <input type="number" id="inpStairH" step="0.1" value="${obj.height_m}" />
+              </div>
+            </div>
+            <div class="insp-row-2">
+              <div class="insp-field">
+                <label for="inpStairSteps">Jumlah Riser (4–128)</label>
+                <input type="number" id="inpStairSteps" step="1" min="4" max="128" value="${obj.steps}" />
+              </div>
+              <div class="insp-field">
+                <label for="inpStairHeading">Heading (derajat)</label>
+                <input type="number" id="inpStairHeading" step="5" value="${headingDeg.toFixed(1)}" />
+              </div>
+            </div>
+            <div class="insp-row-2">
+              <div class="insp-field">
+                <label for="inpStairLanding">Landing Depth (m)</label>
+                <input type="number" id="inpStairLanding" step="0.05" value="${obj.landing_depth_m}" />
+              </div>
+              <div class="insp-field">
+                <label for="inpStairRun">U Flight Run (m)</label>
+                <input type="number" id="inpStairRun" step="0.05" value="${obj.flight_run_m ?? ""}" placeholder="auto" />
+              </div>
+            </div>
+            <div class="insp-row-2">
+              <div class="insp-field">
+                <label for="inpStairStartX">Lower X (m)</label>
+                <input type="number" id="inpStairStartX" step="0.01" value="${(obj.start_px.x_px / scale).toFixed(3)}" />
+              </div>
+              <div class="insp-field">
+                <label for="inpStairStartZ">Lower Z (m)</label>
+                <input type="number" id="inpStairStartZ" step="0.01" value="${(obj.start_px.y_px / scale).toFixed(3)}" />
+              </div>
+            </div>
+            <div class="insp-row-2">
+              <div class="insp-field">
+                <label for="inpStairEndX">Upper X (m)</label>
+                <input type="number" id="inpStairEndX" step="0.01" value="${(obj.end_px.x_px / scale).toFixed(3)}" />
+              </div>
+              <div class="insp-field">
+                <label for="inpStairEndZ">Upper Z (m)</label>
+                <input type="number" id="inpStairEndZ" step="0.01" value="${(obj.end_px.y_px / scale).toFixed(3)}" />
+              </div>
+            </div>
+            <p class="insp-helper">Endpoint adalah entrance/exit rute berjalan, bukan sudut bbox. U memakai flight run eksplisit.</p>
+            <div id="stairParamError" class="insp-error hidden"></div>
+            <button id="btnDelObj" class="insp-action-btn danger">Hapus Tangga</button>
+          </div>
+        `;
+        const errEl = () => document.getElementById("stairParamError");
+        const showStairError = (message) => {
+          const el = errEl();
+          if (!el) return;
+          el.textContent = message;
+          el.classList.remove("hidden");
+        };
+        const applyStairPatch = (patch) => {
+          const result = store.updateParametricStair(obj.id, patch);
+          if (!result.ok) {
+            showStairError(result.error?.message || "Parameter tangga tidak valid.");
+            return false;
+          }
+          return true;
+        };
+        const numValue = (id) => {
+          const el = document.getElementById(id);
+          const value = parseFloat(el.value);
+          if (!Number.isFinite(value)) {
+            showStairError(`Field ${id} harus berupa angka finite.`);
+            return null;
+          }
+          return value;
+        };
+
+        document.getElementById("inpStairName").onchange = (e) => applyStairPatch({ name: e.target.value });
+        document.getElementById("selStairShape").onchange = (e) => {
+          const shape = e.target.value;
+          const built = store.buildStairParameters({ ...obj, shape, heading_rad: undefined });
+          if (applyStairPatch({ shape, heading_rad: built.heading_rad, flight_run_m: built.flight_run_m })) {
+            this.renderInspector();
+          }
+        };
+        document.getElementById("selStairTurn").onchange = (e) => {
+          const turn = e.target.value;
+          const built = store.buildStairParameters({ ...obj, turn, heading_rad: undefined });
+          if (applyStairPatch({ turn, heading_rad: built.heading_rad, flight_run_m: built.flight_run_m })) {
+            this.renderInspector();
+          }
+        };
+        document.getElementById("inpStairW").onchange = (e) => {
+          const value = numValue("inpStairW");
+          if (value !== null) applyStairPatch({ width_m: value });
+        };
+        document.getElementById("inpStairH").onchange = (e) => {
+          const value = numValue("inpStairH");
+          if (value !== null) applyStairPatch({ height_m: value });
+        };
+        document.getElementById("inpStairSteps").onchange = (e) => {
+          const value = parseInt(e.target.value, 10);
+          if (!Number.isInteger(value)) {
+            showStairError("Jumlah riser harus bilangan bulat 4..128.");
+            return;
+          }
+          applyStairPatch({ steps: value });
+        };
+        document.getElementById("inpStairHeading").onchange = (e) => {
+          const value = numValue("inpStairHeading");
+          if (value !== null) applyStairPatch({ heading_rad: (value * Math.PI) / 180 });
+        };
+        document.getElementById("inpStairLanding").onchange = (e) => {
+          const value = numValue("inpStairLanding");
+          if (value !== null) applyStairPatch({ landing_depth_m: value });
+        };
+        document.getElementById("inpStairRun").onchange = (e) => {
+          if (e.target.value === "") {
+            applyStairPatch({ flight_run_m: null });
+            return;
+          }
+          const value = numValue("inpStairRun");
+          if (value !== null) applyStairPatch({ flight_run_m: value });
+        };
+        const applyEndpoint = (which) => {
+          const xm = numValue(which === "start_px" ? "inpStairStartX" : "inpStairEndX");
+          const zm = numValue(which === "start_px" ? "inpStairStartZ" : "inpStairEndZ");
+          if (xm === null || zm === null) return;
+          applyStairPatch({ [which]: { x_px: xm * scale, y_px: zm * scale } });
+        };
+        document.getElementById("inpStairStartX").onchange = () => applyEndpoint("start_px");
+        document.getElementById("inpStairStartZ").onchange = () => applyEndpoint("start_px");
+        document.getElementById("inpStairEndX").onchange = () => applyEndpoint("end_px");
+        document.getElementById("inpStairEndZ").onchange = () => applyEndpoint("end_px");
+        document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
+        return;
+      }
+
       container.innerHTML = `
         <div class="insp-card">
-          <div class="insp-title">Properti Tangga (Staircase)</div>
+          <div class="insp-title">Properti Tangga Legacy (Staircase)</div>
           <div class="insp-field">
             <label>Nama Tangga</label>
             <input type="text" id="inpStairName" value="${obj.name || "Staircase"}" />
@@ -1190,7 +1375,19 @@ class SitestryStudioApp {
               <input type="number" id="inpStairD" step="0.1" value="${obj.depth_m || 3.2}" />
             </div>
           </div>
-          <button id="btnDelObj" class="insp-action-btn danger">Hapus Tangga</button>
+          <div class="insp-btn-group">
+            <button id="btnPreviewConvertStair" class="insp-action-btn">Konversi ke Parametrik (Preview)</button>
+            <button id="btnDelObj" class="insp-action-btn danger">Hapus Tangga</button>
+          </div>
+          <div id="stairConvertPanel" class="stair-convert-panel hidden">
+            <strong>Konfirmasi Konversi Eksplisit</strong>
+            <span id="stairConvertSummary"></span>
+            <p class="insp-helper">Bbox legacy tidak ditafsirkan. Nilai diambil dari center, arah, lebar, dan depth yang dinyatakan.</p>
+            <div class="insp-btn-group">
+              <button id="btnConfirmConvertStair" class="insp-action-btn">Konfirmasi Konversi</button>
+              <button id="btnCancelConvertStair" class="insp-action-btn">Batal</button>
+            </div>
+          </div>
         </div>
       `;
       document.getElementById("inpStairName").onchange = (e) =>
@@ -1203,6 +1400,35 @@ class SitestryStudioApp {
         store.updateSelectedProperty({ width_m: parseFloat(e.target.value) || 2.4, bbox_px: null });
       document.getElementById("inpStairD").onchange = (e) =>
         store.updateSelectedProperty({ depth_m: parseFloat(e.target.value) || 3.2, bbox_px: null });
+      let suggestion = null;
+      document.getElementById("btnPreviewConvertStair").onclick = () => {
+        suggestion = store.suggestLegacyStairConversion(obj.id);
+        if (!suggestion) {
+          this.showToast("Stair ini tidak dapat dikonversi.");
+          return;
+        }
+        const panel = document.getElementById("stairConvertPanel");
+        document.getElementById("stairConvertSummary").textContent =
+          `Lurus · arah ${suggestion.assumed_direction} · ${suggestion.width_m.toFixed(2)} m × ` +
+          `${suggestion.depth_m ?? ""} · ${suggestion.steps} riser · lower ` +
+          `(${(suggestion.start_px.x_px / scale).toFixed(2)}, ${(suggestion.start_px.y_px / scale).toFixed(2)}) m → upper ` +
+          `(${(suggestion.end_px.x_px / scale).toFixed(2)}, ${(suggestion.end_px.y_px / scale).toFixed(2)}) m`;
+        panel.classList.remove("hidden");
+      };
+      document.getElementById("btnCancelConvertStair").onclick = () => {
+        document.getElementById("stairConvertPanel").classList.add("hidden");
+        suggestion = null;
+      };
+      document.getElementById("btnConfirmConvertStair").onclick = () => {
+        if (!suggestion) return;
+        const result = store.convertLegacyStair(obj.id, suggestion);
+        if (!result.ok) {
+          this.showToast(result.error?.message || "Konversi gagal.");
+          return;
+        }
+        this.showToast("Tangga dikonversi ke template parametrik; undo mengembalikan objek legacy.");
+        this.renderInspector();
+      };
       document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
     } else if (sel.kind === "room") {
       const presetOpts = TELCO_ROOM_PRESETS.map(
