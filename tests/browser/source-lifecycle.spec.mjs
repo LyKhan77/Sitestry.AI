@@ -98,6 +98,60 @@ test.describe("source lifecycle guards", () => {
     expect(["ready", "unavailable", "error", "loading"]).toContain(state.status);
   });
 
+  test("same-source ROI and guided toggles keep geometry undo across re-extraction", async ({ page }) => {
+    await gotoApp(page);
+    await loadStage(page, 3);
+    const edited = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const node = store.project.nodes[0];
+      const movedX = node.x_px + 12;
+      const movedY = node.y_px + 8;
+      const token = store.beginTransaction("review-regression");
+      store.moveNode(node.id, movedX, movedY, false);
+      store.commitTransaction(token);
+      return { id: node.id, x: movedX, y: movedY, undo: store.undoStack.length };
+    });
+
+    await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const roi = store.project.metadata.roi_px;
+      store.setRoi({
+        x: roi.x,
+        y: roi.y,
+        width: Math.max(200, roi.width - 80),
+        height: Math.max(200, roi.height - 40),
+      });
+      document.getElementById("btnWallModeGuided").click();
+      document.querySelector('[data-wall-mode="manual"]').click();
+    });
+
+    await page.evaluate(() => window.sitestryApp.runExtractionPipeline());
+    await page.waitForFunction(
+      () => {
+        const { store } = window.sitestryApp.canvas2d;
+        return store.project.walls.length > 0;
+      },
+      null,
+      { timeout: 60000 }
+    );
+
+    const afterExtract = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      return { undo: store.undoStack.length, mode: store.ui.wallMode };
+    });
+    expect(afterExtract.mode).toBe("manual");
+    expect(afterExtract.undo).toBe(edited.undo + 1);
+    const undone = await page.evaluate(async (target) => {
+      const { store } = await import("/js/store.js");
+      const ok = store.undo();
+      const node = store.getNodeById(target.id);
+      return { ok, x: node?.x_px, y: node?.y_px, undo: store.undoStack.length };
+    }, edited);
+    expect(undone.ok).toBe(true);
+    expect(undone.x).toBeCloseTo(edited.x, 4);
+    expect(undone.y).toBeCloseTo(edited.y, 4);
+  });
+
   test("scale change during extraction is not reverted by the response", async ({ page }) => {
     await gotoApp(page);
     let delayOnce = true;
