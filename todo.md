@@ -37,7 +37,7 @@
 
 Spec: `docs/superpowers/specs/2026-11-11-dock-wizard-ui-design.md`. Plan: `docs/superpowers/plans/2026-11-11-dock-wizard-ui.md` (both uncommitted).
 
-- [ ] Task 1: Flag, compact header, bottom stage timeline
+- [x] Task 1: Flag, compact header, bottom stage timeline (commit 5d58645; v4-shell + workspace specs 12/12)
 - [ ] Task 2: Stage 3 dock, floating property panel, view pills
 - [ ] Task 3: Stage 4-5 dock, single camera set, Export menu, BoQ panel
 - [ ] Task 4: Command palette (`Ctrl/Cmd+K`)
