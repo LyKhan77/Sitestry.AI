@@ -98,6 +98,34 @@ test.describe("source lifecycle guards", () => {
     expect(["ready", "unavailable", "error", "loading"]).toContain(state.status);
   });
 
+  test("scale change during extraction is not reverted by the response", async ({ page }) => {
+    await gotoApp(page);
+    let delayOnce = true;
+    await page.route("**/api/extract-layout", async (route) => {
+      if (delayOnce) {
+        delayOnce = false;
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+      }
+      await route.continue();
+    });
+    await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const app = window.sitestryApp;
+      store.setScale(24.5);
+      app.runExtractionPipeline();
+    });
+    await page.waitForTimeout(1800);
+    const state = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      return {
+        scale: store.project.metadata.scale_px_per_meter,
+        status: store.project.walls.length > 0,
+      };
+    });
+    expect(state.scale).toBe(24.5);
+    expect(state.status).toBe(true);
+  });
+
   test("upload then sample switch keeps one source of truth", async ({ page }) => {
     await gotoApp(page);
     await page.locator("#fileUploadInput").setInputFiles("../fixtures/upload-smoke.png");

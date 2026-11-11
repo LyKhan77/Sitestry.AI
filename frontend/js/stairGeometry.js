@@ -287,7 +287,9 @@ export function resolveStairGeometry(stair, scalePxPerMeter) {
     return finish(stair, scale, [flight], [], [start, end], flight.guardrail_edges);
   }
 
-  let heading = Number(stair.heading_rad);
+  const rawHeading = stair.heading_rad;
+  let heading =
+    rawHeading === null || rawHeading === undefined || rawHeading === "" ? NaN : Number(rawHeading);
   if (!Number.isFinite(heading)) {
     heading = computeDefaultHeading(start, end, shape, turn);
   }
@@ -424,8 +426,8 @@ export function resolveStairGeometry(stair, scalePxPerMeter) {
     start,
     u,
     v,
-    run1 - landing / 2,
-    run1 + landing / 2,
+    run1,
+    run1 + landing,
     -width / 2,
     across + width / 2,
     scale
@@ -443,14 +445,14 @@ export function resolveStairGeometry(stair, scalePxPerMeter) {
     ...flight1.guardrail_edges,
     ...flight2.guardrail_edges,
     {
-      start_px: at(start, u, v, run1 - landing / 2, -width / 2, scale),
-      end_px: at(start, u, v, run1 + landing / 2, -width / 2, scale),
+      start_px: at(start, u, v, run1, -width / 2, scale),
+      end_px: at(start, u, v, run1 + landing, -width / 2, scale),
       start_elevation_m: n1 * riserHeight,
       end_elevation_m: n1 * riserHeight,
     },
     {
-      start_px: at(start, u, v, run1 - landing / 2, across + width / 2, scale),
-      end_px: at(start, u, v, run1 + landing / 2, across + width / 2, scale),
+      start_px: at(start, u, v, run1, across + width / 2, scale),
+      end_px: at(start, u, v, run1 + landing, across + width / 2, scale),
       start_elevation_m: n1 * riserHeight,
       end_elevation_m: n1 * riserHeight,
     },
@@ -458,6 +460,7 @@ export function resolveStairGeometry(stair, scalePxPerMeter) {
   const route = [
     start,
     at(start, u, v, run1, 0, scale),
+    at(start, u, v, run1 + landing / 2, across / 2, scale),
     at(start, u, v, run1, across, scale),
     end,
   ];

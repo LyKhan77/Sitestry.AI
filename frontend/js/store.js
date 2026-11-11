@@ -100,6 +100,7 @@ export class SitestryStore extends EventTarget {
     this.guideCandidates = [];
     this.guideStatus = "idle";
     this.guideError = null;
+    this._loadedSourceRevision = 0;
     this.currentSource = {
       revision: 0,
       kind: "sample",
@@ -149,7 +150,11 @@ export class SitestryStore extends EventTarget {
     this.project = JSON.parse(token.snapshot);
     this.ui.selected = token.selection;
     this.activeTransaction = null;
-    this.emit("geometryPreviewChanged", { source: "transaction-cancel", token: token.id });
+    this.revision += 1;
+    this.emit("geometryChanged", {
+      source: "transaction-cancel",
+      revision: this.revision,
+    });
     this.emit("selectionChanged", { selected: this.ui.selected });
     return true;
   }
@@ -171,7 +176,11 @@ export class SitestryStore extends EventTarget {
     // Every committed geometry change carries a monotonic revision so the 3D
     // scheduler can never treat a different project as already built.
     let payload = detail;
-    if (eventName === "geometryChanged" && detail.revision === undefined) {
+    if (
+      eventName === "geometryChanged" &&
+      detail.revision === undefined &&
+      !this.activeTransaction
+    ) {
       this.revision += 1;
       payload = { ...detail, revision: this.revision };
     }
@@ -302,6 +311,7 @@ export class SitestryStore extends EventTarget {
     this.guideCandidates = [];
     this.guideStatus = "idle";
     this.guideError = null;
+    this._loadedSourceRevision = 0;
     this.emit("guidesChanged", { status: "idle", error: null, candidates: [] });
   }
 
@@ -319,7 +329,12 @@ export class SitestryStore extends EventTarget {
   }
 
   loadProjectData(data, preserveBlueprint = true) {
-    this.pushHistorySnapshot();
+    if (this._loadedSourceRevision !== this.currentSource.revision) {
+      this.resetHistory();
+      this._loadedSourceRevision = this.currentSource.revision;
+    } else {
+      this.pushHistorySnapshot();
+    }
     const oldMeta = this.project.metadata;
     this.project = {
       project_id: data.project_id || "sitestry_project",
@@ -720,15 +735,20 @@ export class SitestryStore extends EventTarget {
     const height = Number(parameters.height_m ?? defaults.height_m ?? meta.default_wall_height_m ?? 3.8);
     const rawSteps = parameters.steps ?? defaults.steps;
     const stepsInput = rawSteps === null || rawSteps === undefined || rawSteps === "" ? NaN : Number(rawSteps);
-    const steps = Number.isInteger(stepsInput)
-      ? Math.max(STAIR_MIN_RISERS, Math.min(STAIR_MAX_RISERS, stepsInput))
+    const steps = Number.isInteger(stepsInput) || Number.isFinite(stepsInput)
+      ? stepsInput
       : Math.max(STAIR_MIN_RISERS, Math.min(STAIR_MAX_RISERS, Math.round(height / STAIR_DEFAULT_RISER_M)));
     const width = Number(parameters.width_m ?? defaults.width_m ?? 1.2);
-    const landing = Math.max(
-      width,
-      Number(parameters.landing_depth_m ?? defaults.landing_depth_m ?? STAIR_DEFAULT_LANDING_M)
-    );
-    const explicitHeading = Number(parameters.heading_rad ?? defaults.heading_rad);
+    const landing =
+      parameters.landing_depth_m === undefined
+        ? Math.max(
+            width,
+            Number(defaults.landing_depth_m ?? STAIR_DEFAULT_LANDING_M)
+          )
+        : Number(parameters.landing_depth_m);
+    const rawHeading = parameters.heading_rad ?? defaults.heading_rad;
+    const explicitHeading =
+      rawHeading === null || rawHeading === undefined || rawHeading === "" ? NaN : Number(rawHeading);
     const heading = Number.isFinite(explicitHeading)
       ? explicitHeading
       : computeDefaultHeading(start, end, shape, turn);

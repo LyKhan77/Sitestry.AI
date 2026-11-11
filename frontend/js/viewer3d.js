@@ -888,7 +888,7 @@ export class Viewer3DEngine {
 
   buildStairs3D(scale, sel) {
     for (const st of this.store.project.stairs) {
-      if (isParametricStair(st)) {
+      if (st.template_version !== undefined) {
         this.buildParametricStair3D(st, scale, sel);
         continue;
       }

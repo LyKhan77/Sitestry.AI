@@ -17,6 +17,7 @@ from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from cad_parser import extract_from_pdf_vector
@@ -385,7 +386,8 @@ async def blueprint_guides(
             raise HTTPException(status_code=422, detail="roi_json must be an object.")
 
     try:
-        return extract_blueprint_guides_cached(
+        return await run_in_threadpool(
+            extract_blueprint_guides_cached,
             source_bytes=source_bytes,
             source_kind=source_kind,
             page_number=p_num,

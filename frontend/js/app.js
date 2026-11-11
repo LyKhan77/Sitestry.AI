@@ -59,6 +59,7 @@ class SitestryStudioApp {
     this.viewer3d = new Viewer3DEngine("threeContainer", "labels3DOverlay", store);
     this.lastRulerPx = 184.1;
     this.sourceRequestSeq = 0;
+    this.extractionSeq = 0;
     this.guideSession = new BlueprintGuideSession(store, (args) => api.fetchBlueprintGuides(args));
 
     this.initStageNavigation();
@@ -336,14 +337,14 @@ class SitestryStudioApp {
     });
 
     document.getElementById("btnAutoScale")?.addEventListener("click", async () => {
-      const sourceRevision = store.currentSource.revision;
+      const contextKey = this.extractionContextKey();
       const res = await api.detectGridScale({
         file: store.uploadedFile,
         sampleId: store.activeSampleId,
         pageNumber: store.project.metadata.page_number,
         roiPx: store.project.metadata.roi_px,
       });
-      if (sourceRevision !== store.currentSource.revision) return;
+      if (contextKey !== this.extractionContextKey()) return;
       store.setScale(res.scale_px_per_meter);
       this.showToast(
         `Skala terkalibrasi otomatis: ${res.scale_px_per_meter} px/m (${res.method})`
@@ -406,8 +407,19 @@ class SitestryStudioApp {
     return this.runExtractionPipeline();
   }
 
+  extractionContextKey() {
+    const meta = store.project.metadata;
+    return JSON.stringify({
+      revision: store.currentSource.revision,
+      pageNumber: meta.page_number,
+      roiPx: meta.roi_px,
+      scalePxPerMeter: meta.scale_px_per_meter,
+    });
+  }
+
   async runExtractionPipeline() {
-    const sourceRevision = store.currentSource.revision;
+    const contextKey = this.extractionContextKey();
+    const requestId = ++this.extractionSeq;
     const layout = await api.extractLayout({
       file: store.uploadedFile,
       sampleId: store.activeSampleId,
@@ -415,10 +427,20 @@ class SitestryStudioApp {
       scalePxPerMeter: store.project.metadata.scale_px_per_meter,
       roiPx: store.project.metadata.roi_px,
     });
-    if (sourceRevision !== store.currentSource.revision) {
+    if (requestId !== this.extractionSeq || contextKey !== this.extractionContextKey()) {
       return false;
     }
-    store.loadProjectData(layout, true);
+    const currentMeta = store.project.metadata;
+    const safeLayout = {
+      ...layout,
+      metadata: {
+        ...(layout.metadata || {}),
+        page_number: currentMeta.page_number,
+        roi_px: currentMeta.roi_px,
+        scale_px_per_meter: currentMeta.scale_px_per_meter,
+      },
+    };
+    store.loadProjectData(safeLayout, true);
     const doors = layout.openings.filter((o) => o.type !== "window").length;
     const wins = layout.openings.filter((o) => o.type === "window").length;
     this.showToast(

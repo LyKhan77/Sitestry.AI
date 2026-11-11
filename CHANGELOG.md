@@ -23,6 +23,13 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
   - Preview edits do not rebuild 3D; commits coalesce; Split/3D entry and export flush the latest revision. Export is refused during an active transaction. Rebuilds dispose generated geometries, materials, and cloned textures.
 - **Focused workspace (`index.html`, `style.css`, `app.js`)**:
   - Annotation canvas is at least 75% of the workspace at 1280/1440 px when nothing is selected. Empty selection hides the inspector; layers collapse on demand; stages expose only relevant tools; narrower layouts use dismissible overlays.
+- **Review hardening (post-review pass)**:
+  - Tentative edits no longer advance the committed 3D revision; cancelling emits a corrective revision so a prior scheduled rebuild cannot leave GLB stale. Export still refuses active transactions.
+  - L/U default headings are derived from endpoints when `heading_rad` is absent/null; horizontal and rotated L placements now work without explicit heading input.
+  - Extraction loads no longer push an undo snapshot from the previous source; scale/ROI changes during an in-flight extraction invalidate the response, and duplicate extraction requests are sequenced.
+  - Blueprint image loads are revision-guarded. Unknown stair template versions render an explicit error instead of falling back to legacy bbox rendering.
+  - `/api/blueprint-guides` validates ROI before cache lookup, pre-checks raster header dimensions before full decode, and runs detection in a threadpool.
+  - U landings sit beyond the turn edge, eliminating landing/flight overlap and coplanar z-fighting.
 - **Verification harness (`tests/`)**: Node `node:test` unit suites, Playwright browser regressions for vertex/wall/stair/source lifecycle/workspace/export, real-sample acceptance, and a locked extraction baseline for all three samples.
 
 ### Unchanged / Boundaries

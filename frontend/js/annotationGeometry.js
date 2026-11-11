@@ -204,7 +204,7 @@ export function computeWallPreview({
 
   const tolerancePx = assist.endpointSnap
     ? WALL_SNAP_CSS_PX / scale
-    : 0.75;
+    : 0.75 / scale;
   const startConnection = resolveConnection(workingStart, project, tolerancePx);
   const endConnection = resolveConnection(workingEnd, project, tolerancePx);
 

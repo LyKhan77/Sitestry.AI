@@ -11,7 +11,7 @@ raster pixels).
 from __future__ import annotations
 
 import hashlib
-import json
+import io
 import math
 from collections import OrderedDict
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -19,6 +19,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import cv2
 import fitz
 import numpy as np
+from PIL import Image
 
 DETECTOR_VERSION = "blueprint-guides-v1"
 MAX_FILE_BYTES = 25 * 1024 * 1024
@@ -304,7 +305,23 @@ def _vector_segments(pdf_bytes: bytes, page_number: int) -> Tuple[int, int, List
     return width, height, segments, strips
 
 
+def _precheck_raster_dimensions(source_bytes: bytes) -> None:
+    """Read compressed header dimensions before allocating the decoded bitmap."""
+    try:
+        with Image.open(io.BytesIO(source_bytes)) as probe:
+            width, height = probe.size
+    except Exception:
+        return  # cv2.imdecode below produces the structured 415.
+    if width * height > MAX_RENDER_PIXELS:
+        raise GuideError(
+            413,
+            "image_too_large",
+            f"Image has {width * height} pixels; limit is {MAX_RENDER_PIXELS}.",
+        )
+
+
 def _decode_raster(source_bytes: bytes) -> np.ndarray:
+    _precheck_raster_dimensions(source_bytes)
     arr = np.frombuffer(source_bytes, np.uint8)
     image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if image is None:
@@ -481,15 +498,47 @@ def extract_blueprint_guides(
 _CACHE: "OrderedDict[Tuple[Any, ...], Dict[str, Any]]" = OrderedDict()
 
 
-def cache_key(source_digest: str, page_number: int, roi: Dict[str, float], scale: Optional[float]) -> Tuple[Any, ...]:
+def _prevalidate_roi(roi_px: Optional[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+    if roi_px is None:
+        return None
+    if not isinstance(roi_px, dict):
+        raise GuideError(422, "invalid_roi", "roi_px must be an object.")
+    for key in ("x", "y", "width", "height"):
+        if key not in roi_px or not _finite(roi_px[key]):
+            raise GuideError(422, "invalid_roi", f"roi_px.{key} must be a finite number.")
+    width = float(roi_px["width"])
+    height = float(roi_px["height"])
+    if width <= 1 or height <= 1:
+        raise GuideError(422, "invalid_roi", "roi_px width and height must be greater than 1 px.")
+    return {
+        "x": float(roi_px["x"]),
+        "y": float(roi_px["y"]),
+        "width": width,
+        "height": height,
+    }
+
+
+def cache_key(
+    source_digest: str,
+    page_number: int,
+    roi: Optional[Dict[str, float]],
+    scale: Optional[float],
+) -> Tuple[Any, ...]:
+    roi_key = (
+        None
+        if roi is None
+        else (
+            round(float(roi["x"]), 2),
+            round(float(roi["y"]), 2),
+            round(float(roi["width"]), 2),
+            round(float(roi["height"]), 2),
+        )
+    )
     return (
         DETECTOR_VERSION,
         source_digest,
         int(page_number),
-        round(float(roi["x"]), 2),
-        round(float(roi["y"]), 2),
-        round(float(roi["width"]), 2),
-        round(float(roi["height"]), 2),
+        roi_key,
         None if scale is None else round(float(scale), 4),
         PDF_RENDER_FACTOR,
     )
@@ -503,8 +552,8 @@ def extract_blueprint_guides_cached(
     scale_px_per_meter: Optional[float] = None,
 ) -> Dict[str, Any]:
     digest = hashlib.sha256(bytes(source_bytes)).hexdigest()
-    provisional_roi = roi_px or {"x": 0, "y": 0, "width": 0, "height": 0}
-    key = cache_key(digest, page_number, provisional_roi, scale_px_per_meter)
+    prevalidated_roi = _prevalidate_roi(roi_px)
+    key = cache_key(digest, page_number, prevalidated_roi, scale_px_per_meter)
     if key in _CACHE:
         _CACHE.move_to_end(key)
         return _CACHE[key]

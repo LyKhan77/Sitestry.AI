@@ -5,6 +5,7 @@ import {
   isParametricStair,
   computeDefaultHeading,
 } from "../../frontend/js/stairGeometry.js";
+import { computeWallPreview } from "../../frontend/js/annotationGeometry.js";
 
 function stair(overrides = {}) {
   return {
@@ -273,4 +274,64 @@ test("footprint areas are finite positive for L and U", () => {
       assert.ok(polygonArea(poly) > 0);
     }
   }
+});
+
+test("U landing does not overlap either flight at default depth", () => {
+  const result = resolveStairGeometry(
+    stair({
+      shape: "U",
+      start_px: { x_px: 0, y_px: 0 },
+      end_px: { x_px: 0, y_px: 24 },
+      heading_rad: 0,
+      turn: "right",
+      flight_run_m: 3,
+      steps: 12,
+      height_m: 3.6,
+    }),
+    SCALE
+  );
+  assert.equal(result.ok, true);
+  for (const flight of result.flights) {
+    assert.equal(polygonsOverlapArea(result.landings[0].footprint_px, flight.footprint_px), 0);
+  }
+});
+
+test("default_heading_is_derived_when_heading_is_omitted", () => {
+  for (const [shape, end, turn] of [
+    ["L", { x_px: 50, y_px: 50 }, "right"],
+    ["L", { x_px: 124, y_px: 100 }, "right"],
+    ["U", { x_px: 0, y_px: 24 }, "right"],
+    ["U", { x_px: 0, y_px: -24 }, "left"],
+  ]) {
+    const input = stair({
+      shape,
+      start_px: { x_px: 100, y_px: 100 },
+      end_px: { x_px: 100 + end.x_px, y_px: 100 + end.y_px },
+      turn,
+      steps: 12,
+      flight_run_m: shape === "U" ? 3 : null,
+    });
+    delete input.heading_rad;
+    const result = resolveStairGeometry(input, SCALE);
+    assert.equal(result.ok, true, `${shape}-${turn}-${JSON.stringify(end)}`);
+  }
+});
+
+test("assistance_off_does_not_auto_merge_sub_pixel_endpoints", () => {
+  const project = {
+    metadata: { scale_px_per_meter: 10 },
+    nodes: [{ id: "n1", x_px: 0, y_px: 0 }],
+    walls: [],
+  };
+  const preview = computeWallPreview({
+    startPx: { x_px: 0.5, y_px: 0 },
+    endPx: { x_px: 40, y_px: 30 },
+    viewScale: 6,
+    mode: "manual",
+    assistance: { endpointSnap: false, ortho: false },
+    guides: [],
+    project,
+  });
+  assert.equal(preview.connections.start.type, "free");
+  assert.equal(preview.startPx.x_px, 0.5);
 });

@@ -150,6 +150,18 @@ class BlueprintGuideDetectorTest(unittest.TestCase):
                 bg.extract_blueprint_guides(pdf, "pdf_vector", 1, None, 10.0)
             self.assertEqual(ctx.exception.status_code, 422)
 
+    def test_missing_or_zero_roi_is_rejected_before_cache_lookup(self):
+        pdf = make_pdf([((50, 50), (250, 50), 1), ((50, 54), (250, 54), 1)])
+        bg.extract_blueprint_guides_cached(pdf, "pdf_vector", 1, None, 10.0)
+        for bad_roi in (
+            {"x": 1},
+            {"x": 0, "y": 0, "width": 0, "height": 0},
+            {"x": 0, "y": 0, "width": 100, "height": float("inf")},
+        ):
+            with self.assertRaises(bg.GuideError) as ctx:
+                bg.extract_blueprint_guides_cached(pdf, "pdf_vector", 1, bad_roi, 10.0)
+            self.assertEqual(ctx.exception.status_code, 422)
+
     def test_cache_key_changes_with_page_roi_and_scale(self):
         roi = {"x": 10, "y": 10, "width": 100, "height": 100}
         base = bg.cache_key("digest", 1, roi, 10.0)

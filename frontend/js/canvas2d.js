@@ -146,8 +146,10 @@ export class Canvas2DEngine {
   }
 
   loadBlueprintImage(dataUrl) {
+    const sourceRevision = this.store.currentSource.revision;
     const img = new Image();
     img.onload = () => {
+      if (sourceRevision !== this.store.currentSource.revision) return;
       this.imageObj = img;
       this.blueprintLayer.destroyChildren();
       this.blueprintImageNode = new Konva.Image({
@@ -1273,7 +1275,7 @@ export class Canvas2DEngine {
       // 2. Render Architectural Stepped Stairs
       for (const st of this.store.project.stairs) {
         const isSelected = sel?.kind === "stair" && sel?.id === st.id;
-        if (isParametricStair(st)) {
+        if (st.template_version !== undefined) {
           this.renderParametricStair2D(st, isSelected);
           continue;
         }

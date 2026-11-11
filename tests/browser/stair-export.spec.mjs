@@ -111,6 +111,42 @@ test.describe("3D and GLB stair synchronization", () => {
     expect(result.toasts).toMatch(/Selesaikan atau batalkan edit/);
   });
 
+  test("cancelled tentative delete exports the restored committed geometry", async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const app = window.sitestryApp;
+      const token = store.beginTransaction("tentative-delete");
+      store.selectObject("wall", store.project.walls[0].id);
+      store.deleteSelected();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      store.cancelTransaction(token);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const buffer = await app.viewer3d.exportGLB("cancel.glb", { download: false });
+      const view = new DataView(buffer);
+      let offset = 12;
+      let nodeCount = 0;
+      while (offset < buffer.byteLength) {
+        const length = view.getUint32(offset, true);
+        const type = view.getUint32(offset + 4, true);
+        if (type === 0x4e4f534a) {
+          const json = JSON.parse(new TextDecoder().decode(buffer.slice(offset + 8, offset + 8 + length)));
+          nodeCount = (json.nodes || []).length;
+          break;
+        }
+        offset += 8 + length;
+      }
+      return {
+        walls: store.project.walls.length,
+        nodeCount,
+        revision: store.revision,
+        built: app.viewer3d.sceneSync.lastBuiltRevision,
+      };
+    });
+    expect(result.walls).toBeGreaterThan(0);
+    expect(result.nodeCount).toBeGreaterThan(5);
+    expect(result.built).toBe(result.revision);
+  });
+
   test("legacy stairs still render and repeated rebuilds do not leak geometry", async ({ page }) => {
     const counts = await page.evaluate(async () => {
       const { store } = await import("/js/store.js");

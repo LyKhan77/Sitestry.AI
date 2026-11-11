@@ -176,3 +176,78 @@ test("history_is_capped_at_45_during_transactions", () => {
   }
   assert.equal(store.undoStack.length, 45);
 });
+
+test("tentative_edit_does_not_bump_revision_and_cancel_does", () => {
+  const store = fixture();
+  const baseline = store.revision;
+  const token = store.beginTransaction("tentative-delete");
+  store.deleteSelected(); // no selection: no-op
+  store.selectObject("wall", "w1");
+  store.deleteSelected();
+  assert.equal(store.revision, baseline);
+  assert.equal(store.project.walls.length, 1);
+  assert.equal(store.cancelTransaction(token), true);
+  assert.equal(store.project.walls.length, 2);
+  assert.equal(store.revision, baseline + 1);
+  assert.equal(store.undoStack.length, 0);
+});
+
+test("extraction_load_after_source_switch_cannot_undo_into_old_source", () => {
+  const store = fixture();
+  const oldWallCount = store.project.walls.length;
+  store.setSource({
+    kind: "sample",
+    sampleId: "ancol_p13",
+    metaOverrides: { page_number: 13, image_width_px: 1000, image_height_px: 800 },
+  });
+  const newProject = {
+    ...store.project,
+    metadata: { ...store.project.metadata, page_number: 13 },
+    nodes: [{ id: "new_n", x_px: 1, y_px: 2 }],
+    walls: [],
+    openings: [],
+  };
+  store.loadProjectData(newProject, true);
+  assert.equal(store.undoStack.length, 0);
+  assert.equal(store.undo(), false);
+  assert.equal(store.project.project_id, newProject.project_id);
+  assert.notEqual(store.project.walls.length, oldWallCount);
+});
+
+test("default_L_headings_work_for_horizontal_and_diagonal_endpoints", () => {
+  const store = fixture();
+  store.project.metadata.scale_px_per_meter = 10;
+  for (const end of [
+    { x_px: 50, y_px: 50 },
+    { x_px: 124, y_px: 100 },
+    { x_px: 24, y_px: 24 },
+  ]) {
+    const preview = store.previewParametricStair({
+      shape: "L",
+      start_px: { x_px: 100, y_px: 100 },
+      end_px: end,
+      steps: 9,
+    });
+    assert.equal(preview.ok, true, JSON.stringify(end));
+    assert.equal(preview.stair.shape, "L");
+  }
+});
+
+test("invalid_explicit_stair_steps_and_landing_are_not_silently_clamped", () => {
+  const store = fixture();
+  const invalidSteps = store.previewParametricStair({
+    shape: "straight",
+    start_px: { x_px: 0, y_px: 0 },
+    end_px: { x_px: 50, y_px: 0 },
+    steps: 9.5,
+  });
+  assert.equal(invalidSteps.ok, false);
+  const shallowLanding = store.previewParametricStair({
+    shape: "L",
+    start_px: { x_px: 0, y_px: 0 },
+    end_px: { x_px: 24, y_px: 24 },
+    landing_depth_m: 0.2,
+    steps: 9,
+  });
+  assert.equal(shallowLanding.ok, false);
+});
