@@ -105,6 +105,8 @@ export class SitestryAPI {
   }
 
   async extractLayout({ file = null, sampleId = null, pageNumber = 1, scalePxPerMeter = 30.68, roiPx = null }) {
+    // True when the server failed and the layout below is a client-generated stand-in, not a real extraction.
+    this.lastExtractionFallback = false;
     try {
       const fd = new FormData();
       if (file) fd.append("file", file);
@@ -121,7 +123,11 @@ export class SitestryAPI {
       return await res.json();
     } catch (err) {
       console.warn("[SitestryAPI] Using client-side fallback layout extractor:", err);
-      return this.generateFallbackLayout(sampleId, scalePxPerMeter, roiPx);
+      this.lastExtractionFallback = true;
+      const layout = this.generateFallbackLayout(sampleId, scalePxPerMeter, roiPx);
+      // Per-result marker (non-enumerable, so it never reaches project JSON): overlapping requests cannot mix flags.
+      Object.defineProperty(layout, "extractionFallback", { value: true });
+      return layout;
     }
   }
 
