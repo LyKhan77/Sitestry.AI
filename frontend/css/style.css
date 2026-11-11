@@ -97,7 +97,7 @@ body {
 
 .version-pill {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 50px;
@@ -186,7 +186,7 @@ body {
 }
 
 .step-desc {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-soft-gray);
 }
 
@@ -304,9 +304,9 @@ body[data-stage="5"] .studio-body {
 .stage-kicker {
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   color: var(--gold-star);
   margin-bottom: 4px;
 }
@@ -338,9 +338,9 @@ body[data-stage="5"] .studio-body {
 
 .card-header-label {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   color: var(--green-starbucks);
   text-transform: uppercase;
 }
@@ -451,7 +451,7 @@ body[data-stage="5"] .studio-body {
 .mono-label {
   display: block;
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--text-warm-muted);
 }
 
@@ -477,7 +477,7 @@ body[data-stage="5"] .studio-body {
   padding: 9px 10px;
   background: var(--bg-warm-cream);
   border-radius: 8px;
-  border-left: 3px solid var(--green-accent);
+  border: 1px solid var(--border-green-subtle);
 }
 
 .pipe-badge {
@@ -502,13 +502,13 @@ body[data-stage="5"] .studio-body {
 }
 
 .pipe-info span {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-warm-muted);
 }
 
 .pipe-stat {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--green-house);
   background: var(--bg-white);
@@ -554,7 +554,7 @@ body[data-stage="5"] .studio-body {
 
 .kbd {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   width: 21px;
   height: 21px;
@@ -729,13 +729,13 @@ body[data-stage="5"] .studio-body {
 }
 
 .eq-catalog-card strong {
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--green-house);
 }
 
 .eq-catalog-card span {
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--text-warm-muted);
 }
 
@@ -936,7 +936,7 @@ body[data-stage="5"] .studio-body {
   border: 1px solid var(--border-hairline);
   color: var(--green-house);
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   padding: 5px 11px;
   border-radius: 50px;
@@ -995,7 +995,7 @@ body[data-stage="5"] .studio-body {
   border: 1px solid rgba(212, 233, 226, 0.45);
   color: #ffffff;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 3px 8px;
   border-radius: 50px;
@@ -1021,7 +1021,7 @@ body[data-stage="5"] .studio-body {
   padding: 6px 12px;
   border-radius: 50px;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: #e2e8f0;
   z-index: 12;
   pointer-events: none;
@@ -1093,7 +1093,7 @@ body[data-stage="5"] .studio-body {
   color: var(--green-starbucks);
   padding: 3px 9px;
   border-radius: 50px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .inspector-body {
@@ -1116,7 +1116,7 @@ body[data-stage="5"] .studio-body {
 
 .insp-title {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--green-starbucks);
   text-transform: uppercase;
@@ -1131,7 +1131,7 @@ body[data-stage="5"] .studio-body {
 }
 
 .insp-field label {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-warm-muted);
 }
@@ -1185,7 +1185,7 @@ body[data-stage="5"] .studio-body {
 }
 
 .boq-lbl {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-warm-muted);
 }
 
@@ -1231,7 +1231,7 @@ body[data-stage="5"] .studio-body {
   transform: translateX(-50%);
   width: 320px;
   background: var(--bg-white);
-  border: 1.5px solid var(--green-accent);
+  border: 0;
   border-radius: 12px;
   padding: 14px;
   z-index: 30;
@@ -1252,7 +1252,7 @@ body[data-stage="5"] .studio-body {
 
 .popover-stat {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-warm-muted);
   margin-bottom: 8px;
 }
@@ -1286,7 +1286,7 @@ body[data-stage="5"] .studio-body {
   border: 1px solid rgba(0, 117, 74, 0.3);
   color: var(--green-starbucks);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 4px 8px;
   border-radius: 50px;
@@ -1359,7 +1359,7 @@ body[data-stage="5"] .studio-body {
 
 .modal-sub {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-warm-muted);
 }
 
@@ -1441,7 +1441,6 @@ body[data-stage="5"] .studio-body {
 .toast {
   background: var(--green-house);
   color: #ffffff;
-  border-left: 4px solid var(--gold-star);
   padding: 10px 16px;
   border-radius: 8px;
   font-size: 12.5px;
@@ -1590,7 +1589,7 @@ body[data-stage="3"] .stage-cta-footer {
 }
 
 .insp-helper {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-warm-muted);
 }
 
@@ -1742,11 +1741,11 @@ body[data-tool="stair"] #stairSettingsCard {
   .step-num {
     width: 20px;
     height: 20px;
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .step-title {
-    font-size: 10.5px;
+    font-size: 11px;
   }
 
   .workspace-bar {
@@ -1755,14 +1754,14 @@ body[data-tool="stair"] #stairSettingsCard {
   }
 
   .tool-hint-banner {
-    font-size: 11px;
+    font-size: 12px;
   }
 }
 
 @media (max-width: 1100px) {
   .telemetry-bar {
     padding: 0 8px;
-    font-size: 9.5px;
+    font-size: 11px;
     gap: 6px;
   }
 
@@ -1774,7 +1773,7 @@ body[data-tool="stair"] #stairSettingsCard {
 .tool-group-label {
   grid-column: 1 / -1;
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--text-warm-muted);
