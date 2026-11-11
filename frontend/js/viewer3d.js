@@ -14,6 +14,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
+import { SceneSync } from "./sceneSync.js";
+import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 
 export class Viewer3DEngine {
   constructor(containerId, labelsOverlayId, store) {
@@ -54,6 +56,13 @@ export class Viewer3DEngine {
     this.labelAnchors = [];
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
+
+    this.sceneSync = new SceneSync({
+      rebuild: () => this._rebuildScene(),
+      schedule: (fn) => setTimeout(fn, 0),
+      cancel: (handle) => clearTimeout(handle),
+    });
+    this.builtRevision = -1;
 
     this.initLightingAndEnvironment();
     this.initSharedMaterials();
@@ -145,11 +154,11 @@ export class Viewer3DEngine {
   }
 
   bindEvents() {
-    this.store.addEventListener("geometryChanged", () => {
-      this.rebuildScene();
+    this.store.addEventListener("geometryChanged", (event) => {
+      this.sceneSync.markDirty(event.detail?.revision ?? this.store.revision);
     });
     this.store.addEventListener("selectionChanged", () => {
-      this.rebuildScene();
+      this.updateSelectionHighlight();
     });
 
     this.renderer.domElement.addEventListener("pointerdown", (e) => {
@@ -213,10 +222,50 @@ export class Viewer3DEngine {
 
   // ==================== FULL 3D PROCEDURAL REBUILD ====================
   rebuildScene() {
+    // Explicit view/layer/stage rebuilds must reflect visibility changes even
+    // when the geometry revision is unchanged.
+    this.sceneSync.lastBuiltRevision = -1;
+    this.sceneSync.markDirty(this.store.revision);
+    return this.sceneSync.ensureCurrent();
+  }
+
+  ensureSceneCurrent() {
+    return this.sceneSync.ensureCurrent();
+  }
+
+  disposeGeneratedObjects() {
+    const geometries = new Set();
+    const materials = new Set();
+    const textures = new Set();
+    this.rootGroup.traverse((object) => {
+      if (object.geometry) geometries.add(object.geometry);
+      const objectMaterials = Array.isArray(object.material)
+        ? object.material
+        : object.material
+        ? [object.material]
+        : [];
+      for (const material of objectMaterials) {
+        for (const key of ["map", "alphaMap", "emissiveMap", "normalMap", "roughnessMap", "metalnessMap"]) {
+          const texture = material[key];
+          if (texture && texture !== this.raisedFloorTex && texture !== this.cageTex) {
+            textures.add(texture);
+          }
+        }
+        materials.add(material);
+      }
+    });
+    geometries.forEach((geometry) => geometry.dispose());
+    materials.forEach((material) => material.dispose());
+    textures.forEach((texture) => texture.dispose());
     while (this.rootGroup.children.length > 0) {
-      const child = this.rootGroup.children[0];
-      this.rootGroup.remove(child);
+      this.rootGroup.remove(this.rootGroup.children[0]);
     }
+  }
+
+  _rebuildScene() {
+    this.disposeGeneratedObjects();
+    this.builtRevision = this.store.revision;
+    this.rootGroup.userData = { sitestryRevision: this.store.revision };
     this.selectableMeshes = [];
     this.labelAnchors = [];
 
@@ -251,6 +300,31 @@ export class Viewer3DEngine {
     }
 
     this.update3DLabelsOverlay();
+    this.updateSelectionHighlight();
+    this.sceneSync.lastBuiltRevision = this.store.revision;
+  }
+
+  updateSelectionHighlight() {
+    const sel = this.store.ui.selected;
+    for (const root of this.selectableMeshes) {
+      const isSelected =
+        Boolean(sel) &&
+        root.userData?.sitestryKind === sel.kind &&
+        root.userData?.sitestryId === sel.id;
+      root.traverse?.((child) => {
+        const objectMaterials = Array.isArray(child.material)
+          ? child.material
+          : child.material
+          ? [child.material]
+          : [];
+        for (const material of objectMaterials) {
+          if (material?.emissive) {
+            material.emissive.setHex(isSelected ? 0x0b3d2c : 0x000000);
+            material.emissiveIntensity = isSelected ? 0.55 : 0;
+          }
+        }
+      });
+    }
   }
 
   buildRooms3D(scale, sel) {
@@ -701,8 +775,123 @@ export class Viewer3DEngine {
     }
   }
 
+  buildParametricStair3D(st, scale, sel) {
+    const geometry = resolveStairGeometry(st, scale);
+    if (!geometry.ok) return;
+    const isSelected = sel?.kind === "stair" && sel?.id === st.id;
+    const group = new THREE.Group();
+    group.name = `Stair_${st.id}`;
+    group.userData = {
+      sitestryKind: "stair",
+      sitestryId: st.id,
+      role: "staircase",
+      template_version: 1,
+      shape: st.shape,
+      flights: geometry.flights.length,
+      landings: geometry.landings.length,
+      steps: st.steps,
+    };
+
+    const treadMat = new THREE.MeshStandardMaterial({
+      color: isSelected ? 0x00754a : 0xd6d1c4,
+      roughness: 0.65,
+      metalness: 0.15,
+    });
+    const landingMat = new THREE.MeshStandardMaterial({
+      color: isSelected ? 0x00754a : 0xc9c3b5,
+      roughness: 0.6,
+      metalness: 0.12,
+    });
+    const railMat = new THREE.MeshStandardMaterial({
+      color: 0xcba258,
+      roughness: 0.35,
+      metalness: 0.65,
+    });
+
+    const riserHeight = Number(st.height_m) / Number(st.steps);
+    const shapeFromPolygon = (polygon) => {
+      const points3D = polygon.map((point) => this.pxToMeter3D(point.x_px, point.y_px));
+      const shape = new THREE.Shape();
+      shape.moveTo(points3D[0].x, -points3D[0].z);
+      for (let i = 1; i < points3D.length; i += 1) {
+        shape.lineTo(points3D[i].x, -points3D[i].z);
+      }
+      shape.closePath();
+      return shape;
+    };
+
+    for (const flight of geometry.flights) {
+      for (const tread of flight.treads) {
+        const extrude = new THREE.ExtrudeGeometry(shapeFromPolygon(tread.footprint_px), {
+          depth: riserHeight,
+          bevelEnabled: false,
+        });
+        extrude.rotateX(-Math.PI / 2);
+        const mesh = new THREE.Mesh(extrude, treadMat);
+        mesh.position.y = Math.max(0, tread.elevation_m - riserHeight);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.name = `Stair_${st.id}_F${flight.index}_Tread_${tread.index}`;
+        mesh.userData = {
+          sitestryKind: "stair",
+          sitestryId: st.id,
+          role: "tread",
+          flight_index: flight.index,
+          tread_index: tread.index,
+          elevation_m: tread.elevation_m,
+        };
+        group.add(mesh);
+      }
+    }
+
+    for (const landing of geometry.landings) {
+      const thickness = Math.min(0.2, Math.max(0.08, riserHeight));
+      const extrude = new THREE.ExtrudeGeometry(shapeFromPolygon(landing.footprint_px), {
+        depth: thickness,
+        bevelEnabled: false,
+      });
+      extrude.rotateX(-Math.PI / 2);
+      const mesh = new THREE.Mesh(extrude, landingMat);
+      mesh.position.y = Math.max(0, landing.elevation_m - thickness);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.name = `Stair_${st.id}_Landing_${landing.index}`;
+      mesh.userData = {
+        sitestryKind: "stair",
+        sitestryId: st.id,
+        role: "landing",
+        landing_index: landing.index,
+        elevation_m: landing.elevation_m,
+      };
+      group.add(mesh);
+    }
+
+    for (const edge of geometry.guardrail_edges) {
+      const a = this.pxToMeter3D(edge.start_px.x_px, edge.start_px.y_px);
+      const b = this.pxToMeter3D(edge.end_px.x_px, edge.end_px.y_px);
+      const startY = (edge.start_elevation_m ?? 0) + 0.9;
+      const endY = (edge.end_elevation_m ?? 0) + 0.9;
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(a.x, startY, a.z),
+        new THREE.Vector3(b.x, endY, b.z),
+      ]);
+      const rail = new THREE.Mesh(new THREE.TubeGeometry(curve, 1, 0.03, 6, false), railMat);
+      rail.castShadow = true;
+      rail.name = `Stair_${st.id}_Guardrail`;
+      rail.userData = { sitestryKind: "stair", sitestryId: st.id, role: "guardrail" };
+      group.add(rail);
+    }
+
+    this.rootGroup.add(group);
+    this.selectableMeshes.push(group);
+  }
+
   buildStairs3D(scale, sel) {
     for (const st of this.store.project.stairs) {
+      if (isParametricStair(st)) {
+        this.buildParametricStair3D(st, scale, sel);
+        continue;
+      }
       const pos = this.pxToMeter3D(st.x_px, st.y_px);
       const w = Number(st.width_m) || 2.4;
       const d = Number(st.depth_m) || 3.2;
@@ -789,24 +978,37 @@ export class Viewer3DEngine {
   }
 
   // ==================== BINARY .GLB 3D EXPORT ====================
-  exportGLB(filename = "sitestry_digital_twin.glb") {
+  exportGLB(filename = "sitestry_digital_twin.glb", options = {}) {
+    if (this.store.activeTransaction) {
+      const message = "Selesaikan atau batalkan edit yang aktif sebelum mengekspor.";
+      this.store.emit("toast", { message });
+      return Promise.resolve(null);
+    }
+    this.ensureSceneCurrent();
     const exporter = new GLTFExporter();
-    exporter.parse(
-      this.rootGroup,
-      (result) => {
-        const blob = new Blob([result], { type: "application/octet-stream" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-      },
-      (err) => {
-        console.error("[Viewer3DEngine] GLB Export Error:", err);
-      },
-      { binary: true }
-    );
+    const download = options.download !== false;
+    return new Promise((resolve, reject) => {
+      exporter.parse(
+        this.rootGroup,
+        (result) => {
+          if (download) {
+            const blob = new Blob([result], { type: "application/octet-stream" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+          }
+          resolve(result);
+        },
+        (err) => {
+          console.error("[Viewer3DEngine] GLB Export Error:", err);
+          reject(err);
+        },
+        { binary: true }
+      );
+    });
   }
 
   animate() {

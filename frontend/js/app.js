@@ -158,9 +158,9 @@ class SitestryStudioApp {
     document.getElementById("btnExportJson")?.addEventListener("click", () => {
       this.exportProjectJson();
     });
-    document.getElementById("btnExportGlb")?.addEventListener("click", () => {
-      this.viewer3d.exportGLB(`${store.project.project_id || "sitestry_3d"}.glb`);
-      this.showToast("Mengekspor 3D Digital Twin ke format .GLB...");
+    document.getElementById("btnExportGlb")?.addEventListener("click", async () => {
+      const result = await this.viewer3d.exportGLB(`${store.project.project_id || "sitestry_3d"}.glb`);
+      if (result) this.showToast("3D Digital Twin diekspor ke format .GLB dari revisi terbaru.");
     });
   }
 
@@ -638,13 +638,17 @@ class SitestryStudioApp {
       this.showToast("Contoh perangkat Telco CME & Cable Ladder berhasil dimuat.");
     });
 
-    document.getElementById("btnStage5ExportGlb")?.addEventListener("click", () => {
-      this.viewer3d.exportGLB(`${store.project.project_id || "sitestry_3d"}.glb`);
-      this.showToast("Mengekspor 3D Digital Twin (.GLB)...");
+    document.getElementById("btnStage5ExportGlb")?.addEventListener("click", async () => {
+      const result = await this.viewer3d.exportGLB(`${store.project.project_id || "sitestry_3d"}.glb`);
+      if (result) this.showToast("3D Digital Twin (.GLB) diekspor dari revisi terbaru.");
     });
   }
 
   exportProjectJson() {
+    if (store.activeTransaction) {
+      this.showToast("Selesaikan atau batalkan edit yang aktif sebelum mengekspor JSON.");
+      return;
+    }
     const dataStr = JSON.stringify(store.project, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(blob);

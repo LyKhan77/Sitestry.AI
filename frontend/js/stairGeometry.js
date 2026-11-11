@@ -153,10 +153,14 @@ function buildFlight({
     {
       start_px: at(origin, u, v, alongStart, laneAcross - sideOffset, scale),
       end_px: at(origin, u, v, alongEnd, laneAcross - sideOffset, scale),
+      start_elevation_m: startElevation,
+      end_elevation_m: startElevation + risers * riserHeight,
     },
     {
       start_px: at(origin, u, v, alongStart, laneAcross + sideOffset, scale),
       end_px: at(origin, u, v, alongEnd, laneAcross + sideOffset, scale),
+      start_elevation_m: startElevation,
+      end_elevation_m: startElevation + risers * riserHeight,
     },
   ];
   return {
@@ -357,10 +361,14 @@ export function resolveStairGeometry(stair, scalePxPerMeter) {
       {
         start_px: at(start, u, v, along - landing / 2, -landing / 2, scale),
         end_px: at(start, u, v, along + landing / 2, -landing / 2, scale),
+        start_elevation_m: landingElevation,
+        end_elevation_m: landingElevation,
       },
       {
         start_px: at(start, u, v, along + landing / 2, -landing / 2, scale),
         end_px: at(start, u, v, along + landing / 2, landing / 2, scale),
+        start_elevation_m: landingElevation,
+        end_elevation_m: landingElevation,
       },
     ];
     const route = [
@@ -437,10 +445,14 @@ export function resolveStairGeometry(stair, scalePxPerMeter) {
     {
       start_px: at(start, u, v, run1 - landing / 2, -width / 2, scale),
       end_px: at(start, u, v, run1 + landing / 2, -width / 2, scale),
+      start_elevation_m: n1 * riserHeight,
+      end_elevation_m: n1 * riserHeight,
     },
     {
       start_px: at(start, u, v, run1 - landing / 2, across + width / 2, scale),
       end_px: at(start, u, v, run1 + landing / 2, across + width / 2, scale),
+      start_elevation_m: n1 * riserHeight,
+      end_elevation_m: n1 * riserHeight,
     },
   ];
   const route = [
