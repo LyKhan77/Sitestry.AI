@@ -21,6 +21,11 @@ from pydantic import BaseModel
 
 from cad_parser import extract_from_pdf_vector
 from vectorizer import extract_from_raster_image, detect_grid_scale_from_image
+from blueprint_guides import (
+    MAX_FILE_BYTES,
+    GuideError,
+    extract_blueprint_guides_cached,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FLOORPLAN_DIR = BASE_DIR / "floorplan"
@@ -328,6 +333,63 @@ async def extract_layout(
             )
 
     raise HTTPException(status_code=400, detail="Either sample_id or file must be provided.")
+
+
+@app.post("/api/blueprint-guides")
+async def blueprint_guides(
+    file: Optional[UploadFile] = File(None),
+    sample_id: Optional[str] = Form(None),
+    page_number: Optional[int] = Form(None),
+    roi_json: Optional[str] = Form(None),
+    scale_px_per_meter: float = Form(30.68),
+):
+    """Advisory wall-centerline candidates from the actual source drawing."""
+    if bool(file) == bool(sample_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide exactly one of sample_id or file.",
+        )
+
+    if sample_id:
+        sample = SAMPLES_CATALOG.get(sample_id)
+        if not sample:
+            raise HTTPException(status_code=404, detail=f"Unknown sample_id: {sample_id}")
+        fpath = FLOORPLAN_DIR / sample["filename"]
+        if not fpath.exists():
+            raise HTTPException(status_code=404, detail="Sample file missing on disk.")
+        source_bytes = fpath.read_bytes()
+        source_kind = sample["source_type"]
+        p_num = page_number or sample["default_page"]
+    else:
+        source_bytes = await file.read(MAX_FILE_BYTES + 1)
+        fname = (file.filename or "").lower()
+        if len(source_bytes) > MAX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail="Source exceeds the 25 MiB limit.")
+        if fname.endswith(".pdf") or source_bytes[:5] == b"%PDF-":
+            source_kind = "pdf_vector"
+        else:
+            source_kind = "raster_image"
+        p_num = page_number or 1
+
+    roi_px = None
+    if roi_json:
+        try:
+            roi_px = json.loads(roi_json)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=422, detail="roi_json is not valid JSON.")
+        if not isinstance(roi_px, dict):
+            raise HTTPException(status_code=422, detail="roi_json must be an object.")
+
+    try:
+        return extract_blueprint_guides_cached(
+            source_bytes=source_bytes,
+            source_kind=source_kind,
+            page_number=p_num,
+            roi_px=roi_px,
+            scale_px_per_meter=scale_px_per_meter,
+        )
+    except GuideError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail())
 
 
 # Mount frontend static files
