@@ -153,6 +153,20 @@ test("node_numeric_edit_is_one_undo_and_rejects_nonfinite", () => {
   assert.equal(store.undoStack.length, 1);
 });
 
+test("every_committed_geometry_event_carries_a_new_revision", () => {
+  const store = fixture();
+  const start = store.revision;
+  let seen = [];
+  store.addEventListener("geometryChanged", (event) => seen.push(event.detail.revision));
+  store.emit("geometryChanged", { source: "inspector" });
+  store.emit("geometryChanged", { source: "delete" });
+  assert.deepEqual(seen, [start + 1, start + 2]);
+  const token = store.beginTransaction("edit");
+  store.moveNode("n1", 190, 330, false);
+  store.commitTransaction(token);
+  assert.equal(seen[2], start + 3);
+});
+
 test("history_is_capped_at_45_during_transactions", () => {
   const store = fixture();
   for (let i = 0; i < 60; i++) {

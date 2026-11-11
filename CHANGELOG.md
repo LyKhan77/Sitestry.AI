@@ -27,7 +27,7 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ### Unchanged / Boundaries
 - Existing extraction schema, source pixel/meter conventions, and legacy stair rendering remain intact.
-- Initials, persistence, multi-floor stacking, room polygonization, spiral stairs, code certification, slab openings, and headroom checks remain out of scope. Phase 4 handover tasks remain pending.
+- Input PDFs, persistence, multi-floor stacking, room polygonization, spiral stairs, code certification, slab openings, and headroom checks remain out of scope. Phase 4 handover tasks remain pending.
 
 ## [v3.0.0] — 2026-11-11
 

@@ -1767,3 +1767,13 @@ body[data-tool="stair"] #stairSettingsCard {
     display: none;
   }
 }
+
+.tool-group-label {
+  grid-column: 1 / -1;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-warm-muted);
+  padding-top: 2px;
+}

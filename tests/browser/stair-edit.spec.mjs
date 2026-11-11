@@ -201,6 +201,38 @@ test.describe("parametric stair editing", () => {
     expect(restored.end.x_px).toBeCloseTo(before.end.x_px, 0);
   });
 
+
+  test("escape cancels an in-progress endpoint drag without history", async ({ page }) => {
+    await addStair(page, "straight", { x: 1150, y: 820 }, { x: 1250, y: 820 });
+    await setTool(page, "select");
+    const before = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const s = store.project.stairs[store.project.stairs.length - 1];
+      store.selectObject("stair", s.id);
+      return { id: s.id, end: { ...s.end_px }, undo: store.undoStack.length };
+    });
+    await page.waitForTimeout(250);
+    const [handle] = await worldPointsToScreen(
+      page,
+      [{ x: before.end.x_px, y: before.end.y_px }],
+      1
+    );
+    await page.mouse.move(handle.x, handle.y);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + 60, handle.y + 40, { steps: 6 });
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(async (id) => {
+      const { store } = await import("/js/store.js");
+      const s = store.project.stairs.find((item) => item.id === id);
+      return { end: { ...s.end_px }, undo: store.undoStack.length };
+    }, before.id);
+    expect(after.end.x_px).toBeCloseTo(before.end.x_px, 0);
+    expect(after.end.y_px).toBeCloseTo(before.end.y_px, 0);
+    expect(after.undo).toBe(before.undo);
+  });
+
   test("legacy stair remains untouched until explicit conversion", async ({ page }) => {
     const legacy = await page.evaluate(async () => {
       const { store } = await import("/js/store.js");

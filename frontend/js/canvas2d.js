@@ -90,6 +90,7 @@ export class Canvas2DEngine {
     });
     this.store.addEventListener("sourceChanged", () => {
       this.cancelNodeDrag();
+      this.cancelStairDrag();
       this.clearTempDrawing();
       this.renderAll();
     });
@@ -100,6 +101,7 @@ export class Canvas2DEngine {
     });
     this.store.addEventListener("toolChanged", () => {
       this.cancelNodeDrag();
+      this.cancelStairDrag();
       this.clearTempDrawing();
       this.syncStageDraggable();
       this.renderAll();
@@ -451,6 +453,7 @@ export class Canvas2DEngine {
       }
       if (e.key === "Escape") {
         this.cancelNodeDrag();
+        this.cancelStairDrag();
         this.clearTempDrawing();
       } else if (e.key === "Enter" && this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
         this.store.addCableTray(this.trayDraftPoints);
@@ -464,6 +467,7 @@ export class Canvas2DEngine {
 
     window.addEventListener("pointercancel", () => {
       this.cancelNodeDrag();
+      this.cancelStairDrag();
       this.clearTempDrawing();
     });
   }

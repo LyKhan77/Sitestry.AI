@@ -703,6 +703,8 @@ class SitestryStudioApp {
       const toolsBtn = document.getElementById("btnToggleTools");
       if (toolsBtn && getComputedStyle(toolsBtn).display !== "none") {
         toolsBtn.focus();
+      } else {
+        document.getElementById("btnView2D")?.focus();
       }
     });
 

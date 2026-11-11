@@ -82,6 +82,7 @@ for (const sample of SAMPLES) {
     await gotoApp(page, { width: 1440, height: 960 });
     await ensureSample(page, sample);
     await loadStage(page, 3);
+    await page.screenshot({ path: testInfo.outputPath(`stage3-${sample.id}.png`) });
 
     // 1. Stable vertex drag at a real zoom.
     const nodeId = await firstNodeId(page);
@@ -198,6 +199,14 @@ for (const sample of SAMPLES) {
     expect((await storeState(page)).undo).toBe(undoCount);
 
     // 5. Stage progression and screenshots.
+    await loadStage(page, 1);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: testInfo.outputPath(`stage1-${sample.id}.png`) });
+    await loadStage(page, 2);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: testInfo.outputPath(`stage2-${sample.id}.png`) });
+    await loadStage(page, 3);
+    await page.waitForTimeout(300);
     await loadStage(page, 4);
     await page.waitForTimeout(700);
     await page.screenshot({ path: testInfo.outputPath(`stage4-${sample.id}.png`) });
@@ -208,6 +217,12 @@ for (const sample of SAMPLES) {
     await loadStage(page, 3);
     await page.waitForTimeout(500);
     await page.screenshot({ path: testInfo.outputPath(`stage3-narrow-${sample.id}.png`) });
+    await loadStage(page, 4);
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: testInfo.outputPath(`stage4-narrow-${sample.id}.png`) });
+    await loadStage(page, 5);
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: testInfo.outputPath(`stage5-narrow-${sample.id}.png`) });
 
     // 6. Export GLB + JSON and verify parametric content.
     await page.setViewportSize({ width: 1440, height: 960 });
@@ -225,6 +240,7 @@ for (const sample of SAMPLES) {
     expect(project.stairs.some((s) => s.template_version === 1 && s.shape === "U")).toBe(true);
 
     // 7. Keyboard shortcuts only fire outside inputs and only for the active stage.
+    await loadStage(page, 3);
     await page.evaluate(async () => {
       const { store } = await import("/js/store.js");
       store.setActiveTool("select");

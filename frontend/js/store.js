@@ -168,7 +168,14 @@ export class SitestryStore extends EventTarget {
   }
 
   emit(eventName, detail = {}) {
-    this.dispatchEvent(new CustomEvent(eventName, { detail }));
+    // Every committed geometry change carries a monotonic revision so the 3D
+    // scheduler can never treat a different project as already built.
+    let payload = detail;
+    if (eventName === "geometryChanged" && detail.revision === undefined) {
+      this.revision += 1;
+      payload = { ...detail, revision: this.revision };
+    }
+    this.dispatchEvent(new CustomEvent(eventName, { detail: payload }));
   }
 
   // ==================== SNAPSHOT & UNDO / REDO ====================
