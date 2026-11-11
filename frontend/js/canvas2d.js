@@ -57,6 +57,7 @@ export class Canvas2DEngine {
     this.isDraggingStair = false;
     this.stairDragTransaction = null;
     this.stairEndpointValid = true;
+    this.nodeVisuals = [];
 
     this.bindStageEvents();
     this.bindStoreEvents();
@@ -211,6 +212,26 @@ export class Canvas2DEngine {
     this.stage.draggable(tool === "select");
   }
 
+  isDrawingTool() {
+    const tool = this.store.ui.activeTool;
+    return tool === "wall" || tool === "stair";
+  }
+
+  stageScale() {
+    const scale = this.stage.scaleX();
+    return Number.isFinite(scale) && scale > 0 ? Math.max(0.05, scale) : 1;
+  }
+
+  syncNodeHandleScale() {
+    const nodeScale = this.stageScale();
+    for (const { circle, selected } of this.nodeVisuals) {
+      circle.radius((selected ? 6.0 : 3.8) / nodeScale);
+      circle.hitStrokeWidth(10 / nodeScale);
+      circle.strokeWidth(1.8 / nodeScale);
+    }
+    this.cadLayer.batchDraw();
+  }
+
   handleStairClick(pt) {
     if (!this.stairDraft) {
       this.stairDraft = { startPx: { x_px: pt.x, y_px: pt.y }, cursorPx: { x_px: pt.x, y_px: pt.y } };
@@ -335,6 +356,7 @@ export class Canvas2DEngine {
         x: pointer.x - mousePointTo.x * clamped,
         y: pointer.y - mousePointTo.y * clamped,
       });
+      this.syncNodeHandleScale();
       this.stage.batchDraw();
     });
 
@@ -673,6 +695,7 @@ export class Canvas2DEngine {
   renderCadTopology() {
     this.cadLayer.destroyChildren();
     this.wallVisuals = [];
+    this.nodeVisuals = [];
     const wallVisualMap = new Map();
     const layers = this.store.ui.layers;
     const sel = this.store.ui.selected;
@@ -795,7 +818,7 @@ export class Canvas2DEngine {
           x: ox,
           y: oy,
           rotation: angleDeg,
-          draggable: this.store.ui.activeTool !== "wall",
+          draggable: !this.isDrawingTool(),
         });
 
         // White wall cut-out mask
@@ -937,6 +960,7 @@ export class Canvas2DEngine {
 
         opGroup.on("click", (ev) => {
           ev.cancelBubble = true;
+          if (this.isDrawingTool()) return;
           this.store.selectObject("opening", op.id);
         });
 
@@ -984,20 +1008,24 @@ export class Canvas2DEngine {
       // 3. Render Draggable Topological Vertex Nodes
       for (const node of this.store.project.nodes) {
         const isSelected = sel?.kind === "node" && sel?.id === node.id;
+        const nodeScale = this.stageScale();
         const circle = new Konva.Circle({
           x: node.x_px,
           y: node.y_px,
-          radius: isSelected ? 6.0 : 3.8,
+          // Handles and their hit stroke are screen-space: source-pixel radii
+          // would shrink below a usable target when the drawing is zoomed out.
+          radius: (isSelected ? 6.0 : 3.8) / nodeScale,
           fill: isSelected ? "#cba258" : "#ffffff",
           stroke: isSelected ? "#006241" : "#1E3932",
-          strokeWidth: 1.8,
-          draggable: this.store.ui.activeTool !== "wall",
-          hitStrokeWidth: 10,
+          strokeWidth: 1.8 / nodeScale,
+          draggable: !this.isDrawingTool(),
+          hitStrokeWidth: 10 / nodeScale,
         });
+        this.nodeVisuals.push({ circle, selected: isSelected });
 
         circle.on("click", (ev) => {
           ev.cancelBubble = true;
-          if (this.store.ui.activeTool === "wall" || this.store.ui.activeTool === "stair") return;
+          if (this.isDrawingTool()) return;
           this.store.selectObject("node", node.id);
         });
 
@@ -1034,7 +1062,7 @@ export class Canvas2DEngine {
         const group = new Konva.Group({
           x: col.x_px,
           y: col.y_px,
-          draggable: true,
+          draggable: !this.isDrawingTool(),
         });
 
         group.add(
@@ -1082,6 +1110,7 @@ export class Canvas2DEngine {
 
         group.on("click", (ev) => {
           ev.cancelBubble = true;
+          if (this.isDrawingTool()) return;
           this.store.selectObject("column", col.id);
         });
 
@@ -1217,6 +1246,7 @@ export class Canvas2DEngine {
 
     group.on("click", (ev) => {
       ev.cancelBubble = true;
+      if (this.isDrawingTool()) return;
       this.store.selectObject("stair", st.id);
     });
 
@@ -1369,6 +1399,7 @@ export class Canvas2DEngine {
 
         stGroup.on("click", (ev) => {
           ev.cancelBubble = true;
+          if (this.isDrawingTool()) return;
           this.store.selectObject("stair", st.id);
         });
 

@@ -15,6 +15,27 @@ test.describe("vertex drag", () => {
     await loadStage(page, 3);
   });
 
+  test("node handle radius and hit stroke remain screen-space while zooming", async ({ page }) => {
+    const box = await page.locator("#konvaContainer").boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -400);
+    await page.waitForTimeout(250);
+    const metrics = await page.evaluate(() => {
+      const engine = window.sitestryApp.canvas2d;
+      const scale = engine.stage.scaleX();
+      const visual = engine.nodeVisuals[0];
+      return {
+        scale,
+        screenRadius: visual.circle.radius() * scale,
+        screenHit: visual.circle.hitStrokeWidth() * scale,
+        selected: visual.selected,
+      };
+    });
+    expect(metrics.selected).toBe(false);
+    expect(metrics.screenRadius).toBeCloseTo(3.8, 1);
+    expect(metrics.screenHit).toBeCloseTo(10, 1);
+  });
+
   for (const zoom of [0.5, 1, 2]) {
     test(`first and repeated vertex drag move the canonical node at ${zoom}x`, async ({ page }) => {
       const nodeId = await firstNodeId(page);
