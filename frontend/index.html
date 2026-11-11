@@ -301,8 +301,9 @@
           <div class="wall-assist-bar">
             <div class="segmented-control" role="group" aria-label="Wall drawing mode">
               <button type="button" class="mode-btn active" data-wall-mode="manual" aria-pressed="true">Manual</button>
-              <button type="button" class="mode-btn" data-wall-mode="guided" id="btnWallModeGuided" aria-pressed="false" disabled title="Guided tersedia setelah sumber blueprint terhubung">Guided</button>
+              <button type="button" class="mode-btn" data-wall-mode="guided" id="btnWallModeGuided" aria-pressed="false" title="Centerline dari sumber PDF/raster aktif">Guided</button>
             </div>
+            <p id="lblGuideStatus" class="insp-helper guide-status" data-status="idle">Guided idle.</p>
             <label class="layer-check-row compact">
               <input type="checkbox" id="chkEndpointSnap" />
               <span>Endpoint snap (10 px)</span>

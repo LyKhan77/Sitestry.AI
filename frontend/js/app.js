@@ -12,6 +12,7 @@ import { store } from "./store.js";
 import { api } from "./api.js";
 import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
+import { BlueprintGuideSession } from "./blueprintGuides.js";
 
 const TOOL_HINTS = {
   select:
@@ -56,6 +57,8 @@ class SitestryStudioApp {
     this.canvas2d = new Canvas2DEngine("konvaContainer", store);
     this.viewer3d = new Viewer3DEngine("threeContainer", "labels3DOverlay", store);
     this.lastRulerPx = 184.1;
+    this.sourceRequestSeq = 0;
+    this.guideSession = new BlueprintGuideSession(store, (args) => api.fetchBlueprintGuides(args));
 
     this.initStageNavigation();
     this.initStage1InputControls();
@@ -85,6 +88,23 @@ class SitestryStudioApp {
     });
     store.addEventListener("toast", (e) => {
       this.showToast(e.detail.message);
+    });
+    store.addEventListener("sourceChanged", () => {
+      this.guideSession.invalidate();
+      if (store.ui.wallMode === "guided") this.loadGuideContext();
+    });
+    store.addEventListener("roiChanged", () => {
+      this.guideSession.invalidate();
+      if (store.ui.wallMode === "guided") this.loadGuideContext();
+    });
+    store.addEventListener("geometryChanged", (e) => {
+      if (e.detail?.source === "scale" && store.ui.wallMode === "guided") {
+        this.guideSession.invalidate();
+        this.loadGuideContext();
+      }
+    });
+    store.addEventListener("guidesChanged", (e) => {
+      this.syncGuideStatus(e.detail);
     });
 
     // Boot initial Gatsu Page 4 sample and extract structural layout
@@ -262,37 +282,46 @@ class SitestryStudioApp {
     fileInput?.addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
+      const seq = ++this.sourceRequestSeq;
       setSampleCardActive(null);
-      store.uploadedFile = file;
-      store.activeSampleId = null;
 
       if (file.name.toLowerCase().endsWith(".pdf")) {
         this.showToast(`Memeriksa halaman PDF "${file.name}"...`);
         try {
           const info = await api.inspectPdf(file);
+          if (seq !== this.sourceRequestSeq) return;
           this.openPdfModalWithPages(file.name, info.pages, async (chosenPage) => {
             await this.loadUploadedPdfPage(file, chosenPage);
           });
         } catch (err) {
+          if (seq !== this.sourceRequestSeq) return;
           this.showToast("Merender Halaman 1...");
           await this.loadUploadedPdfPage(file, 1);
         }
       } else {
         const reader = new FileReader();
         reader.onload = async (ev) => {
+          if (seq !== this.sourceRequestSeq) return;
           const img = new Image();
           img.onload = async () => {
-            store.setBlueprint(ev.target.result, {
+            if (seq !== this.sourceRequestSeq) return;
+            store.setSource({
+              kind: "upload",
+              file,
+              sampleId: null,
+              dataUrl: ev.target.result,
+              metaOverrides: {
               title: file.name,
               image_width_px: img.width,
               image_height_px: img.height,
-              page_number: 1,
-              total_pages: 1,
-              roi_px: {
-                x: Math.round(img.width * 0.04),
-                y: Math.round(img.height * 0.04),
-                width: Math.round(img.width * 0.92),
-                height: Math.round(img.height * 0.86),
+                page_number: 1,
+                total_pages: 1,
+                roi_px: {
+                  x: Math.round(img.width * 0.04),
+                  y: Math.round(img.height * 0.04),
+                  width: Math.round(img.width * 0.92),
+                  height: Math.round(img.height * 0.86),
+                },
               },
             });
             document.getElementById("lblCurrentPage").textContent = "1/1";
@@ -306,12 +335,14 @@ class SitestryStudioApp {
     });
 
     document.getElementById("btnAutoScale")?.addEventListener("click", async () => {
+      const sourceRevision = store.currentSource.revision;
       const res = await api.detectGridScale({
         file: store.uploadedFile,
         sampleId: store.activeSampleId,
         pageNumber: store.project.metadata.page_number,
         roiPx: store.project.metadata.roi_px,
       });
+      if (sourceRevision !== store.currentSource.revision) return;
       store.setScale(res.scale_px_per_meter);
       this.showToast(
         `Skala terkalibrasi otomatis: ${res.scale_px_per_meter} px/m (${res.method})`
@@ -320,45 +351,62 @@ class SitestryStudioApp {
   }
 
   async loadSamplePreset(sampleId, autoExtract = true, pageOverride = null) {
-    store.activeSampleId = sampleId;
-    store.uploadedFile = null;
+    const seq = ++this.sourceRequestSeq;
     this.showToast(`Memuat Floorplan Sample: ${sampleId}...`);
 
     const data = await api.loadSample(sampleId, pageOverride);
-    store.setBlueprint(data.image_data_url, {
-      title: data.title,
-      image_width_px: data.image_width_px,
-      image_height_px: data.image_height_px,
-      scale_px_per_meter: data.scale_px_per_meter,
-      page_number: data.page_number,
-      total_pages: data.total_pages,
-      roi_px: data.roi_px,
+    if (seq !== this.sourceRequestSeq) return false;
+
+    store.setSource({
+      kind: "sample",
+      file: null,
+      sampleId,
+      dataUrl: data.image_data_url,
+      metaOverrides: {
+        title: data.title,
+        image_width_px: data.image_width_px,
+        image_height_px: data.image_height_px,
+        scale_px_per_meter: data.scale_px_per_meter,
+        page_number: data.page_number,
+        total_pages: data.total_pages,
+        roi_px: data.roi_px,
+      },
     });
 
     document.getElementById("lblCurrentPage").textContent = `${data.page_number}/${data.total_pages}`;
 
     if (autoExtract) {
-      await this.runExtractionPipeline();
+      return this.runExtractionPipeline();
     }
+    return true;
   }
 
   async loadUploadedPdfPage(file, pageNumber) {
+    const seq = ++this.sourceRequestSeq;
     this.showToast(`Merender PDF Halaman ${pageNumber}...`);
     const data = await api.renderPdfPage(file, pageNumber);
-    store.setBlueprint(data.image_data_url, {
-      title: `${file.name} (Hal. ${data.page_number})`,
-      image_width_px: data.image_width_px,
-      image_height_px: data.image_height_px,
-      scale_px_per_meter: data.scale_px_per_meter,
-      page_number: data.page_number,
-      total_pages: data.total_pages,
-      roi_px: data.roi_px,
+    if (seq !== this.sourceRequestSeq) return false;
+    store.setSource({
+      kind: "upload",
+      file,
+      sampleId: null,
+      dataUrl: data.image_data_url,
+      metaOverrides: {
+        title: `${file.name} (Hal. ${data.page_number})`,
+        image_width_px: data.image_width_px,
+        image_height_px: data.image_height_px,
+        scale_px_per_meter: data.scale_px_per_meter,
+        page_number: data.page_number,
+        total_pages: data.total_pages,
+        roi_px: data.roi_px,
+      },
     });
     document.getElementById("lblCurrentPage").textContent = `${data.page_number}/${data.total_pages}`;
-    await this.runExtractionPipeline();
+    return this.runExtractionPipeline();
   }
 
   async runExtractionPipeline() {
+    const sourceRevision = store.currentSource.revision;
     const layout = await api.extractLayout({
       file: store.uploadedFile,
       sampleId: store.activeSampleId,
@@ -366,12 +414,16 @@ class SitestryStudioApp {
       scalePxPerMeter: store.project.metadata.scale_px_per_meter,
       roiPx: store.project.metadata.roi_px,
     });
+    if (sourceRevision !== store.currentSource.revision) {
+      return false;
+    }
     store.loadProjectData(layout, true);
     const doors = layout.openings.filter((o) => o.type !== "window").length;
     const wins = layout.openings.filter((o) => o.type === "window").length;
     this.showToast(
       `Ekstraksi Selesai: ${layout.walls.length} Dinding, ${doors} Pintu, ${wins} Jendela, ${layout.columns.length} Pilar & ${layout.stairs.length} Tangga.`
     );
+    return true;
   }
 
   // ==================== STAGE 2: PROCESS EXTRACTION ====================
@@ -454,6 +506,11 @@ class SitestryStudioApp {
           b.classList.toggle("active", b.dataset.wallMode === store.ui.wallMode);
           b.setAttribute("aria-pressed", String(b.dataset.wallMode === store.ui.wallMode));
         });
+        if (store.ui.wallMode === "guided") {
+          this.loadGuideContext();
+        } else {
+          this.guideSession.invalidate();
+        }
       });
     });
     const chkEndpoint = document.getElementById("chkEndpointSnap");
@@ -487,6 +544,31 @@ class SitestryStudioApp {
     if (hintEl && TOOL_HINTS[tool]) {
       hintEl.innerHTML = TOOL_HINTS[tool];
     }
+  }
+
+  loadGuideContext() {
+    if (store.ui.wallMode !== "guided") return;
+    if (!store.uploadedFile && !store.activeSampleId) {
+      store.setGuideCandidates([], "unavailable");
+      return;
+    }
+    this.guideSession.load(store.getGuideContext());
+  }
+
+  syncGuideStatus(detail = {}) {
+    const status = detail.status || store.guideStatus || "idle";
+    const count = (detail.candidates || store.guideCandidates || []).length;
+    const label = document.getElementById("lblGuideStatus");
+    if (!label) return;
+    const messages = {
+      idle: "Guided idle.",
+      loading: "Mencari centerline dari sumber drawing...",
+      ready: `${count} kandidat centerline sumber. Preview manual tetap tersedia.`,
+      unavailable: "Tidak ada centerline terdekat; preview manual tersedia.",
+      error: "Guide gagal dimuat; preview manual tetap tersedia.",
+    };
+    label.textContent = messages[status] || messages.idle;
+    label.dataset.status = status;
   }
 
   // ==================== STAGE 4: BUILD 3D CONTROLS ====================

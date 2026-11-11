@@ -72,6 +72,38 @@ export class SitestryAPI {
     }
   }
 
+  async fetchBlueprintGuides({
+    sampleId = null,
+    file = null,
+    pageNumber = 1,
+    roiPx = null,
+    scalePxPerMeter = 30.68,
+    signal = null,
+  }) {
+    const fd = new FormData();
+    if (sampleId) fd.append("sample_id", sampleId);
+    if (file) fd.append("file", file);
+    fd.append("page_number", String(pageNumber));
+    if (roiPx) fd.append("roi_json", JSON.stringify(roiPx));
+    fd.append("scale_px_per_meter", String(scalePxPerMeter));
+    const res = await fetch(`${this.baseUrl}/api/blueprint-guides`, {
+      method: "POST",
+      body: fd,
+      signal,
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const payload = await res.json();
+        detail = payload?.detail?.message || payload?.detail || detail;
+      } catch (err) {
+        // Keep the HTTP status when the error body is not JSON.
+      }
+      throw new Error(`Blueprint guides failed: ${detail}`);
+    }
+    return await res.json();
+  }
+
   async extractLayout({ file = null, sampleId = null, pageNumber = 1, scalePxPerMeter = 30.68, roiPx = null }) {
     try {
       const fd = new FormData();

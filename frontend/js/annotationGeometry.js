@@ -115,7 +115,7 @@ function findGuide(startPx, endPx, guides, viewScale) {
     const gb = toPointPx(guide.end_px);
     if (!ga || !gb) continue;
     const guideLength = distancePx(ga, gb);
-    if (guideLength < 1) continue;
+    if (guideLength < 12) continue;
     const angleDiff = angleDifferenceDeg(gestureAngle, segmentAngleDeg(ga, gb));
     if (angleDiff > WALL_GUIDE_ANGLE_DEG) continue;
     const midProjection = projectPointOnSegment(mid, ga, gb);
@@ -130,7 +130,8 @@ function findGuide(startPx, endPx, guides, viewScale) {
     ) {
       continue;
     }
-    const score = midProjection.distance + angleDiff * 0.5;
+    const lengthPenalty = Math.max(0, 20 - guideLength) / 2;
+    const score = midProjection.distance + angleDiff * 0.5 + lengthPenalty;
     if (!best || score < best.score) {
       best = {
         guide,

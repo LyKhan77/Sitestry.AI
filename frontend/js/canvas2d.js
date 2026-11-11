@@ -82,6 +82,16 @@ export class Canvas2DEngine {
     this.store.addEventListener("roiChanged", () => {
       this.renderRoiOverlay();
     });
+    this.store.addEventListener("sourceChanged", () => {
+      this.cancelNodeDrag();
+      this.clearTempDrawing();
+      this.renderAll();
+    });
+    this.store.addEventListener("guidesChanged", () => {
+      if (this.wallDrag) {
+        this.renderTempOverlay(this.wallDrag.cursorPx || this.wallDrag.startPx);
+      }
+    });
     this.store.addEventListener("toolChanged", () => {
       this.cancelNodeDrag();
       this.clearTempDrawing();

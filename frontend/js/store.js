@@ -87,6 +87,9 @@ export class SitestryStore extends EventTarget {
     this.revision = 0;
     this.activeTransaction = null;
     this._transactionCounter = 0;
+    this.guideCandidates = [];
+    this.guideStatus = "idle";
+    this.guideError = null;
     this.currentSource = {
       revision: 0,
       kind: "sample",
@@ -203,6 +206,86 @@ export class SitestryStore extends EventTarget {
     this.emit("geometryChanged", { source: "redo", revision: this.revision });
     this.emit("selectionChanged", { selected: null });
     return true;
+  }
+
+  // ==================== SOURCE IDENTITY ====================
+  resetHistory() {
+    this.undoStack = [];
+    this.redoStack = [];
+  }
+
+  setSource({
+    kind = "sample",
+    file = null,
+    sampleId = null,
+    dataUrl = null,
+    metaOverrides = {},
+    title = null,
+    alignment = null,
+  } = {}) {
+    if (this.activeTransaction) {
+      this.cancelTransaction(this.activeTransaction);
+    }
+    this.uploadedFile = file;
+    this.activeSampleId = sampleId;
+    this.currentSource = {
+      revision: this.currentSource.revision + 1,
+      kind,
+      file,
+      sampleId,
+      pageNumber: metaOverrides.page_number ?? 1,
+      imageWidthPx: metaOverrides.image_width_px ?? this.project.metadata.image_width_px,
+      imageHeightPx: metaOverrides.image_height_px ?? this.project.metadata.image_height_px,
+      alignment,
+    };
+    this.resetHistory();
+    this.clearGuideCandidates();
+    if (dataUrl) {
+      this.setBlueprint(dataUrl, { ...metaOverrides, ...(title ? { title } : {}) });
+    } else {
+      Object.assign(this.project.metadata, metaOverrides);
+      if (title) this.project.project_name = title;
+    }
+    this.emit("sourceChanged", { source: { ...this.currentSource } });
+  }
+
+  getGuideContext() {
+    const meta = this.project.metadata;
+    return {
+      sourceRevision: this.currentSource.revision,
+      detectorVersion: "blueprint-guides-v1",
+      kind: this.currentSource.kind,
+      file: this.currentSource.file,
+      sampleId: this.currentSource.sampleId,
+      pageNumber: meta.page_number || this.currentSource.pageNumber || 1,
+      roiPx: meta.roi_px ? { ...meta.roi_px } : null,
+      scalePxPerMeter: meta.scale_px_per_meter,
+      imageWidthPx: meta.image_width_px,
+      imageHeightPx: meta.image_height_px,
+      alignment: this.currentSource.alignment,
+    };
+  }
+
+  getGuideKey() {
+    return JSON.stringify(this.getGuideContext());
+  }
+
+  setGuideCandidates(candidates = [], status = "ready", error = null) {
+    this.guideCandidates = Array.isArray(candidates) ? candidates : [];
+    this.guideStatus = status;
+    this.guideError = error;
+    this.emit("guidesChanged", {
+      status,
+      error,
+      candidates: this.guideCandidates,
+    });
+  }
+
+  clearGuideCandidates() {
+    this.guideCandidates = [];
+    this.guideStatus = "idle";
+    this.guideError = null;
+    this.emit("guidesChanged", { status: "idle", error: null, candidates: [] });
   }
 
   // ==================== PROJECT & BLUEPRINT LOADING ====================

@@ -320,7 +320,7 @@ def extract_from_raster_image(
     raw_v: List[Tuple[float, float, float, float]] = []
 
     if lines is not None:
-        for ln in lines[:, 0, :]:
+        for ln in np.reshape(lines, (-1, 4)):
             x1, y1, x2, y2 = float(ln[0] + rx0), float(ln[1] + ry0), float(ln[2] + rx0), float(ln[3] + ry0)
             ls = LineString([(x1, y1), (x2, y2)]).simplify(1.5)
             coords = list(ls.coords)

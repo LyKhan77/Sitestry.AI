@@ -220,3 +220,29 @@ test("degenerate_and_duplicate_walls_are_rejected", () => {
   const plan = planWallInsertion({ project, preview: duplicate, properties: {}, allocateId });
   assert.equal(plan.ok, false);
 });
+
+test("guided_without_candidate_falls_back_to_manual_preview", () => {
+  const project = projectFixture();
+  const preview = previewFor(project, { x_px: 500, y_px: 500 }, { x_px: 560, y_px: 540 }, {
+    mode: "guided",
+    guides: [],
+  });
+  assert.equal(preview.valid, true);
+  assert.equal(preview.guideId, null);
+  assert.match(preview.feedback, /manual/i);
+});
+
+test("source_switch_cancels_active_transaction_and_rejects_late_commit", () => {
+  const store = new SitestryStore();
+  store.project = projectFixture();
+  const token = store.beginTransaction("drag");
+  store.moveNode("n1", 40, 50, false);
+  store.setSource({
+    kind: "sample",
+    sampleId: "ancol_p13",
+    metaOverrides: { page_number: 13, image_width_px: 1000, image_height_px: 800 },
+  });
+  assert.equal(store.commitTransaction(token), false);
+  assert.equal(store.activeTransaction, null);
+  assert.equal(store.getNodeById("n1").x_px, 0);
+});
