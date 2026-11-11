@@ -40,7 +40,7 @@ Spec: `docs/superpowers/specs/2026-11-11-dock-wizard-ui-design.md`. Plan: `docs/
 - [x] Task 1: Flag, compact header, bottom stage timeline (commit 5d58645; v4-shell + workspace specs 12/12)
 - [x] Task 2: Stage 3 dock, floating property panel, view pills (commit dc9dc35; 33/33 specs incl. v4-dock 10/10)
 - [x] Task 3: Stage 4-5 dock, single camera set, Export menu, BoQ panel (commit 79cddaf; 39/39 specs incl. v4-stage45 8/8)
-- [ ] Task 4: Command palette (`Ctrl/Cmd+K`)
+- [x] Task 4: Command palette (`Ctrl/Cmd+K`) (commit 77e3e99; 38/38 specs incl. v4-palette 8/8)
 - [ ] Task 5: Stage 1 wizard card
 - [ ] Task 6: Stage 2 wizard with honest, progressive extraction reveal
 - [ ] Task 7: Responsive, accessibility, default flip to v4, docs
