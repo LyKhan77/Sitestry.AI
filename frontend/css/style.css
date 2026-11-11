@@ -2369,3 +2369,85 @@ body[data-ui="v4"] .telemetry-bar .tele-item:last-child strong {
   background: var(--green-light);
   color: var(--green-house);
 }
+
+/* ---- v4 wizard cards, stages 1-2 (wide viewports; narrow keeps the legacy drawer) ---- */
+@media (min-width: 1101px) {
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .studio-body {
+    display: block;
+    position: relative;
+  }
+
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .center-workspace {
+    position: relative;
+  }
+
+  /* One floating step card over a full-bleed canvas; the timeline replaces the CTA footer. */
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .stage-sidebar {
+    position: absolute;
+    left: 12px;
+    top: 56px;
+    width: 340px;
+    height: auto;
+    max-height: calc(100% - 140px);
+    padding: 12px;
+    z-index: 30;
+    background: var(--bg-warm-cream);
+    border: 0;
+    border-radius: 12px;
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.14), 0 0 6px rgba(0, 0, 0, 0.24);
+    overflow-y: auto;
+  }
+
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .stage-panel {
+    min-height: 0;
+  }
+
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .stage-hero-banner,
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .stage-cta-footer,
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .pane-badge {
+    display: none;
+  }
+
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .workspace-bar {
+    position: absolute;
+    top: 10px;
+    left: 364px;
+    right: 12px;
+    height: auto;
+    min-height: 36px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    align-items: flex-start;
+    justify-content: flex-start;
+    z-index: 25;
+    pointer-events: none;
+  }
+
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .workspace-bar > * {
+    pointer-events: auto;
+  }
+
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .camera-presets-group {
+    margin-left: auto;
+  }
+
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .tool-hint-banner {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 640px;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    padding: 6px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: var(--shadow-whisper);
+  }
+
+  body[data-ui="v4"]:is([data-stage="1"], [data-stage="2"]) .split-container {
+    height: auto;
+    flex: 1;
+    min-height: 0;
+  }
+}
