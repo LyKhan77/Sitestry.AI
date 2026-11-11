@@ -9,17 +9,16 @@ const FLAG_KEY = "sitestry.ui";
 const LAST_STEP = 5;
 
 /**
- * `?ui=v4` enables and persists the flag, `?ui=v3` clears it, otherwise the stored value wins.
- * Always sets `document.body.dataset.ui` to "v3" or "v4".
+ * v4 is the default. `?ui=v3` switches to the legacy UI and persists that choice (escape hatch);
+ * `?ui=v4` switches back. Always sets `document.body.dataset.ui` to "v3" or "v4".
  */
 export function initUiFlag(search = window.location.search, storage = window.localStorage) {
   document.body.dataset.extract = "idle";
   const param = new URLSearchParams(search).get("ui");
-  let flag = param === "v4" ? "v4" : "v3";
+  let flag = param === "v3" ? "v3" : "v4";
   try {
-    if (param === "v4") storage.setItem(FLAG_KEY, "v4");
-    else if (param === "v3") storage.removeItem(FLAG_KEY);
-    else flag = storage.getItem(FLAG_KEY) === "v4" ? "v4" : "v3";
+    if (param === "v3" || param === "v4") storage.setItem(FLAG_KEY, param);
+    else flag = storage.getItem(FLAG_KEY) === "v3" ? "v3" : "v4";
   } catch {
     // Storage can be blocked; the URL param still applies for this load.
   }
@@ -143,7 +142,8 @@ function buildDockFlyout(stage, selectors) {
     const el = panel.querySelector(sel);
     if (el) flyout.appendChild(el);
   });
-  panel.appendChild(flyout);
+  // Before the CTA footer so narrow drawers keep the legacy order (controls, then the primary button).
+  panel.insertBefore(flyout, panel.querySelector(".stage-cta-footer"));
 }
 
 // ==================== EXPORT MENU & BoQ ====================
@@ -539,7 +539,11 @@ export function initV4Dock(app) {
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
-    if (document.body.dataset.dock === "open") {
+    if (document.body.dataset.tools === "open") {
+      // Narrow layouts: the open drawer covers its own toggle, so Escape must dismiss it.
+      document.body.dataset.tools = "closed";
+      app.syncStageSidebarA11y();
+    } else if (document.body.dataset.dock === "open") {
       document.body.dataset.dock = "closed";
       toggle?.setAttribute("aria-expanded", "false");
       toggle?.focus();

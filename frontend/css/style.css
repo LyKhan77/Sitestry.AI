@@ -1922,6 +1922,11 @@ body[data-ui="v4"] .tl-step:not(.active) .tl-label {
   body[data-ui="v4"][data-stage="3"][data-inspector="open"] .right-inspector {
     top: 44px;
   }
+
+  /* The legacy inspector drawer sets height:100% on top of top/bottom, pushing it past the viewport. */
+  body[data-ui="v4"] .right-inspector {
+    height: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2549,4 +2554,13 @@ body[data-ui="v4"] .wiz-counts strong {
 body[data-ui="v4"][data-stage="2"] .pipeline-card .card-header-label,
 body[data-ui="v4"][data-stage="2"] .pipeline-card .pipeline-steps-list {
   display: none;
+}
+
+/* ---- v4 accessibility: functional text floor ---- */
+body[data-ui="v4"] .stage-kicker {
+  font-size: 11px;
+}
+
+body[data-ui="v4"] .boq-lbl {
+  font-size: 11px;
 }

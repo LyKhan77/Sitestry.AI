@@ -4,7 +4,7 @@ export async function gotoAppV4(page, viewport) {
   return gotoApp(page, viewport, "/?ui=v4");
 }
 
-export async function gotoApp(page, viewport, path = "/") {
+export async function gotoApp(page, viewport, path = "/?ui=v3") {
   if (viewport) await page.setViewportSize(viewport);
   await page.goto(path);
   await page.waitForFunction(() => window.sitestryApp && window.sitestryApp.canvas2d);
