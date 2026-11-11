@@ -68,6 +68,7 @@ class SitestryStudioApp {
     this.initPdfModal();
     this.initKeyboardShortcuts();
     this.initSplitResizer();
+    this.initResponsiveWorkspace();
 
     store.addEventListener("geometryChanged", () => {
       this.updateTelemetryAndStageMetrics();
@@ -145,6 +146,7 @@ class SitestryStudioApp {
   setWorkflowStage(step) {
     store.ui.step = step;
     document.body.dataset.stage = String(step);
+    document.body.dataset.tools = "closed";
 
     // Update top stepper buttons
     document.querySelectorAll(".step-item").forEach((el) => {
@@ -592,6 +594,31 @@ class SitestryStudioApp {
     }, 35);
   }
 
+  initResponsiveWorkspace() {
+    document.getElementById("btnCloseInspector")?.addEventListener("click", () => {
+      store.selectObject(null, null);
+    });
+
+    const toolsBtn = document.getElementById("btnToggleTools");
+    toolsBtn?.addEventListener("click", () => {
+      const open = document.body.dataset.tools === "open";
+      document.body.dataset.tools = open ? "closed" : "open";
+      toolsBtn.setAttribute("aria-expanded", String(!open));
+    });
+
+    if (typeof ResizeObserver !== "undefined") {
+      this.layoutObserver = new ResizeObserver(() => {
+        this.canvas2d.resize();
+        this.viewer3d.resize();
+      });
+      ["pane2D", "pane3D", "rightInspector", "stageSidebar"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) this.layoutObserver.observe(el);
+      });
+    }
+    this.renderInspector();
+  }
+
   initSplitResizer() {
     const divider = document.getElementById("splitDivider");
     const pane2D = document.getElementById("pane2D");
@@ -770,8 +797,23 @@ class SitestryStudioApp {
         e: "equipment",
         t: "tray",
       };
-      if (map[key]) {
-        store.setActiveTool(map[key]);
+      const toolStages = {
+        roi: [1],
+        ruler: [1],
+        select: [2, 3, 4, 5],
+        wall: [3],
+        door: [3],
+        double_door: [3],
+        window: [3],
+        column: [3],
+        stair: [3],
+        room: [3],
+        equipment: [5],
+        tray: [5],
+      };
+      const nextTool = map[key];
+      if (nextTool && toolStages[nextTool]?.includes(store.ui.step)) {
+        store.setActiveTool(nextTool);
       }
     });
   }
@@ -835,73 +877,30 @@ class SitestryStudioApp {
 
     const sel = store.ui.selected;
     const obj = store.getSelectedObject();
+    const selectionKey = sel && obj ? `${sel.kind}:${sel.id}` : null;
+
+    // Do not destroy a focused input on unrelated geometry/selection refreshes.
+    if (
+      container.contains(document.activeElement) &&
+      this.lastInspectorSelection === selectionKey
+    ) {
+      return;
+    }
+    this.lastInspectorSelection = selectionKey;
 
     if (!sel || !obj) {
-      badge.textContent = "PROJECT BOQ SUMMARY";
-      const boq = store.computeBoQSummary();
+      document.body.dataset.inspector = "closed";
+      badge.textContent = "NO SELECTION";
       container.innerHTML = `
-        <div class="insp-card">
-          <div class="insp-title">Ringkasan Struktur &amp; BoQ</div>
-          <div class="boq-stat-grid">
-            <div class="boq-box">
-              <div class="boq-val">${boq.solidWallMeters} m</div>
-              <div class="boq-lbl">Dinding Beton/Bata</div>
-            </div>
-            <div class="boq-box">
-              <div class="boq-val">${boq.doorsCount} unit</div>
-              <div class="boq-lbl">Pintu (Single/Double)</div>
-            </div>
-            <div class="boq-box">
-              <div class="boq-val">${boq.windowsCount} unit</div>
-              <div class="boq-lbl">Jendela (Glazing)</div>
-            </div>
-            <div class="boq-box">
-              <div class="boq-val">${boq.columnsCount} / ${boq.stairsCount}</div>
-              <div class="boq-lbl">Pilar / Tangga</div>
-            </div>
-            <div class="boq-box">
-              <div class="boq-val">${boq.raisedFloorAreaM2} m&sup2;</div>
-              <div class="boq-lbl">Raised Floor (${boq.raisedFloorTiles} tile)</div>
-            </div>
-            <div class="boq-box">
-              <div class="boq-val">${boq.equipmentsCount} unit</div>
-              <div class="boq-lbl">Perangkat CME (Stage 5)</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="insp-card">
-          <div class="insp-title">Parameter Global Proyek</div>
-          <div class="insp-field">
-            <label>Nama Proyek</label>
-            <input type="text" id="inpGlobalProjName" value="${store.project.project_name}" />
-          </div>
-          <div class="insp-row-2">
-            <div class="insp-field">
-              <label>Skala (px / meter)</label>
-              <input type="number" id="inpGlobalScale" step="0.1" value="${store.project.metadata.scale_px_per_meter}" />
-            </div>
-            <div class="insp-field">
-              <label>Tinggi Dinding (m)</label>
-              <input type="number" id="inpGlobalWallH" step="0.1" value="${store.project.metadata.default_wall_height_m}" />
-            </div>
-          </div>
+        <div class="insp-empty">
+          Pilih elemen pada canvas untuk melihat properti. Pengaturan proyek tersedia di stage Input;
+          BoQ dan export tersedia pada Build 3D / Installation.
         </div>
       `;
-
-      document.getElementById("inpGlobalProjName")?.addEventListener("change", (e) => {
-        store.project.project_name = e.target.value;
-        this.updateTelemetryAndStageMetrics();
-      });
-      document.getElementById("inpGlobalScale")?.addEventListener("change", (e) => {
-        store.setScale(parseFloat(e.target.value));
-      });
-      document.getElementById("inpGlobalWallH")?.addEventListener("change", (e) => {
-        store.project.metadata.default_wall_height_m = parseFloat(e.target.value) || 3.8;
-      });
       return;
     }
 
+    document.body.dataset.inspector = "open";
     badge.textContent = `${sel.kind.toUpperCase()} #${obj.id}`;
 
     if (sel.kind === "wall") {

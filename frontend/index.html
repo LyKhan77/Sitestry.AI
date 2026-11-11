@@ -108,7 +108,7 @@
   <!-- ==================== MAIN SEGMENTED WORKSPACE ==================== -->
   <main class="studio-body" id="studioBody">
     <!-- LEFT STAGE-SPECIFIC SIDEBAR -->
-    <aside class="stage-sidebar">
+    <aside class="stage-sidebar" id="stageSidebar">
 
       <!-- ==================== STAGE 1 PANEL: INPUT & CALIBRATION ==================== -->
       <div class="stage-panel active" id="stagePanel1">
@@ -300,8 +300,8 @@
 
           <div class="wall-assist-bar">
             <div class="segmented-control" role="group" aria-label="Wall drawing mode">
-              <button type="button" class="mode-btn active" data-wall-mode="manual">Manual</button>
-              <button type="button" class="mode-btn" data-wall-mode="guided" id="btnWallModeGuided" disabled title="Guided tersedia setelah sumber blueprint terhubung">Guided</button>
+              <button type="button" class="mode-btn active" data-wall-mode="manual" aria-pressed="true">Manual</button>
+              <button type="button" class="mode-btn" data-wall-mode="guided" id="btnWallModeGuided" aria-pressed="false" disabled title="Guided tersedia setelah sumber blueprint terhubung">Guided</button>
             </div>
             <label class="layer-check-row compact">
               <input type="checkbox" id="chkEndpointSnap" />
@@ -320,8 +320,9 @@
           </div>
         </div>
 
-        <div class="surface-card">
-          <div class="card-header-label">VISIBILITAS LAYER &amp; SNAP</div>
+        <div class="surface-card layer-card">
+          <details class="layer-details" id="layerDetails">
+          <summary class="card-header-label">VISIBILITAS LAYER &amp; OPACITY</summary>
           <div class="layer-toggles-stack">
             <label class="layer-check-row">
               <input type="checkbox" id="chkLayerBlueprint" checked />
@@ -362,6 +363,7 @@
               <span>Batas ROI Ekstraksi</span>
             </label>
           </div>
+          </details>
         </div>
 
         <div class="stage-cta-footer">
@@ -481,6 +483,7 @@
     <section class="center-workspace">
       <!-- CONTEXTUAL SUB-HEADER BAR -->
       <div class="workspace-bar">
+        <button id="btnToggleTools" class="cam-btn narrow-only" aria-expanded="false" aria-controls="stageSidebar">Tools</button>
         <div class="view-mode-group">
           <button class="view-mode-btn active" data-view="2d" id="btnView2D">2D Blueprint &amp; CAD</button>
           <button class="view-mode-btn" data-view="split" id="btnViewSplit">Split 2D | 3D Sync</button>
@@ -578,7 +581,8 @@
     <aside class="right-inspector" id="rightInspector">
       <div class="inspector-header">
         <span>PROPERTY INSPECTOR</span>
-        <span id="lblSelectedBadge" class="sel-badge">STRUCTURAL SUMMARY</span>
+        <span id="lblSelectedBadge" class="sel-badge">NO SELECTION</span>
+        <button id="btnCloseInspector" class="modal-close inspector-close" aria-label="Tutup panel properti">&times;</button>
       </div>
       <div id="inspectorContent" class="inspector-body">
         <!-- Dynamically populated by app.js -->
