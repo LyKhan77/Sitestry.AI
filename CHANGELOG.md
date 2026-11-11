@@ -4,6 +4,24 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ---
 
+## [v3.2.0] — 2026-11-11
+
+### Added — Dock + Wizard UI (v4, default)
+- **Shell (`frontend/js/uiV4.js`, `index.html`, `style.css`)**: all rules gated by `body[data-ui="v4"]`. `?ui=v3` restores the legacy UI and persists; `?ui=v4` switches back. 44 px header, one bottom stage timeline, `Ctrl/Cmd+K` command palette.
+- **Stage 3-5 dock workbench**: 56 px icon rail with accessible names and shortcuts, a flyout for secondary controls, and a property panel that floats beside the selection (`Canvas2DEngine.selectedScreenRect()`), clamped inside the canvas. 2D canvas area grows at least 25% versus the legacy layout at 1440x960.
+- **Stage 4-5**: one camera preset set, one `Export` menu (keyboard operable), Stage 5 BoQ panel with per-category equipment counts, one-line telemetry.
+- **Stage 1-2 wizard cards**: Stage 2 enters first, shows an indeterminate state while extracting, then reveals the result progressively with live counters. Reduced-motion users get the result instantly.
+
+### Fixed
+- `api.extractLayout` silently returned a client-generated layout when the server failed. The result now carries an `extractionFallback` marker and `api.lastExtractionFallback`, and the v4 Stage 2 card states it and offers a retry.
+- Narrow layouts: the legacy inspector drawer no longer overflows the viewport in v4, `Escape` dismisses the tools drawer, and 3D legend/timeline no longer overlap.
+
+### Known limitations
+- The v4 BoQ panel is hidden below 1100 px.
+- At Stage 1-2 the wizard card overlaps the left edge of the zoomed drawing.
+
+---
+
 ## [v3.1.0] — 2026-11-11
 
 ### Added — Minimal Workspace, Guided Walls, Parametric Stairs

@@ -590,3 +590,18 @@ When refining existing screens generated with this design system:
 - Export actions are contextual to Build 3D / Installation. Page selection is contextual to Input. Annotation keeps one primary next-stage action.
 - Below 1100 px, the stage sidebar and inspector become dismissible overlays. A `Tools` button exposes the drawer; the inspector has an explicit close control. Focus states, `aria-expanded`, labels, and reduced-motion handling are preserved.
 - The Warm Cream/Green tokens, Plus Jakarta Sans, and IBM Plex Mono typography remain unchanged. No runtime framework migration was introduced.
+
+---
+
+## Dock + Wizard UI Addendum (v4, 2026-11-11)
+
+Supersedes the layout parts of the Progressive Disclosure Addendum above; tokens and typography are unchanged (Warm Cream/Green, Plus Jakarta Sans, IBM Plex Mono, no gradients, no dark shell). The legacy UI remains available via `?ui=v3`.
+
+- **Header**: 44 px (brand, page picker, `Export` menu only in Stage 4-5).
+- **Stage timeline**: a floating white pill at the bottom center, `Back`, five numbered dots (only the active stage shows its label), and a filled `Next`. Buttons are at least 32 px tall, use the 50 px pill radius, `scale(0.95)` on press, and a 2 px green focus ring.
+- **Elevation**: floating surfaces (rail, flyout, wizard card, property panel, BoQ panel, timeline, palette) share one layered shadow, `0 8px 12px rgba(0,0,0,.14), 0 0 6px rgba(0,0,0,.24)`, over the cream canvas.
+- **Dock (Stage 3-5, >= 1101 px)**: a 56 px white rail at the left with 44 px icon buttons. Tool names live in `aria-label` with the shortcut. A toggle button opens a 272 px flyout beside the rail for secondary controls; it starts open in Stage 4-5.
+- **Floating property panel**: 320 px, placed to the right of the selected object, flipped left or clamped so it stays inside the canvas and clear of the top row and the timeline.
+- **Wizard cards (Stage 1-2)**: one 340 px cream card over a full-bleed canvas, no hero banner. Stage 2 shows an indeterminate bar while running and counters afterwards; failure and fallback text use the crimson text color.
+- **Command palette**: modal, 560 px max width, combobox pattern, `Escape` restores focus.
+- **Rules**: functional text at least 11 px, `prefers-reduced-motion` disables the progress animation and the reveal, and below 1100 px the rail becomes the dismissible drawer.

@@ -81,7 +81,8 @@ The system prioritizes **structural precision first** (Topological Walls, Small-
         ├── store.js           # Reactive state store, 45-step undo/redo & BoQ engine
         ├── canvas2d.js        # Konva.js 2D topological CAD & door/window/stair renderer
         ├── viewer3d.js        # Three.js + three-bvh-csg 3D Digital Twin & GLB exporter
-        └── api.js             # FastAPI client & offline fallback generator
+        ├── api.js             # FastAPI client & offline fallback generator
+        └── uiV4.js            # v4 Dock + Wizard UI: flag, timeline, dock/flyout, palette, Stage 2 reveal (default; `?ui=v3` = legacy)
 ```
 
 ---
