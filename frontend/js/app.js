@@ -169,6 +169,7 @@ class SitestryStudioApp {
     store.ui.step = step;
     document.body.dataset.stage = String(step);
     document.body.dataset.tools = "closed";
+    this.syncStageSidebarA11y();
 
     // Update top stepper buttons
     document.querySelectorAll(".step-item").forEach((el) => {
@@ -735,7 +736,12 @@ class SitestryStudioApp {
       const open = document.body.dataset.tools === "open";
       document.body.dataset.tools = open ? "closed" : "open";
       toolsBtn.setAttribute("aria-expanded", String(!open));
+      this.syncStageSidebarA11y();
     });
+
+    const narrowSidebarQuery = window.matchMedia("(max-width: 1100px)");
+    this.narrowSidebarQuery = narrowSidebarQuery;
+    narrowSidebarQuery.addEventListener("change", () => this.syncStageSidebarA11y());
 
     if (typeof ResizeObserver !== "undefined") {
       this.layoutObserver = new ResizeObserver(() => {
@@ -747,7 +753,20 @@ class SitestryStudioApp {
         if (el) this.layoutObserver.observe(el);
       });
     }
+    this.syncStageSidebarA11y();
     this.renderInspector();
+  }
+
+  syncStageSidebarA11y() {
+    const sidebar = document.getElementById("stageSidebar");
+    if (!sidebar) return;
+    const narrow = window.matchMedia("(max-width: 1100px)").matches;
+    const open = document.body.dataset.tools === "open";
+    const hidden = narrow && !open;
+    sidebar.inert = hidden;
+    sidebar.setAttribute("aria-hidden", String(hidden));
+    const toolsBtn = document.getElementById("btnToggleTools");
+    if (toolsBtn) toolsBtn.setAttribute("aria-expanded", String(open));
   }
 
   initSplitResizer() {

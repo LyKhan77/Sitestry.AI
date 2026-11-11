@@ -92,6 +92,40 @@ test.describe("focused workspace", () => {
     expect((await visibleTools(page)).sort()).toEqual(["equipment", "tray"]);
   });
 
+  test("closed narrow sidebar is inert and cannot receive keyboard focus", async ({ page }) => {
+    await gotoApp(page, { width: 900, height: 700 });
+    await loadStage(page, 3);
+
+    const sidebar = page.locator("#stageSidebar");
+    await expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    expect(await sidebar.evaluate((el) => el.inert)).toBe(true);
+    expect(await sidebar.evaluate((el) => getComputedStyle(el).visibility)).toBe("hidden");
+
+    // Tab from the last header control would previously enter the off-canvas drawer.
+    await page.locator(".step-item").last().focus();
+    for (let i = 0; i < 8; i += 1) {
+      await page.keyboard.press("Tab");
+      const inside = await page.evaluate(() =>
+        Boolean(document.activeElement?.closest("#stageSidebar"))
+      );
+      expect(inside).toBe(false);
+    }
+
+    await page.locator("#btnToggleTools").click();
+    await expect(sidebar).toHaveAttribute("aria-hidden", "false");
+    expect(await sidebar.evaluate((el) => el.inert)).toBe(false);
+    expect(await sidebar.evaluate((el) => getComputedStyle(el).visibility)).toBe("visible");
+    await page.waitForTimeout(250);
+    await page.locator('#stagePanel3 .tool-btn[data-tool="select"]').focus();
+    expect(
+      await page.evaluate(() => Boolean(document.activeElement?.closest("#stageSidebar")))
+    ).toBe(true);
+
+    await page.evaluate(() => document.getElementById("btnToggleTools").click());
+    await expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    expect(await sidebar.evaluate((el) => el.inert)).toBe(true);
+  });
+
   test("narrow layout uses dismissible overlays", async ({ page }) => {
     await gotoApp(page, { width: 900, height: 700 });
     await loadStage(page, 3);

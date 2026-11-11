@@ -1633,11 +1633,14 @@ body[data-stage="5"] #btnPagePicker {
     z-index: 60;
     box-shadow: var(--shadow-elevated);
     transform: translateX(-105%);
-    transition: transform 0.18s ease;
+    visibility: hidden;
+    transition: transform 0.18s ease, visibility 0s linear 0.18s;
   }
 
   body[data-tools="open"] .stage-sidebar {
     transform: translateX(0);
+    visibility: visible;
+    transition: transform 0.18s ease, visibility 0s;
   }
 
   .right-inspector,
