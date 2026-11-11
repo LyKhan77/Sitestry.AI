@@ -200,7 +200,24 @@
           <p>Mesin prosedural mengekstrak topologi dinding ruangan kecil, daun &amp; busur pintu sesuai Door Tag, jendela, tangga, dan pilar.</p>
         </div>
 
-        <div class="surface-card">
+        <!-- V4 wizard card (Stage 2): honest extraction status, shown only when body[data-ui="v4"] -->
+        <section id="stage2Card" class="wiz-card" aria-labelledby="wizTitle">
+          <span class="stage-kicker">LANGKAH 2 DARI 5</span>
+          <h2 id="wizTitle">Ekstraksi</h2>
+          <div id="wizProgress" class="wiz-progress" role="progressbar" aria-label="Ekstraksi sedang berjalan" hidden><span></span></div>
+          <p id="wizStatus" class="wiz-status" aria-live="polite">Gunakan Next atau Jalankan ulang untuk mengekstrak denah.</p>
+          <ul id="wizCounts" class="wiz-counts">
+            <li><span>Dinding</span><strong data-count="walls">0</strong></li>
+            <li><span>Pintu</span><strong data-count="doors">0</strong></li>
+            <li><span>Jendela</span><strong data-count="windows">0</strong></li>
+            <li><span>Pilar</span><strong data-count="columns">0</strong></li>
+            <li><span>Tangga</span><strong data-count="stairs">0</strong></li>
+            <li><span>Ruangan</span><strong data-count="rooms">0</strong></li>
+          </ul>
+          <button type="button" id="btnRetryExtract" class="btn-ceramic-full" hidden>Coba lagi</button>
+        </section>
+
+        <div class="surface-card pipeline-card">
           <div class="card-header-label">PIPELINE PROSEDURAL 4-TAHAP</div>
           <div class="pipeline-steps-list">
             <div class="pipeline-step-row">

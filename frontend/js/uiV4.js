@@ -13,6 +13,7 @@ const LAST_STEP = 5;
  * Always sets `document.body.dataset.ui` to "v3" or "v4".
  */
 export function initUiFlag(search = window.location.search, storage = window.localStorage) {
+  document.body.dataset.extract = "idle";
   const param = new URLSearchParams(search).get("ui");
   let flag = param === "v4" ? "v4" : "v3";
   try {
@@ -258,7 +259,7 @@ export const PALETTE_ACTIONS = [
     label: "Jalankan ulang ekstraksi",
     keywords: "extract ekstraksi run",
     when: () => store.ui.step <= 2,
-    run: (app) => app.runExtractionPipeline(),
+    run: (app) => app.startExtractionV4(),
   },
   {
     id: "undo",
@@ -395,6 +396,125 @@ function initPalette(app) {
   });
 }
 
+// ==================== STAGE 2 WIZARD: honest extraction status + progressive reveal ====================
+const REVEAL_STEP_MS = 350;
+const EXTRACT_COPY = {
+  idle: ["Ekstraksi", "Gunakan Next atau Jalankan ulang untuk mengekstrak denah."],
+  running: ["Mengekstrak denah…", "Membaca dinding, pintu, jendela, tangga, dan pilar dari berkas."],
+  done: ["Ekstraksi selesai", "Periksa hasilnya di editor, lalu lanjut ke Review."],
+  fallback: [
+    "Memakai denah cadangan",
+    "Server ekstraksi tidak terjangkau. Yang tampil adalah denah cadangan dari browser, bukan hasil ekstraksi asli. Coba lagi setelah server aktif.",
+  ],
+  error: ["Ekstraksi gagal", "Ekstraksi gagal."],
+};
+
+/** Reflect the extraction state on <body data-extract> and the Stage 2 card. */
+export function setExtractState(state, detail = "") {
+  document.body.dataset.extract = state;
+  const [title, status] = EXTRACT_COPY[state];
+  const set = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  set("wizTitle", title);
+  set("wizStatus", state === "error" && detail ? `Ekstraksi gagal: ${detail}` : status);
+  const bar = document.getElementById("wizProgress");
+  if (bar) bar.hidden = state !== "running";
+  const retry = document.getElementById("btnRetryExtract");
+  if (retry) retry.hidden = !(state === "fallback" || state === "error");
+}
+
+function projectCounts(project) {
+  const windows = project.openings.filter((o) => o.type === "window").length;
+  return {
+    walls: project.walls.length,
+    doors: project.openings.length - windows,
+    windows,
+    columns: project.columns.length,
+    stairs: project.stairs.length,
+    rooms: project.rooms.length,
+  };
+}
+
+function setWizCounts(counts) {
+  for (const [key, value] of Object.entries(counts)) {
+    const el = document.querySelector(`#wizCounts [data-count="${key}"]`);
+    if (el) el.textContent = String(value);
+  }
+}
+
+export function resetWizCounts() {
+  setWizCounts({ walls: 0, doors: 0, windows: 0, columns: 0, stairs: 0, rooms: 0 });
+}
+
+/** Show the project's real counts on the card unless an extraction is mid-flight. */
+export function syncWizardCounts() {
+  if (document.body.dataset.extract === "running") return;
+  setWizCounts(projectCounts(store.project));
+}
+
+/** Hide the layers the reveal will bring back one by one. */
+export function hideExtractionLayers() {
+  ["walls", "columns", "trays", "rooms"].forEach((k) => (store.ui.layers[k] = false));
+}
+
+const sleep = (ms, signal) =>
+  new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(t);
+        resolve();
+      },
+      { once: true }
+    );
+  });
+
+function countUp(el, to, signal, instant) {
+  if (!el) return;
+  if (instant || to <= 0) {
+    el.textContent = String(to);
+    return;
+  }
+  let n = 0;
+  const inc = Math.max(1, Math.ceil(to / 12));
+  const timer = setInterval(() => {
+    n = Math.min(to, n + inc);
+    el.textContent = String(n);
+    if (n >= to) clearInterval(timer);
+  }, 30);
+  signal.addEventListener("abort", () => clearInterval(timer), { once: true });
+}
+
+/**
+ * Bring the extracted layers back one step at a time (walls+openings, columns, stairs/trays, rooms)
+ * while the card counters count up. Aborting stops at once and leaves layer cleanup to the caller.
+ * Resolves true only when the whole reveal finished.
+ */
+export async function revealExtraction(app, layout, { signal }) {
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const c = projectCounts(layout);
+  const steps = [
+    { layers: ["walls"], counts: { walls: c.walls, doors: c.doors, windows: c.windows } },
+    { layers: ["columns"], counts: { columns: c.columns } },
+    { layers: ["trays"], counts: { stairs: c.stairs } },
+    { layers: ["rooms"], counts: { rooms: c.rooms } },
+  ];
+  for (let i = 0; i < steps.length; i += 1) {
+    if (signal.aborted) return false;
+    steps[i].layers.forEach((k) => (store.ui.layers[k] = true));
+    app.syncLayerCheckboxes();
+    app.canvas2d.renderAll();
+    for (const [key, value] of Object.entries(steps[i].counts)) {
+      countUp(document.querySelector(`#wizCounts [data-count="${key}"]`), value, signal, reduced);
+    }
+    if (!reduced && i < steps.length - 1) await sleep(REVEAL_STEP_MS, signal);
+  }
+  return !signal.aborted;
+}
+
 /** Wire the v4 dock: icons, flyout toggle, Escape, and floating-inspector tracking. */
 export function initV4Dock(app) {
   if (!isV4()) return;
@@ -404,6 +524,9 @@ export function initV4Dock(app) {
   buildDockFlyout(5, [".eq-catalog-grid", ".preset-cme-row", "label.layer-check-row"]);
   initExportMenu();
   initPalette(app);
+  document.getElementById("btnRetryExtract")?.addEventListener("click", () => app.startExtractionV4());
+  const rerun = document.getElementById("btnRunExtract");
+  if (rerun) rerun.textContent = "Jalankan ulang";
   syncDock(store.ui.step);
 
   const toggle = document.getElementById("btnDockPanel");

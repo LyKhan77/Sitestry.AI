@@ -14,12 +14,18 @@ import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
 import { BlueprintGuideSession } from "./blueprintGuides.js";
 import {
+  hideExtractionLayers,
   initUiFlag,
   initV4Dock,
+  isV4,
   renderBoqGrid,
   renderBoqPanel,
+  resetWizCounts,
+  revealExtraction,
+  setExtractState,
   syncDock,
   syncTimeline,
+  syncWizardCounts,
 } from "./uiV4.js";
 import {
   isParametricStair,
@@ -72,6 +78,9 @@ class SitestryStudioApp {
     this.lastRulerPx = 184.1;
     this.sourceRequestSeq = 0;
     this.extractionSeq = 0;
+    this.extractV4Seq = 0;
+    this.revealAbort = null;
+    this.lastExtractionFallback = false;
     this.guideSession = new BlueprintGuideSession(store, (args) => api.fetchBlueprintGuides(args));
 
     initUiFlag();
@@ -154,6 +163,10 @@ class SitestryStudioApp {
     });
 
     document.getElementById("btnNextToStage2")?.addEventListener("click", async () => {
+      if (isV4()) {
+        await this.startExtractionV4();
+        return;
+      }
       await this.runExtractionPipeline();
       this.setWorkflowStage(2);
     });
@@ -192,6 +205,7 @@ class SitestryStudioApp {
   }
 
   setWorkflowStage(step) {
+    this.abortReveal();
     store.ui.step = step;
     document.body.dataset.stage = String(step);
     document.body.dataset.tools = "closed";
@@ -446,7 +460,7 @@ class SitestryStudioApp {
     });
   }
 
-  async runExtractionPipeline() {
+  async runExtractionPipeline({ beforeLoad } = {}) {
     const contextKey = this.extractionContextKey();
     const requestId = ++this.extractionSeq;
     const layout = await api.extractLayout({
@@ -459,6 +473,8 @@ class SitestryStudioApp {
     if (requestId !== this.extractionSeq || contextKey !== this.extractionContextKey()) {
       return false;
     }
+    this.lastExtractionFallback = layout.extractionFallback === true;
+    beforeLoad?.();
     const currentMeta = store.project.metadata;
     const safeLayout = {
       ...layout,
@@ -478,9 +494,62 @@ class SitestryStudioApp {
     return true;
   }
 
+  abortReveal() {
+    this.revealAbort?.abort();
+    this.revealAbort = null;
+  }
+
+  /**
+   * v4 Stage 2 flow: enter stage 2 first, then extract, then reveal the result step by step.
+   * Stale or aborted runs never touch the card; only the newest run owns `body[data-extract]`.
+   */
+  async startExtractionV4() {
+    if (store.ui.step !== 2) this.setWorkflowStage(2);
+    this.abortReveal();
+    const ctl = new AbortController();
+    this.revealAbort = ctl;
+    const token = ++this.extractV4Seq;
+    const newest = () => token === this.extractV4Seq;
+    const settleIdle = () => {
+      setExtractState("idle");
+      syncWizardCounts();
+    };
+
+    resetWizCounts();
+    setExtractState("running");
+    let ok = false;
+    try {
+      ok = await this.runExtractionPipeline({
+        beforeLoad: () => {
+          if (newest() && !ctl.signal.aborted) hideExtractionLayers();
+        },
+      });
+    } catch (err) {
+      if (newest()) setExtractState("error", err?.message || String(err));
+      return;
+    }
+    if (!newest()) return;
+    if (!ok || ctl.signal.aborted) {
+      settleIdle();
+      return;
+    }
+    const fallback = this.lastExtractionFallback;
+    await revealExtraction(this, store.project, { signal: ctl.signal });
+    if (!newest()) return;
+    if (ctl.signal.aborted) {
+      settleIdle();
+      return;
+    }
+    setExtractState(fallback ? "fallback" : "done");
+  }
+
   // ==================== STAGE 2: PROCESS EXTRACTION ====================
   initStage2ExtractionControls() {
     document.getElementById("btnRunExtract")?.addEventListener("click", async () => {
+      if (isV4()) {
+        await this.startExtractionV4();
+        return;
+      }
       await this.runExtractionPipeline();
     });
 
@@ -1034,6 +1103,8 @@ class SitestryStudioApp {
     // Update Stage 4 Structural Summary Grid
     const s4Grid = document.getElementById("stage4SummaryGrid");
     if (s4Grid) s4Grid.innerHTML = renderBoqGrid(boq);
+
+    syncWizardCounts();
 
     // v4 Stage 5 BoQ panel (hidden by CSS outside v4 stage 5)
     const boqPanel = document.getElementById("boqPanel");

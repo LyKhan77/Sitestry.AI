@@ -2451,3 +2451,102 @@ body[data-ui="v4"] .telemetry-bar .tele-item:last-child strong {
     min-height: 0;
   }
 }
+
+/* ---- v4 Stage 2 wizard card: honest extraction status ---- */
+.wiz-card {
+  display: none;
+}
+
+body[data-ui="v4"][data-stage="2"] .wiz-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--bg-white);
+  border-radius: 12px;
+  box-shadow: var(--shadow-whisper);
+}
+
+body[data-ui="v4"][data-stage="2"] .wiz-card h2 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--green-house);
+}
+
+body[data-ui="v4"][data-stage="2"] .wiz-status {
+  font-size: 13px;
+  color: var(--text-warm-muted);
+}
+
+body[data-ui="v4"][data-stage="2"][data-extract="fallback"] .wiz-status,
+body[data-ui="v4"][data-stage="2"][data-extract="error"] .wiz-status {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+body[data-ui="v4"] .wiz-progress {
+  position: relative;
+  height: 6px;
+  border-radius: 6px;
+  background: var(--bg-ceramic);
+  overflow: hidden;
+}
+
+body[data-ui="v4"] .wiz-progress[hidden] {
+  display: none;
+}
+
+body[data-ui="v4"] .wiz-progress span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -35%;
+  width: 35%;
+  border-radius: 6px;
+  background: var(--green-accent);
+  animation: wiz-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes wiz-slide {
+  from {
+    left: -35%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-ui="v4"] .wiz-progress span {
+    left: 0;
+    width: 100%;
+    opacity: 0.5;
+    animation: none;
+  }
+}
+
+body[data-ui="v4"] .wiz-counts {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+body[data-ui="v4"] .wiz-counts li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-hairline);
+  font-size: 13px;
+}
+
+body[data-ui="v4"] .wiz-counts strong {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Legacy pipeline list is replaced by the card; keep only the rerun button. */
+body[data-ui="v4"][data-stage="2"] .pipeline-card .card-header-label,
+body[data-ui="v4"][data-stage="2"] .pipeline-card .pipeline-steps-list {
+  display: none;
+}
