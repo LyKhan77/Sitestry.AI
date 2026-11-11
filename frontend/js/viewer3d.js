@@ -1,0 +1,820 @@
+/**
+ * Sitestry.AI — 3D WebGL Digital Twin Engine (Three.js + three-bvh-csg + GLTFExporter) v3.0
+ * Procedurally extrudes 2D topological CAD data into a real-time 3D Digital Twin:
+ * - Solid Concrete Walls, Wiremesh Server Cages, & Glass Partitions
+ * - Real CSG Boolean Cutouts (three-bvh-csg) for Single Doors, Double Doors, & Elevated Windows (with Sill & Lintel)
+ * - 3D Door Frames, Semi-Open Swinging Door Leaves, & Mullioned Glass Windows
+ * - 60x60cm Anti-Static Raised Floor Plenums + Pedestal Grid
+ * - Steel H-Beam Structural Columns
+ * - 3D Stepped Staircases with Safety Handrails
+ * - Stage 5 Telco CME / MEP Assets (42U Racks, UPS, Battery Banks, Rectifiers, Panels, PAC, 3D Cable Ladders)
+ */
+
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
+
+export class Viewer3DEngine {
+  constructor(containerId, labelsOverlayId, store) {
+    this.container = document.getElementById(containerId);
+    this.labelsOverlay = document.getElementById(labelsOverlayId);
+    this.store = store;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x16241f); // Deep architectural House Green-Slate backdrop
+    this.scene.fog = new THREE.FogExp2(0x16241f, 0.0065);
+
+    const w = this.container.clientWidth || 700;
+    const h = this.container.clientHeight || 600;
+
+    this.camera = new THREE.PerspectiveCamera(44, w / h, 0.2, 500);
+    this.camera.position.set(0, 26, 30);
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    this.renderer.setSize(w, h);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.18;
+    this.container.appendChild(this.renderer.domElement);
+
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.06;
+    this.controls.maxPolarAngle = Math.PI / 2 - 0.02;
+
+    this.csgEvaluator = new Evaluator();
+    this.rootGroup = new THREE.Group();
+    this.rootGroup.name = "SitestryDigitalTwinRoot";
+    this.scene.add(this.rootGroup);
+
+    this.selectableMeshes = [];
+    this.labelAnchors = [];
+    this.raycaster = new THREE.Raycaster();
+    this.pointer = new THREE.Vector2();
+
+    this.initLightingAndEnvironment();
+    this.initSharedMaterials();
+    this.bindEvents();
+    this.animate();
+  }
+
+  initLightingAndEnvironment() {
+    const hemi = new THREE.HemisphereLight(0xf7f5f0, 0x1e3932, 1.05);
+    hemi.position.set(0, 50, 0);
+    this.scene.add(hemi);
+
+    const dirLight = new THREE.DirectionalLight(0xfffbf2, 1.45);
+    dirLight.position.set(24, 42, 26);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 140;
+    const d = 42;
+    dirLight.shadow.camera.left = -d;
+    dirLight.shadow.camera.right = d;
+    dirLight.shadow.camera.top = d;
+    dirLight.shadow.camera.bottom = -d;
+    this.scene.add(dirLight);
+
+    const fillLight = new THREE.DirectionalLight(0xd4e9e2, 0.55);
+    fillLight.position.set(-28, 22, -20);
+    this.scene.add(fillLight);
+
+    // Base Architectural Ground Slab
+    const baseSlabGeo = new THREE.PlaneGeometry(240, 240);
+    const baseSlabMat = new THREE.MeshStandardMaterial({
+      color: 0x1c2d27,
+      roughness: 0.9,
+      metalness: 0.08,
+    });
+    const baseSlab = new THREE.Mesh(baseSlabGeo, baseSlabMat);
+    baseSlab.rotation.x = -Math.PI / 2;
+    baseSlab.position.y = -0.02;
+    baseSlab.receiveShadow = true;
+    this.scene.add(baseSlab);
+
+    const worldGrid = new THREE.GridHelper(140, 140, 0x2c4c41, 0x213830);
+    worldGrid.position.y = -0.01;
+    this.scene.add(worldGrid);
+  }
+
+  initSharedMaterials() {
+    // Procedural 60x60cm Raised Floor Tile Canvas Texture
+    const tileCanvas = document.createElement("canvas");
+    tileCanvas.width = 128;
+    tileCanvas.height = 128;
+    const tCtx = tileCanvas.getContext("2d");
+    tCtx.fillStyle = "#e6e3dc";
+    tCtx.fillRect(0, 0, 128, 128);
+    tCtx.strokeStyle = "#b8b2a6";
+    tCtx.lineWidth = 4;
+    tCtx.strokeRect(0, 0, 128, 128);
+    tCtx.fillStyle = "#948e82";
+    tCtx.fillRect(8, 8, 4, 4);
+    tCtx.fillRect(116, 8, 4, 4);
+    tCtx.fillRect(8, 116, 4, 4);
+    tCtx.fillRect(116, 116, 4, 4);
+
+    this.raisedFloorTex = new THREE.CanvasTexture(tileCanvas);
+    this.raisedFloorTex.wrapS = THREE.RepeatWrapping;
+    this.raisedFloorTex.wrapT = THREE.RepeatWrapping;
+
+    // Procedural Wiremesh Server Cage Texture
+    const cageCanvas = document.createElement("canvas");
+    cageCanvas.width = 64;
+    cageCanvas.height = 64;
+    const cCtx = cageCanvas.getContext("2d");
+    cCtx.clearRect(0, 0, 64, 64);
+    cCtx.strokeStyle = "#cba258";
+    cCtx.lineWidth = 3;
+    cCtx.beginPath();
+    cCtx.moveTo(0, 0);
+    cCtx.lineTo(64, 64);
+    cCtx.moveTo(64, 0);
+    cCtx.lineTo(0, 64);
+    cCtx.stroke();
+    cCtx.strokeRect(0, 0, 64, 64);
+
+    this.cageTex = new THREE.CanvasTexture(cageCanvas);
+    this.cageTex.wrapS = THREE.RepeatWrapping;
+    this.cageTex.wrapT = THREE.RepeatWrapping;
+  }
+
+  bindEvents() {
+    this.store.addEventListener("geometryChanged", () => {
+      this.rebuildScene();
+    });
+    this.store.addEventListener("selectionChanged", () => {
+      this.rebuildScene();
+    });
+
+    this.renderer.domElement.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      this.raycaster.setFromCamera(this.pointer, this.camera);
+      const hits = this.raycaster.intersectObjects(this.selectableMeshes, true);
+      if (hits.length > 0) {
+        let obj = hits[0].object;
+        while (obj && !obj.userData?.sitestryKind) {
+          obj = obj.parent;
+        }
+        if (obj && obj.userData?.sitestryKind) {
+          this.store.selectObject(obj.userData.sitestryKind, obj.userData.sitestryId);
+        }
+      }
+    });
+  }
+
+  // Convert 2D Blueprint Pixel (x_px, y_px) -> Centered 3D Meter Coordinates (X, Z)
+  pxToMeter3D(x_px, y_px) {
+    const meta = this.store.project.metadata;
+    const scale = meta.scale_px_per_meter || 30.68;
+    const roi = meta.roi_px || { x: 0, y: 0, width: meta.image_width_px, height: meta.image_height_px };
+    const centerPxX = roi.x + roi.width / 2;
+    const centerPxY = roi.y + roi.height / 2;
+
+    return {
+      x: (x_px - centerPxX) / scale,
+      z: (y_px - centerPxY) / scale,
+    };
+  }
+
+  setCameraPreset(preset) {
+    if (preset === "top") {
+      this.camera.position.set(0, 44, 0.01);
+      this.controls.target.set(0, 0, 0);
+    } else if (preset === "walk") {
+      this.camera.position.set(0, 1.75, 9);
+      this.controls.target.set(0, 1.65, -5);
+    } else {
+      this.camera.position.set(0, 26, 30);
+      this.controls.target.set(0, 0, 0);
+    }
+    this.controls.update();
+  }
+
+  resize() {
+    if (!this.container) return;
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (w > 10 && h > 10) {
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(w, h);
+    }
+  }
+
+  // ==================== FULL 3D PROCEDURAL REBUILD ====================
+  rebuildScene() {
+    while (this.rootGroup.children.length > 0) {
+      const child = this.rootGroup.children[0];
+      this.rootGroup.remove(child);
+    }
+    this.selectableMeshes = [];
+    this.labelAnchors = [];
+
+    const layers = this.store.ui.layers;
+    const sel = this.store.ui.selected;
+    const scale = this.store.project.metadata.scale_px_per_meter || 30.68;
+
+    // 1. Build Room Zones & 60x60cm Raised Floor Plenums
+    if (layers.rooms) {
+      this.buildRooms3D(scale, sel);
+    }
+
+    // 2. Build Topological Walls + CSG Door & Window Cutouts
+    if (layers.walls) {
+      this.buildWallsAndOpenings3D(scale, sel);
+    }
+
+    // 3. Build Steel H-Beam & Concrete Structural Columns
+    if (layers.columns) {
+      this.buildColumns3D(scale, sel);
+    }
+
+    // 4. Build Stage 5 Telco CME / MEP Equipments
+    if (layers.equipments) {
+      this.buildEquipments3D(scale, sel);
+    }
+
+    // 5. Build 3D Overhead/Underfloor Cable Ladders & Stepped Staircases
+    if (layers.trays) {
+      this.buildCableTrays3D(scale, sel);
+      this.buildStairs3D(scale, sel);
+    }
+
+    this.update3DLabelsOverlay();
+  }
+
+  buildRooms3D(scale, sel) {
+    for (const room of this.store.project.rooms) {
+      if (!room.polygon_px || room.polygon_px.length < 3) continue;
+      const pts3D = room.polygon_px.map(([px, py]) => this.pxToMeter3D(px, py));
+
+      const shape = new THREE.Shape();
+      shape.moveTo(pts3D[0].x, -pts3D[0].z);
+      for (let i = 1; i < pts3D.length; i++) {
+        shape.lineTo(pts3D[i].x, -pts3D[i].z);
+      }
+      shape.closePath();
+
+      const elev = Math.max(0.06, Number(room.elevation_m) || 0.25);
+      const extrudeGeo = new THREE.ExtrudeGeometry(shape, {
+        depth: elev,
+        bevelEnabled: false,
+      });
+      extrudeGeo.rotateX(-Math.PI / 2);
+
+      const isSelected = sel?.kind === "room" && sel?.id === room.id;
+      const isRaised = room.floor_type === "raised_floor_60cm";
+
+      let mat;
+      if (isRaised && this.store.ui.layers.grid) {
+        const clonedTex = this.raisedFloorTex.clone();
+        clonedTex.needsUpdate = true;
+        clonedTex.repeat.set(1 / 0.6, 1 / 0.6);
+        mat = new THREE.MeshStandardMaterial({
+          map: clonedTex,
+          color: isSelected ? 0xd4e9e2 : 0xf2f0eb,
+          roughness: 0.65,
+          metalness: 0.1,
+        });
+      } else {
+        mat = new THREE.MeshStandardMaterial({
+          color: isSelected ? 0x00754a : 0xd8d4cc,
+          roughness: 0.8,
+          metalness: 0.08,
+        });
+      }
+
+      const mesh = new THREE.Mesh(extrudeGeo, mat);
+      mesh.receiveShadow = true;
+      mesh.userData = { sitestryKind: "room", sitestryId: room.id };
+      this.rootGroup.add(mesh);
+      this.selectableMeshes.push(mesh);
+
+      let cx = 0;
+      let cz = 0;
+      pts3D.forEach((p) => {
+        cx += p.x;
+        cz += p.z;
+      });
+      cx /= pts3D.length;
+      cz /= pts3D.length;
+
+      this.labelAnchors.push({
+        text: room.name,
+        elevText: isRaised ? `+${elev.toFixed(2)}m` : "",
+        pos: new THREE.Vector3(cx, elev + 0.45, cz),
+      });
+    }
+  }
+
+  buildWallsAndOpenings3D(scale, sel) {
+    const xray = this.store.ui.xrayWalls;
+
+    for (const wall of this.store.project.walls) {
+      const n1 = this.store.getNodeById(wall.start_node);
+      const n2 = this.store.getNodeById(wall.end_node);
+      if (!n1 || !n2) continue;
+
+      const p1 = this.pxToMeter3D(n1.x_px, n1.y_px);
+      const p2 = this.pxToMeter3D(n2.x_px, n2.y_px);
+
+      const dx = p2.x - p1.x;
+      const dz = p2.z - p1.z;
+      const lenM = Math.hypot(dx, dz);
+      if (lenM < 0.05) continue;
+
+      const heightM = Number(wall.height_m) || 3.8;
+      const thickM = Number(wall.thickness_m) || 0.2;
+      const angle = Math.atan2(dz, dx);
+      const midX = (p1.x + p2.x) / 2;
+      const midZ = (p1.z + p2.z) / 2;
+
+      const isSelected = sel?.kind === "wall" && sel?.id === wall.id;
+
+      let wallMat;
+      if (wall.type === "cage_mesh") {
+        const cageTexClone = this.cageTex.clone();
+        cageTexClone.needsUpdate = true;
+        cageTexClone.repeat.set(Math.max(1, lenM * 2), Math.max(1, heightM * 2));
+        wallMat = new THREE.MeshStandardMaterial({
+          map: cageTexClone,
+          color: isSelected ? 0xfbbf24 : 0xcba258,
+          transparent: true,
+          alphaTest: 0.15,
+          opacity: xray ? 0.35 : 0.92,
+          side: THREE.DoubleSide,
+          roughness: 0.4,
+          metalness: 0.6,
+        });
+      } else if (wall.type === "glass") {
+        wallMat = new THREE.MeshPhysicalMaterial({
+          color: isSelected ? 0x38bdf8 : 0xbae6fd,
+          transparent: true,
+          opacity: xray ? 0.2 : 0.42,
+          roughness: 0.1,
+          transmission: 0.6,
+        });
+      } else {
+        // Warm Architectural Concrete / Limestone Wall
+        wallMat = new THREE.MeshStandardMaterial({
+          color: isSelected ? 0x00754a : 0xedeae2,
+          roughness: 0.72,
+          metalness: 0.08,
+          transparent: xray,
+          opacity: xray ? 0.32 : 1.0,
+        });
+      }
+
+      const wallOpenings = this.store.project.openings.filter((o) => o.wall_id === wall.id);
+      let finalWallMesh;
+
+      if (wallOpenings.length > 0 && wall.type === "solid") {
+        try {
+          let baseBrush = new Brush(new THREE.BoxGeometry(lenM, heightM, thickM), wallMat);
+          baseBrush.position.set(midX, heightM / 2, midZ);
+          baseBrush.rotation.y = -angle;
+          baseBrush.updateMatrixWorld();
+
+          for (const op of wallOpenings) {
+            const ratio = Math.max(0.08, Math.min(0.92, Number(op.offset_ratio) || 0.5));
+            const opW = Math.min(lenM * 0.88, Number(op.width_m) || 1.2);
+            const isWin = op.type === "window";
+            const opH = Math.min(heightM - 0.25, Number(op.height_m) || (isWin ? 1.25 : 2.15));
+            const elevM = isWin ? Number(op.elevation_m) || 0.95 : 0.0;
+
+            const ox = p1.x + dx * ratio;
+            const oz = p1.z + dz * ratio;
+
+            const cutterBrush = new Brush(new THREE.BoxGeometry(opW, opH + 0.04, thickM * 2.6));
+            cutterBrush.position.set(ox, elevM + opH / 2, oz);
+            cutterBrush.rotation.y = -angle;
+            cutterBrush.updateMatrixWorld();
+
+            baseBrush = this.csgEvaluator.evaluate(baseBrush, cutterBrush, SUBTRACTION);
+          }
+          finalWallMesh = baseBrush;
+          finalWallMesh.material = wallMat;
+        } catch (err) {
+          const fallbackGeo = new THREE.BoxGeometry(lenM, heightM, thickM);
+          finalWallMesh = new THREE.Mesh(fallbackGeo, wallMat);
+          finalWallMesh.position.set(midX, heightM / 2, midZ);
+          finalWallMesh.rotation.y = -angle;
+        }
+      } else {
+        const boxGeo = new THREE.BoxGeometry(lenM, heightM, thickM);
+        finalWallMesh = new THREE.Mesh(boxGeo, wallMat);
+        finalWallMesh.position.set(midX, heightM / 2, midZ);
+        finalWallMesh.rotation.y = -angle;
+      }
+
+      finalWallMesh.castShadow = true;
+      finalWallMesh.receiveShadow = true;
+      finalWallMesh.userData = { sitestryKind: "wall", sitestryId: wall.id };
+      this.rootGroup.add(finalWallMesh);
+      this.selectableMeshes.push(finalWallMesh);
+
+      // Build 3D Door Frames, Swinging Door Leaves, or Mullioned Window Frames
+      for (const op of wallOpenings) {
+        this.buildOpening3D(op, p1, dx, dz, angle, thickM, sel);
+      }
+    }
+  }
+
+  buildOpening3D(op, p1, dx, dz, angle, wallThickM, sel) {
+    const ratio = Number(op.offset_ratio) || 0.5;
+    const ox = p1.x + dx * ratio;
+    const oz = p1.z + dz * ratio;
+    const opW = Number(op.width_m) || 1.2;
+    const isWindow = op.type === "window";
+    const opH = Number(op.height_m) || (isWindow ? 1.25 : 2.15);
+    const elevM = isWindow ? Number(op.elevation_m) || 0.95 : 0.0;
+    const isSelected = sel?.kind === "opening" && sel?.id === op.id;
+
+    const group = new THREE.Group();
+    group.position.set(ox, elevM, oz);
+    group.rotation.y = -angle;
+    group.userData = { sitestryKind: "opening", sitestryId: op.id };
+
+    if (op.type === "ramp") {
+      const rampGeo = new THREE.BoxGeometry(opW, 0.12, 1.3);
+      const rampMat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0x00754a : 0x64748b,
+        metalness: 0.4,
+        roughness: 0.6,
+      });
+      const rampMesh = new THREE.Mesh(rampGeo, rampMat);
+      rampMesh.position.set(0, 0.18, 0.55);
+      rampMesh.rotation.x = 0.24;
+      group.add(rampMesh);
+    } else if (isWindow) {
+      // 3D Architectural Window Frame + Mullion + Translucent Glazing
+      const frameMat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0x00754a : 0x1e3932,
+        roughness: 0.4,
+        metalness: 0.5,
+      });
+      const fThick = 0.05;
+      const fDepth = wallThickM + 0.04;
+
+      // Top, Bottom, Left, Right frame bars + Center Mullion
+      const topBar = new THREE.Mesh(new THREE.BoxGeometry(opW, fThick, fDepth), frameMat);
+      topBar.position.set(0, opH - fThick / 2, 0);
+      const botBar = new THREE.Mesh(new THREE.BoxGeometry(opW, fThick + 0.02, fDepth + 0.04), frameMat);
+      botBar.position.set(0, fThick / 2, 0);
+      const leftBar = new THREE.Mesh(new THREE.BoxGeometry(fThick, opH, fDepth), frameMat);
+      leftBar.position.set(-opW / 2 + fThick / 2, opH / 2, 0);
+      const rightBar = new THREE.Mesh(new THREE.BoxGeometry(fThick, opH, fDepth), frameMat);
+      rightBar.position.set(opW / 2 - fThick / 2, opH / 2, 0);
+      const centerMullion = new THREE.Mesh(new THREE.BoxGeometry(fThick * 0.85, opH, fDepth * 0.9), frameMat);
+      centerMullion.position.set(0, opH / 2, 0);
+
+      const glassMat = new THREE.MeshPhysicalMaterial({
+        color: 0x7dd3fc,
+        transparent: true,
+        opacity: 0.38,
+        roughness: 0.1,
+        metalness: 0.1,
+      });
+      const glassPane = new THREE.Mesh(new THREE.BoxGeometry(opW - fThick * 2, opH - fThick * 2, 0.02), glassMat);
+      glassPane.position.set(0, opH / 2, 0);
+
+      group.add(topBar, botBar, leftBar, rightBar, centerMullion, glassPane);
+    } else {
+      // Single or Double Door: Frame + Semi-Open Door Leaf(s)
+      const frameMat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0x00754a : 0x1e3932,
+        roughness: 0.45,
+        metalness: 0.4,
+      });
+      const leafMat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0xcba258 : 0x8c6239,
+        roughness: 0.55,
+        metalness: 0.15,
+      });
+
+      const postGeo = new THREE.BoxGeometry(0.06, opH, wallThickM + 0.05);
+      const leftPost = new THREE.Mesh(postGeo, frameMat);
+      leftPost.position.set(-opW / 2, opH / 2, 0);
+      const rightPost = new THREE.Mesh(postGeo, frameMat);
+      rightPost.position.set(opW / 2, opH / 2, 0);
+      const header = new THREE.Mesh(new THREE.BoxGeometry(opW + 0.08, 0.06, wallThickM + 0.05), frameMat);
+      header.position.set(0, opH, 0);
+      group.add(leftPost, rightPost, header);
+
+      const swingSign = (op.swing_dir || "in-left").startsWith("out") ? -1 : 1;
+
+      if (op.type === "double_door") {
+        const leafW = opW * 0.48;
+        const leafGeo = new THREE.BoxGeometry(leafW, opH - 0.04, 0.045);
+        leafGeo.translate(leafW / 2, 0, 0);
+
+        const leftPivot = new THREE.Group();
+        leftPivot.position.set(-opW / 2 + 0.03, opH / 2, 0);
+        leftPivot.rotation.y = swingSign * 0.48;
+        leftPivot.add(new THREE.Mesh(leafGeo, leafMat));
+
+        const rightGeo = new THREE.BoxGeometry(leafW, opH - 0.04, 0.045);
+        rightGeo.translate(-leafW / 2, 0, 0);
+        const rightPivot = new THREE.Group();
+        rightPivot.position.set(opW / 2 - 0.03, opH / 2, 0);
+        rightPivot.rotation.y = -swingSign * 0.48;
+        rightPivot.add(new THREE.Mesh(rightGeo, leafMat));
+
+        group.add(leftPivot, rightPivot);
+      } else {
+        const leafW = opW - 0.06;
+        const hingeRight = (op.swing_dir || "in-left").endsWith("right");
+        const leafGeo = new THREE.BoxGeometry(leafW, opH - 0.04, 0.045);
+        leafGeo.translate(hingeRight ? -leafW / 2 : leafW / 2, 0, 0);
+
+        const pivot = new THREE.Group();
+        pivot.position.set(hingeRight ? opW / 2 - 0.03 : -opW / 2 + 0.03, opH / 2, 0);
+        pivot.rotation.y = (hingeRight ? -1 : 1) * swingSign * 0.52;
+        pivot.add(new THREE.Mesh(leafGeo, leafMat));
+        group.add(pivot);
+      }
+    }
+
+    this.rootGroup.add(group);
+    this.selectableMeshes.push(group);
+  }
+
+  buildColumns3D(scale, sel) {
+    for (const col of this.store.project.columns) {
+      const pos = this.pxToMeter3D(col.x_px, col.y_px);
+      const w = Number(col.width_m) || 0.55;
+      const d = Number(col.depth_m) || 0.55;
+      const h = Number(col.height_m) || 3.8;
+      const isSelected = sel?.kind === "column" && sel?.id === col.id;
+
+      const colGroup = new THREE.Group();
+      colGroup.position.set(pos.x, 0, pos.z);
+      colGroup.userData = { sitestryKind: "column", sitestryId: col.id };
+
+      const mat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0xcba258 : 0x00754a,
+        metalness: 0.55,
+        roughness: 0.38,
+      });
+
+      if (col.type === "h_beam") {
+        const flangeThick = Math.max(0.06, d * 0.18);
+        const webThick = Math.max(0.06, w * 0.18);
+
+        const f1 = new THREE.Mesh(new THREE.BoxGeometry(w, h, flangeThick), mat);
+        f1.position.set(0, h / 2, -d / 2 + flangeThick / 2);
+
+        const f2 = new THREE.Mesh(new THREE.BoxGeometry(w, h, flangeThick), mat);
+        f2.position.set(0, h / 2, d / 2 - flangeThick / 2);
+
+        const web = new THREE.Mesh(new THREE.BoxGeometry(webThick, h, d - flangeThick * 2), mat);
+        web.position.set(0, h / 2, 0);
+
+        colGroup.add(f1, f2, web);
+      } else {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        box.position.y = h / 2;
+        colGroup.add(box);
+      }
+
+      this.rootGroup.add(colGroup);
+      this.selectableMeshes.push(colGroup);
+    }
+  }
+
+  buildEquipments3D(scale, sel) {
+    const palette = {
+      rack: { body: 0x1e293b, accent: 0x00754a },
+      ups: { body: 0x4c1d95, accent: 0xc084fc },
+      battery: { body: 0x78350f, accent: 0xf59e0b },
+      rectifier: { body: 0x0c4a6e, accent: 0x38bdf8 },
+      panel: { body: 0x7f1d1d, accent: 0xef4444 },
+      pac: { body: 0x064e3b, accent: 0x10b981 },
+    };
+
+    for (const eq of this.store.project.equipments) {
+      const pos = this.pxToMeter3D(eq.x_px, eq.y_px);
+      const w = Number(eq.width_m) || 1.2;
+      const d = Number(eq.depth_m) || 0.9;
+      const h = Number(eq.height_m) || 2.0;
+      const elev = Number(eq.elevation_m) || 0.0;
+      const isSelected = sel?.kind === "equipment" && sel?.id === eq.id;
+      const colors = palette[eq.category] || palette.rack;
+
+      const eqGroup = new THREE.Group();
+      eqGroup.position.set(pos.x, elev, pos.z);
+      eqGroup.rotation.y = -THREE.MathUtils.degToRad(eq.rotation_deg || 0);
+      eqGroup.userData = { sitestryKind: "equipment", sitestryId: eq.id };
+
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0x00754a : colors.body,
+        roughness: 0.4,
+        metalness: 0.65,
+      });
+
+      const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), bodyMat);
+      bodyMesh.position.y = h / 2;
+      bodyMesh.castShadow = true;
+      bodyMesh.receiveShadow = true;
+      eqGroup.add(bodyMesh);
+
+      const stripMat = new THREE.MeshBasicMaterial({ color: isSelected ? 0xcba258 : colors.accent });
+      const stripMesh = new THREE.Mesh(new THREE.BoxGeometry(w * 0.85, 0.08, 0.02), stripMat);
+      stripMesh.position.set(0, h * 0.82, d / 2 + 0.01);
+      eqGroup.add(stripMesh);
+
+      this.rootGroup.add(eqGroup);
+      this.selectableMeshes.push(eqGroup);
+
+      this.labelAnchors.push({
+        text: eq.name,
+        elevText: "",
+        pos: new THREE.Vector3(pos.x, elev + h + 0.35, pos.z),
+      });
+    }
+  }
+
+  buildCableTrays3D(scale, sel) {
+    for (const tray of this.store.project.cable_trays) {
+      const pts = tray.points_px || [];
+      if (pts.length < 2) continue;
+
+      const isSelected = sel?.kind === "tray" && sel?.id === tray.id;
+      const elev = Number(tray.elevation_m) || 2.65;
+      const widthM = Number(tray.width_m) || 0.45;
+
+      const trayGroup = new THREE.Group();
+      trayGroup.userData = { sitestryKind: "tray", sitestryId: tray.id };
+
+      const railMat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0x00754a : 0xcba258,
+        metalness: 0.7,
+        roughness: 0.3,
+      });
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = this.pxToMeter3D(pts[i][0], pts[i][1]);
+        const p2 = this.pxToMeter3D(pts[i + 1][0], pts[i + 1][1]);
+        const dx = p2.x - p1.x;
+        const dz = p2.z - p1.z;
+        const segLen = Math.hypot(dx, dz);
+        if (segLen < 0.1) continue;
+
+        const angle = Math.atan2(dz, dx);
+        const mx = (p1.x + p2.x) / 2;
+        const mz = (p1.z + p2.z) / 2;
+
+        const segGroup = new THREE.Group();
+        segGroup.position.set(mx, elev, mz);
+        segGroup.rotation.y = -angle;
+
+        const rGeo = new THREE.BoxGeometry(segLen, 0.08, 0.04);
+        const rLeft = new THREE.Mesh(rGeo, railMat);
+        rLeft.position.z = -widthM / 2;
+        const rRight = new THREE.Mesh(rGeo, railMat);
+        rRight.position.z = widthM / 2;
+        segGroup.add(rLeft, rRight);
+
+        const rungCount = Math.max(2, Math.floor(segLen / 0.35));
+        const rungGeo = new THREE.BoxGeometry(0.04, 0.04, widthM);
+        for (let r = 0; r <= rungCount; r++) {
+          const rung = new THREE.Mesh(rungGeo, railMat);
+          rung.position.x = -segLen / 2 + (r / rungCount) * segLen;
+          segGroup.add(rung);
+        }
+
+        trayGroup.add(segGroup);
+      }
+
+      this.rootGroup.add(trayGroup);
+      this.selectableMeshes.push(trayGroup);
+    }
+  }
+
+  buildStairs3D(scale, sel) {
+    for (const st of this.store.project.stairs) {
+      const pos = this.pxToMeter3D(st.x_px, st.y_px);
+      const w = Number(st.width_m) || 2.4;
+      const d = Number(st.depth_m) || 3.2;
+      const h = Number(st.height_m) || 3.6;
+      const steps = Math.max(6, Number(st.steps) || 12);
+      const isSelected = sel?.kind === "stair" && sel?.id === st.id;
+
+      const stGroup = new THREE.Group();
+      stGroup.position.set(pos.x, 0, pos.z);
+      if (st.direction === "east" || st.direction === "west") {
+        stGroup.rotation.y = Math.PI / 2;
+      }
+      stGroup.userData = { sitestryKind: "stair", sitestryId: st.id };
+
+      const mat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0x00754a : 0xd6d1c4,
+        roughness: 0.65,
+        metalness: 0.15,
+      });
+      const railMat = new THREE.MeshStandardMaterial({
+        color: 0xcba258,
+        roughness: 0.35,
+        metalness: 0.65,
+      });
+
+      const runSpan = st.direction === "east" || st.direction === "west" ? w : d;
+      const treadW = st.direction === "east" || st.direction === "west" ? d : w;
+      const stepD = runSpan / steps;
+      const stepH = h / steps;
+
+      for (let i = 0; i < steps; i++) {
+        const curH = stepH * (i + 1);
+        const stepMesh = new THREE.Mesh(new THREE.BoxGeometry(treadW, curH, stepD * 0.96), mat);
+        stepMesh.position.set(0, curH / 2, -runSpan / 2 + stepD * (i + 0.5));
+        stepMesh.castShadow = true;
+        stepMesh.receiveShadow = true;
+        stGroup.add(stepMesh);
+      }
+
+      // Dual Safety Handrails
+      const diagLen = Math.hypot(runSpan, h);
+      const pitch = Math.atan2(h, runSpan);
+      const handrailGeo = new THREE.BoxGeometry(0.05, 0.05, diagLen);
+      const hrLeft = new THREE.Mesh(handrailGeo, railMat);
+      hrLeft.position.set(-treadW / 2 + 0.05, h / 2 + 0.85, 0);
+      hrLeft.rotation.x = pitch;
+      const hrRight = new THREE.Mesh(handrailGeo, railMat);
+      hrRight.position.set(treadW / 2 - 0.05, h / 2 + 0.85, 0);
+      hrRight.rotation.x = pitch;
+      stGroup.add(hrLeft, hrRight);
+
+      this.rootGroup.add(stGroup);
+      this.selectableMeshes.push(stGroup);
+    }
+  }
+
+  // ==================== FLOATING 3D HTML LABELS OVERLAY ====================
+  update3DLabelsOverlay() {
+    if (!this.labelsOverlay) return;
+    this.labelsOverlay.innerHTML = "";
+    if (!this.store.ui.show3DLabels) return;
+
+    const w = this.container.clientWidth;
+    const h = this.container.clientHeight;
+    if (w < 20 || h < 20) return;
+
+    for (const item of this.labelAnchors) {
+      const proj = item.pos.clone().project(this.camera);
+      if (proj.z > 1) continue;
+
+      const x = (proj.x * 0.5 + 0.5) * w;
+      const y = (-(proj.y * 0.5) + 0.5) * h;
+      if (x < 10 || x > w - 10 || y < 10 || y > h - 10) continue;
+
+      const div = document.createElement("div");
+      div.className = "label-3d-tag";
+      div.style.left = `${x}px`;
+      div.style.top = `${y}px`;
+      div.innerHTML = `${item.text}${
+        item.elevText ? `<span class="elev-pill">${item.elevText}</span>` : ""
+      }`;
+      this.labelsOverlay.appendChild(div);
+    }
+  }
+
+  // ==================== BINARY .GLB 3D EXPORT ====================
+  exportGLB(filename = "sitestry_digital_twin.glb") {
+    const exporter = new GLTFExporter();
+    exporter.parse(
+      this.rootGroup,
+      (result) => {
+        const blob = new Blob([result], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      },
+      (err) => {
+        console.error("[Viewer3DEngine] GLB Export Error:", err);
+      },
+      { binary: true }
+    );
+  }
+
+  animate() {
+    requestAnimationFrame(() => this.animate());
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+    if (this.store.ui.show3DLabels && this.labelAnchors.length > 0) {
+      this.update3DLabelsOverlay();
+    }
+  }
+}

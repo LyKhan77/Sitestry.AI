@@ -1,0 +1,37 @@
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# Superpowers Plans & Specs (DO NOT COMMIT PLANS per AGENTS.md Rule)
+docs/superpowers/plans/
+docs/superpowers/specs/
+
+# Local Scratch & Diagnostic Outputs
+.scratch/
+scratch/
+*.log
+tmp/
+
+# Private Sample Blueprints (runtime inputs, not source)
+floorplan/
+
+# Test Harness Artifacts & Caches
+tests/browser/node_modules/
+tests/browser/test-results/
+tests/browser/playwright-report/
+.pytest_cache/
+.playwright/
+
+# OS & Editor Artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

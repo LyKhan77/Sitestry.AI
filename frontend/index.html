@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sitestry.AI — Procedural 2D Floorplan to 3D Architectural &amp; Telco Digital Twin</title>
+
+  <!-- Google Fonts: Plus Jakarta Sans (Display & UI) + IBM Plex Mono (Metric CAD Telemetry) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Konva.js 2D Canvas Engine -->
+  <script src="https://unpkg.com/konva@9.3.6/konva.min.js"></script>
+
+  <!-- Three.js + Addons + three-bvh-csg via ES Module Importmap -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "three-mesh-bvh": "https://unpkg.com/three-mesh-bvh@0.7.3/build/index.module.js",
+      "three-bvh-csg": "https://unpkg.com/three-bvh-csg@0.0.16/build/index.module.js"
+    }
+  }
+  </script>
+
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body data-stage="1">
+  <!-- ==================== TOP NAVIGATION & 5-STAGE SEGMENTED STEPPER ==================== -->
+  <header class="top-ribbon">
+    <div class="brand-cluster">
+      <div class="brand-emblem">
+        <svg viewBox="0 0 28 28" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2L25 8.5V19.5L14 26L3 19.5V8.5L14 2Z" stroke="#d4e9e2" fill="#006241" />
+          <path d="M14 2V14M14 14L25 8.5M14 14L3 8.5M14 14V26" stroke="#ffffff" stroke-width="1.5" />
+          <circle cx="14" cy="14" r="3" fill="#cba258" stroke="none" />
+        </svg>
+      </div>
+      <div class="brand-titles">
+        <div class="brand-name">
+          Sitestry<span class="brand-ai">.AI</span>
+          <span class="version-pill">v3.0 PROCEDURAL</span>
+        </div>
+        <div class="brand-sub">Architectural Vision &amp; CAD Digital Twin Studio</div>
+      </div>
+    </div>
+
+    <!-- 5-STAGE SEGMENTED WORKFLOW NAVIGATION -->
+    <nav class="stepper-nav" aria-label="Workflow Stages">
+      <button class="step-item active" data-step="1" id="stepBtn1">
+        <span class="step-num">1</span>
+        <div class="step-meta">
+          <span class="step-title">Input</span>
+          <span class="step-desc">Drawing &amp; Skala</span>
+        </div>
+      </button>
+      <div class="step-divider"></div>
+      <button class="step-item" data-step="2" id="stepBtn2">
+        <span class="step-num">2</span>
+        <div class="step-meta">
+          <span class="step-title">Process Extraction</span>
+          <span class="step-desc">Procedural Vision</span>
+        </div>
+      </button>
+      <div class="step-divider"></div>
+      <button class="step-item" data-step="3" id="stepBtn3">
+        <span class="step-num">3</span>
+        <div class="step-meta">
+          <span class="step-title">Review Annotation</span>
+          <span class="step-desc">2D CAD Editor</span>
+        </div>
+      </button>
+      <div class="step-divider"></div>
+      <button class="step-item" data-step="4" id="stepBtn4">
+        <span class="step-num">4</span>
+        <div class="step-meta">
+          <span class="step-title">Build 3D</span>
+          <span class="step-desc">Structural Twin</span>
+        </div>
+      </button>
+      <div class="step-divider"></div>
+      <button class="step-item" data-step="5" id="stepBtn5">
+        <span class="step-num">5</span>
+        <div class="step-meta">
+          <span class="step-title">Installation Equipment</span>
+          <span class="step-desc">Manual CME &amp; BoQ</span>
+        </div>
+      </button>
+    </nav>
+
+    <!-- RIGHT HEADER QUICK ACTIONS -->
+    <div class="action-cluster">
+      <button id="btnPagePicker" class="pill-badge-btn" title="Pilih Halaman PDF">
+        <span>Hal PDF:</span>
+        <strong id="lblCurrentPage">4/11</strong>
+      </button>
+      <button id="btnExportJson" class="btn-outline-pill" title="Download Standardized Sitestry.AI JSON Schema">
+        Export JSON
+      </button>
+      <button id="btnExportGlb" class="btn-outline-pill" title="Export 3D Model (.GLB)">
+        Export .GLB
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== MAIN SEGMENTED WORKSPACE ==================== -->
+  <main class="studio-body" id="studioBody">
+    <!-- LEFT STAGE-SPECIFIC SIDEBAR -->
+    <aside class="stage-sidebar">
+
+      <!-- ==================== STAGE 1 PANEL: INPUT & CALIBRATION ==================== -->
+      <div class="stage-panel active" id="stagePanel1">
+        <div class="stage-hero-banner">
+          <span class="stage-kicker">STAGE 01 &bull; INPUT FLOORPLAN</span>
+          <h2>Pilih Drawing &amp; Kalibrasi Skala</h2>
+          <p>Pilih dokumen APD bawaan atau unggah file PDF/Gambar baru, lalu sesuaikan batas ROI (tanpa Kop Surat).</p>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">1. PILIH SAMPLE FLOORPLAN / UPLOAD</div>
+          <div class="sample-cards-list">
+            <button id="btnSampleGatsuPdf" class="sample-select-card active">
+              <div class="sample-dot-indicator"></div>
+              <div class="sample-card-body">
+                <strong>Gatsu Barat Bali (Hal. 4 &bull; PDF Vector)</strong>
+                <span>MSC Gatsu Lt. 1 — 18 Kolom, 15 Pintu, 4 Tangga</span>
+              </div>
+            </button>
+            <button id="btnSampleAncolPdf" class="sample-select-card">
+              <div class="sample-dot-indicator"></div>
+              <div class="sample-card-body">
+                <strong>Ancol Jakarta (Hal. 13 &bull; PDF Vector)</strong>
+                <span>Gedung A, B, Bridge &amp; C Lt. 2 — 66 Kolom, 40 Pintu</span>
+              </div>
+            </button>
+            <button id="btnSampleGatsuJpg" class="sample-select-card">
+              <div class="sample-dot-indicator"></div>
+              <div class="sample-card-body">
+                <strong>MSC Gatsu Lantai 1 (plan.jpeg &bull; Raster)</strong>
+                <span>High-Res Cropped Blueprint + R. Kapasitor (1600&times;945 px)</span>
+              </div>
+            </button>
+          </div>
+
+          <div class="upload-row-actions">
+            <label class="btn-upload-dashed">
+              <input type="file" id="fileUploadInput" accept=".pdf,.png,.jpg,.jpeg,.webp" hidden />
+              <span>+ Upload File PDF / PNG / JPG</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">2. AREA KERJA (ROI) &amp; SKALA METRIK</div>
+          <p class="card-helper-text">
+            Gunakan <strong>ROI Crop Box</strong> untuk mengecualikan Kop Surat di sisi kanan, dan pastikan skala metrik akurat.
+          </p>
+          <div class="calib-tools-row">
+            <button class="tool-btn" data-tool="roi" title="Atur Kotak Area Ekstraksi (Shortcut: C)">
+              <span class="kbd">C</span>
+              <span>Atur ROI Box</span>
+            </button>
+            <button class="tool-btn" data-tool="ruler" title="Kalibrasi 2-Titik pada Dimensi Diketahui (Shortcut: R)">
+              <span class="kbd">R</span>
+              <span>2-Pt Ruler</span>
+            </button>
+          </div>
+          <div class="scale-inline-box">
+            <div>
+              <span class="mono-label">SKALA AKTIF</span>
+              <strong id="lblStage1Scale" class="mono-val">30.68 px/m</strong>
+            </div>
+            <button id="btnAutoScale" class="btn-ceramic-sm">Auto-Calibrate Grid</button>
+          </div>
+        </div>
+
+        <div class="stage-cta-footer">
+          <button id="btnNextToStage2" class="btn-primary-pill">
+            <span>Lanjut ke Process Extraction</span>
+            <span class="cta-arrow">&rarr;</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================== STAGE 2 PANEL: PROCESS EXTRACTION ==================== -->
+      <div class="stage-panel" id="stagePanel2">
+        <div class="stage-hero-banner">
+          <span class="stage-kicker">STAGE 02 &bull; PROCEDURAL EXTRACTION</span>
+          <h2>Ekstraksi Vektor &amp; Visi Arsitektur</h2>
+          <p>Mesin prosedural mengekstrak topologi dinding ruangan kecil, daun &amp; busur pintu sesuai Door Tag, jendela, tangga, dan pilar.</p>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">PIPELINE PROSEDURAL 4-TAHAP</div>
+          <div class="pipeline-steps-list">
+            <div class="pipeline-step-row">
+              <div class="pipe-badge">01</div>
+              <div class="pipe-info">
+                <strong>Wall &amp; Small-Room Topology</strong>
+                <span>Double-line pairing, door-gap bridging &amp; T/L corner snapping</span>
+              </div>
+              <span class="pipe-stat" id="statPipeWalls">86 Walls</span>
+            </div>
+            <div class="pipeline-step-row">
+              <div class="pipe-badge">02</div>
+              <div class="pipe-info">
+                <strong>Door Leaf, Swing Arc &amp; Door Tag</strong>
+                <span>Quarter-circle swing arc verification &amp; DD/D/TD tag alignment</span>
+              </div>
+              <span class="pipe-stat" id="statPipeDoors">15 Doors</span>
+            </div>
+            <div class="pipeline-step-row">
+              <div class="pipe-badge">03</div>
+              <div class="pipe-info">
+                <strong>Window Mullion &amp; Glazing</strong>
+                <span>Perimeter multi-line glazing detection (W-01..W-xx)</span>
+              </div>
+              <span class="pipe-stat" id="statPipeWindows">4 Windows</span>
+            </div>
+            <div class="pipeline-step-row">
+              <div class="pipe-badge">04</div>
+              <div class="pipe-info">
+                <strong>Stair Treads &amp; Pillar Grid</strong>
+                <span>Periodic parallel step clusters &amp; H-Beam/Cross columns</span>
+              </div>
+              <span class="pipe-stat" id="statPipeStairsCols">18 Cols &bull; 4 Stairs</span>
+            </div>
+          </div>
+
+          <button id="btnRunExtract" class="btn-ceramic-full">
+            &#9889; Jalankan Ulang Ekstraksi Prosedural
+          </button>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">KONTROL OVERLAY GAMBAR ASLI</div>
+          <div class="opacity-slider-box">
+            <div class="opacity-label-row">
+              <span>Transparansi Blueprint Asli</span>
+              <strong id="lblStage2Opacity" class="mono-val">68%</strong>
+            </div>
+            <input type="range" id="rngStage2Opacity" min="0" max="100" value="68" />
+          </div>
+        </div>
+
+        <div class="stage-cta-footer">
+          <button id="btnNextToStage3" class="btn-primary-pill">
+            <span>Buka Review Annotation Editor</span>
+            <span class="cta-arrow">&rarr;</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================== STAGE 3 PANEL: REVIEW ANNOTATION (2D CAD EDITOR) ==================== -->
+      <div class="stage-panel" id="stagePanel3">
+        <div class="stage-hero-banner">
+          <span class="stage-kicker">STAGE 03 &bull; REVIEW ANNOTATION</span>
+          <h2>Verifikasi &amp; Koreksi Manual (2D CAD)</h2>
+          <p>Geser titik sudut dinding, periksa posisi pintu &amp; Door Tag, atau tambahkan dinding, pintu, jendela, tangga, dan pilar.</p>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">ALAT ANNOTASI STRUKTURAL</div>
+          <div class="tool-grid-2col">
+            <button class="tool-btn active" data-tool="select" title="Pilih / Geser Vertex atau Pintu (Shortcut: V)">
+              <span class="kbd">V</span>
+              <span>Select / Vertex</span>
+            </button>
+            <button class="tool-btn" data-tool="wall" title="Gambar Segmen Dinding Baru (Shortcut: W)">
+              <span class="kbd">W</span>
+              <span>Draw Wall</span>
+            </button>
+            <button class="tool-btn" data-tool="door" title="Klik Dinding untuk Pasang Pintu Single (Shortcut: D)">
+              <span class="kbd">D</span>
+              <span>Single Door</span>
+            </button>
+            <button class="tool-btn" data-tool="double_door" title="Klik Dinding untuk Pasang Pintu Double (Shortcut: B)">
+              <span class="kbd">B</span>
+              <span>Double Door</span>
+            </button>
+            <button class="tool-btn" data-tool="window" title="Klik Dinding untuk Pasang Jendela (Shortcut: N)">
+              <span class="kbd">N</span>
+              <span>Add Window</span>
+            </button>
+            <button class="tool-btn" data-tool="column" title="Klik untuk Pasang Pilar / Kolom H-Beam (Shortcut: P)">
+              <span class="kbd">P</span>
+              <span>Add Pillar</span>
+            </button>
+            <button class="tool-btn" data-tool="stair" title="Klik untuk Pasang Tangga (Shortcut: S)">
+              <span class="kbd">S</span>
+              <span>Add Stairs</span>
+            </button>
+            <button class="tool-btn" data-tool="room" title="Gambar Zona Ruangan (Shortcut: Z)">
+              <span class="kbd">Z</span>
+              <span>Room Zone</span>
+            </button>
+          </div>
+
+          <div class="history-action-bar">
+            <button id="btnUndo" class="btn-history" title="Undo (Ctrl+Z)">&#8630; Undo</button>
+            <button id="btnRedo" class="btn-history" title="Redo (Ctrl+Y)">&#8631; Redo</button>
+            <button id="btnDeleteSelected" class="btn-history danger" title="Hapus Elemen Terpilih (Del)">&#10005; Hapus</button>
+          </div>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">VISIBILITAS LAYER &amp; SNAP</div>
+          <div class="layer-toggles-stack">
+            <label class="layer-check-row">
+              <input type="checkbox" id="chkLayerBlueprint" checked />
+              <span>Gambar Blueprint Asli</span>
+            </label>
+            <div class="opacity-inline-slider">
+              <input type="range" id="rngBlueprintOpacity" min="0" max="100" value="68" />
+              <span id="lblBlueprintOpacity">68%</span>
+            </div>
+            <label class="layer-check-row">
+              <input type="checkbox" id="chkLayerWalls" checked />
+              <span class="swatch swatch-wall"></span>
+              <span>Dinding, Pintu (Door Tag) &amp; Jendela</span>
+            </label>
+            <label class="layer-check-row">
+              <input type="checkbox" id="chkLayerColumns" checked />
+              <span class="swatch swatch-col"></span>
+              <span>Pilar / Kolom Struktur (H-Beam)</span>
+            </label>
+            <label class="layer-check-row">
+              <input type="checkbox" id="chkLayerTrays" checked />
+              <span class="swatch swatch-stair"></span>
+              <span>Tangga (Stairs) &amp; Jalur Tray</span>
+            </label>
+            <label class="layer-check-row">
+              <input type="checkbox" id="chkLayerRooms" checked />
+              <span class="swatch swatch-room"></span>
+              <span>Label &amp; Poligon Ruangan</span>
+            </label>
+            <label class="layer-check-row">
+              <input type="checkbox" id="chkLayerGrid" checked />
+              <span class="swatch swatch-grid"></span>
+              <span>Grid Raised Floor 60&times;60cm</span>
+            </label>
+            <label class="layer-check-row">
+              <input type="checkbox" id="chkLayerRoi" checked />
+              <span class="swatch swatch-roi"></span>
+              <span>Batas ROI Ekstraksi</span>
+            </label>
+            <label class="layer-check-row">
+              <input type="checkbox" id="chkOrthoSnap" checked />
+              <span>Ortho-Snap Sudut 0&deg;/90&deg; Aktif</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="stage-cta-footer">
+          <button id="btnNextToStage4" class="btn-primary-pill">
+            <span>Build 3D Digital Twin</span>
+            <span class="cta-arrow">&rarr;</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================== STAGE 4 PANEL: BUILD 3D (STRUCTURAL TWIN) ==================== -->
+      <div class="stage-panel" id="stagePanel4">
+        <div class="stage-hero-banner">
+          <span class="stage-kicker">STAGE 04 &bull; BUILD 3D STRUCTURE</span>
+          <h2>3D Architectural Digital Twin</h2>
+          <p>Hasil ekstrusi 3D otomatis dari topologi dinding, bukaan pintu CSG, jendela dengan ambang atas/bawah, tangga, dan kolom.</p>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">PRESET KAMERA &amp; VIEWPORT</div>
+          <div class="cam-preset-grid">
+            <button id="btnStage4CamIso" class="btn-ceramic-sm active">3D Isometric Orbit</button>
+            <button id="btnStage4CamTop" class="btn-ceramic-sm">3D Top Ortho</button>
+            <button id="btnStage4CamWalk" class="btn-ceramic-sm">Eye-Level Walk</button>
+            <button id="btnStage4SplitSync" class="btn-ceramic-sm">Split 2D | 3D Sync</button>
+          </div>
+          <div class="cam-toggles-row">
+            <button id="btnToggle3DLabels" class="btn-pill-toggle active">Label Ruangan 3D</button>
+            <button id="btnToggleXray" class="btn-pill-toggle">Mode X-Ray Dinding</button>
+          </div>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">RINGKASAN GEOMETRI STRUKTURAL</div>
+          <div class="struct-summary-grid" id="stage4SummaryGrid">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <div class="stage-cta-footer">
+          <button id="btnNextToStage5" class="btn-primary-pill">
+            <span>Lanjut ke Installation Equipment</span>
+            <span class="cta-arrow">&rarr;</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================== STAGE 5 PANEL: INSTALLATION EQUIPMENT ==================== -->
+      <div class="stage-panel" id="stagePanel5">
+        <div class="stage-hero-banner">
+          <span class="stage-kicker">STAGE 05 &bull; INSTALLATION EQUIPMENT</span>
+          <h2>Instalasi Manual Perangkat CME</h2>
+          <p>Pilih perangkat dari katalog di bawah lalu klik pada denah 2D untuk menempatkan secara presisi, atau gambar jalur Cable Ladder.</p>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">KATALOG PERANGKAT TELCO CME &amp; MEP</div>
+          <div class="eq-catalog-grid">
+            <button class="eq-catalog-card active" data-eq-cat="rack">
+              <strong>42U Server Rack</strong>
+              <span>0.6m &times; 1.1m &times; 2.1m</span>
+            </button>
+            <button class="eq-catalog-card" data-eq-cat="ups">
+              <strong>UPS 250kVA Frame</strong>
+              <span>1.6m &times; 0.95m &times; 2.0m</span>
+            </button>
+            <button class="eq-catalog-card" data-eq-cat="battery">
+              <strong>Lithium Battery Bank</strong>
+              <span>2.2m &times; 0.9m &times; 2.0m</span>
+            </button>
+            <button class="eq-catalog-card" data-eq-cat="rectifier">
+              <strong>DC Rectifier System</strong>
+              <span>1.2m &times; 0.8m &times; 2.0m</span>
+            </button>
+            <button class="eq-catalog-card" data-eq-cat="panel">
+              <strong>ACPDB / SDP Panel</strong>
+              <span>1.4m &times; 0.65m &times; 2.0m</span>
+            </button>
+            <button class="eq-catalog-card" data-eq-cat="pac">
+              <strong>PAC Precision Cooling</strong>
+              <span>1.9m &times; 0.95m &times; 2.15m</span>
+            </button>
+          </div>
+
+          <div class="cme-tool-buttons">
+            <button class="tool-btn" data-tool="equipment" id="btnToolPlaceEq">
+              <span class="kbd">E</span>
+              <span>Mode Klik-Pasang Perangkat</span>
+            </button>
+            <button class="tool-btn" data-tool="tray" id="btnToolDrawTray">
+              <span class="kbd">T</span>
+              <span>Gambar 3D Cable Ladder</span>
+            </button>
+          </div>
+
+          <div class="preset-cme-row">
+            <button id="btnLoadPresetCme" class="btn-ceramic-full">
+              + Muat Contoh Susunan Perangkat CME
+            </button>
+          </div>
+          <label class="layer-check-row" style="margin-top:8px;">
+            <input type="checkbox" id="chkLayerEquipments" checked />
+            <span>Tampilkan Perangkat CME di 2D/3D</span>
+          </label>
+        </div>
+
+        <div class="stage-cta-footer dual-export">
+          <button id="btnStage5ExportGlb" class="btn-primary-pill">
+            <span>Download 3D Model (.GLB)</span>
+          </button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ==================== CENTER VIEWPORT WORKSPACE ==================== -->
+    <section class="center-workspace">
+      <!-- CONTEXTUAL SUB-HEADER BAR -->
+      <div class="workspace-bar">
+        <div class="view-mode-group">
+          <button class="view-mode-btn active" data-view="2d" id="btnView2D">2D Blueprint &amp; CAD</button>
+          <button class="view-mode-btn" data-view="split" id="btnViewSplit">Split 2D | 3D Sync</button>
+          <button class="view-mode-btn" data-view="3d" id="btnView3D">3D Digital Twin</button>
+        </div>
+
+        <div class="tool-hint-banner" id="lblActiveToolHint">
+          Mode: <strong>ROI Crop Box [C]</strong> — Sesuaikan batas area ekstraksi denah untuk mengecualikan Kop Surat.
+        </div>
+
+        <div class="camera-presets-group">
+          <button id="btnZoomFit2D" class="cam-btn" title="Pas-kan Denah 2D ke Layar">2D Fit</button>
+          <button id="btnCamPerspective" class="cam-btn" title="Kamera Orbit 3D">3D Orbit</button>
+          <button id="btnCamTop" class="cam-btn" title="Kamera Atas 3D">3D Top</button>
+          <button id="btnCamWalk" class="cam-btn" title="Kamera Interior Eye-Level">Eye View</button>
+        </div>
+      </div>
+
+      <!-- SPLIT CONTAINER (2D KONVA + 3D THREE.JS) -->
+      <div class="split-container" id="splitContainer" data-mode="2d">
+        <!-- LEFT PANE: 2D KONVA CANVAS -->
+        <div class="pane pane-2d" id="pane2D">
+          <div class="pane-badge" id="lblPane2DBadge">STAGE 1: 2D BLUEPRINT &amp; ROI CALIBRATION</div>
+          <div id="konvaContainer" class="canvas-mount"></div>
+
+          <!-- FLOATING RULER CALIBRATION POPOVER -->
+          <div id="rulerPopover" class="ruler-popover hidden">
+            <div class="popover-title">&#128207; Kalibrasi Skala Metrik (2-Titik)</div>
+            <div class="popover-body">
+              <div class="popover-stat">Jarak Piksel Terukur: <strong id="lblRulerPx">184.1 px</strong></div>
+              <label class="popover-input-row">
+                <span>Panjang Asli:</span>
+                <input type="number" id="inpRulerValue" value="6000" step="10" min="0.1" />
+                <select id="selRulerUnit">
+                  <option value="mm" selected>mm</option>
+                  <option value="m">meter</option>
+                </select>
+              </label>
+              <div class="popover-presets">
+                <button type="button" class="chip-btn" data-val="6000" data-unit="mm">Grid 6000mm (6m)</button>
+                <button type="button" class="chip-btn" data-val="4000" data-unit="mm">Grid 4000mm (4m)</button>
+                <button type="button" class="chip-btn" data-val="600" data-unit="mm">Tile 600mm (0.6m)</button>
+              </div>
+              <div class="popover-actions">
+                <button type="button" id="btnCancelRuler" class="btn-ghost">Batal</button>
+                <button type="button" id="btnApplyRuler" class="btn-primary-sm">Terapkan Skala</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESIZER DIVIDER -->
+        <div class="split-divider" id="splitDivider" title="Geser untuk mengubah rasio layar 2D / 3D">
+          <div class="divider-grip"></div>
+        </div>
+
+        <!-- RIGHT PANE: 3D THREE.JS DIGITAL TWIN -->
+        <div class="pane pane-3d" id="pane3D">
+          <div class="pane-badge">3D ARCHITECTURAL &amp; TELCO DIGITAL TWIN</div>
+          <div id="threeContainer" class="canvas-mount"></div>
+          <div id="labels3DOverlay" class="labels-3d-overlay"></div>
+          <div class="legend-3d">
+            <span><i class="lg-dot" style="background:#edeae2"></i>Concrete Wall</span>
+            <span><i class="lg-dot" style="background:#8c6239"></i>Door &amp; Swing</span>
+            <span><i class="lg-dot" style="background:#7dd3fc"></i>Window Glazing</span>
+            <span><i class="lg-dot" style="background:#00754a"></i>H-Beam Pillar</span>
+            <span><i class="lg-dot" style="background:#d6d1c4"></i>Stepped Stairs</span>
+            <span><i class="lg-dot" style="background:#cba258"></i>Cable Ladder / Cage</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOTTOM TELEMETRY BAR (HOUSE GREEN #1E3932) -->
+      <footer class="telemetry-bar">
+        <div class="tele-item">
+          <span class="tele-label">PROJECT:</span>
+          <strong id="lblStatusProject">MSC Gatsu Lantai 1</strong>
+        </div>
+        <div class="tele-item">
+          <span class="tele-label">SCALE:</span>
+          <strong id="lblStatusScale" class="tele-accent">30.68 px/m</strong>
+        </div>
+        <div class="tele-item">
+          <span class="tele-label">COORDINATES:</span>
+          <strong id="lblStatusCursor">X: 0.00m, Z: 0.00m (0, 0 px)</strong>
+        </div>
+        <div class="tele-item">
+          <span class="tele-label">EXTRACTED TOPOLOGY:</span>
+          <strong id="lblStatusCounts">0 Walls | 0 Doors | 0 Windows | 0 Pillars | 0 Stairs</strong>
+        </div>
+      </footer>
+    </section>
+
+    <!-- ==================== RIGHT PROPERTY INSPECTOR (STAGES 3, 4, 5) ==================== -->
+    <aside class="right-inspector" id="rightInspector">
+      <div class="inspector-header">
+        <span>PROPERTY INSPECTOR</span>
+        <span id="lblSelectedBadge" class="sel-badge">STRUCTURAL SUMMARY</span>
+      </div>
+      <div id="inspectorContent" class="inspector-body">
+        <!-- Dynamically populated by app.js -->
+      </div>
+    </aside>
+  </main>
+
+  <!-- ==================== MULTI-PAGE PDF PAGE SELECTOR MODAL ==================== -->
+  <div id="pdfPageModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <h3>Pilih Halaman PDF Floorplan</h3>
+          <p id="lblModalPdfFilename" class="modal-sub">WP1 - APD - ANCOL, JAKARTA.pdf</p>
+        </div>
+        <button id="btnClosePdfModal" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-quick-bar">
+        <span>Loncat ke Halaman:</span>
+        <input type="number" id="inpQuickPageNum" min="1" value="1" class="page-num-input" />
+        <button id="btnConfirmPageNum" class="btn-primary-sm">Muat Halaman</button>
+        <span class="modal-tip">Tip: Denah Ancol ada di <strong>Halaman 13</strong>, Denah Gatsu di <strong>Halaman 4</strong>.</span>
+      </div>
+      <div id="pdfThumbnailsGrid" class="pdf-thumbs-grid"></div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- APPLICATION ENTRY POINT -->
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
