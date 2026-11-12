@@ -114,3 +114,60 @@ test.describe("v4 stage 3 is 2D only", () => {
     expect(await page.evaluate(() => window.sitestryApp.canvas2d.store.ui.viewMode)).toBe("2d");
   });
 });
+
+test.describe("v4 dock shortcut badges", () => {
+  test("rail buttons show their shortcut key at 1440x960", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    await loadStage(page, 3);
+    const badges = await page.evaluate(() =>
+      [...document.querySelectorAll("#stageSidebar .tool-btn[data-tool]")]
+        .filter((btn) => btn.querySelector(".kbd") && btn.getBoundingClientRect().width > 0)
+        .map((btn) => {
+          const kbd = btn.querySelector(".kbd");
+          const k = kbd.getBoundingClientRect();
+          const b = btn.getBoundingClientRect();
+          return {
+            tool: btn.dataset.tool,
+            w: k.width,
+            h: k.height,
+            fontSize: parseFloat(getComputedStyle(kbd).fontSize),
+            inside:
+              k.left >= b.left - 1 && k.right <= b.right + 1 && k.top >= b.top - 1 && k.bottom <= b.bottom + 1,
+            len: kbd.textContent.trim().length,
+          };
+        })
+    );
+    expect(badges.length).toBeGreaterThanOrEqual(8);
+    for (const badge of badges) {
+      expect(badge.w, badge.tool).toBeGreaterThanOrEqual(14);
+      expect(badge.h, badge.tool).toBeGreaterThanOrEqual(14);
+      expect(badge.fontSize, badge.tool).toBeGreaterThanOrEqual(11);
+      expect(badge.inside, badge.tool).toBe(true);
+      expect(badge.len, badge.tool).toBe(1);
+    }
+  });
+
+  test("badge does not remove the accessible name", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    await loadStage(page, 3);
+    await expect(page.locator('#stageSidebar .tool-btn[data-tool="wall"]')).toHaveAttribute(
+      "aria-label",
+      "Draw Wall (W)"
+    );
+  });
+
+  test("narrow drawer shows label and key", async ({ page }) => {
+    await gotoAppV4(page, { width: 900, height: 700 });
+    await loadStage(page, 3);
+    await page.locator("#btnToggleTools").click();
+    await page.waitForTimeout(250);
+    const sizes = await page.evaluate(() => {
+      const btn = document.querySelector('#stageSidebar .tool-btn[data-tool="wall"]');
+      const label = btn.querySelector("span:not(.kbd)").getBoundingClientRect();
+      const kbd = btn.querySelector(".kbd").getBoundingClientRect();
+      return { label: label.width, kbd: kbd.width };
+    });
+    expect(sizes.label).toBeGreaterThan(14);
+    expect(sizes.kbd).toBeGreaterThan(14);
+  });
+});

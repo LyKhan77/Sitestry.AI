@@ -2061,6 +2061,22 @@ body[data-ui="v4"][data-stage="3"] #btnCamWalk {
     white-space: nowrap;
   }
 
+  /* The shortcut key stays visible as a corner badge; the icon shifts up-left to clear it. */
+  body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"]) .tool-btn > span.kbd {
+    right: 2px;
+    bottom: 2px;
+    width: 16px;
+    height: 16px;
+    overflow: visible;
+    clip: auto;
+    font-size: 11px;
+    border-radius: 4px;
+  }
+
+  body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"]) .tool-btn > .tool-ico {
+    transform: translate(-3px, -3px);
+  }
+
   body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"]) .history-action-bar {
     grid-template-columns: 1fr;
     gap: 4px;
