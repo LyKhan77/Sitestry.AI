@@ -20,9 +20,13 @@ flowchart LR
 - **Navigation**: one stage control, the bottom timeline (`Back`, five stage dots, `Next`). `Ctrl/Cmd+K` opens a command palette to jump stage, switch view, undo/redo, export, and toggle layers.
 - **Stage 1-2 are wizard cards** floating over a full-bleed canvas; **Stage 3-5 are a dock workbench**: a 56 px icon rail, a flyout for secondary controls (wall assist, layers, stair parameters, CME catalog), and a property panel that floats beside the selected object.
 - **Export** is one `Export` menu in Stage 4-5. The Stage 5 BoQ panel shows the structural summary plus a count per equipment category.
+- **Workspace (one workspace = one project)**: the app opens on a Workspace home. Empty: only an upload field (PDF, PNG, JPG). With a project: one card (thumbnail, title, saved time, counts, status chips for Input / Ekstraksi / Review / 3D) with `Lanjutkan` (restores the saved source, project and furthest stage; 3D is rebuilt automatically only when it matches the saved version) and `Ganti denah` (asks first, then deletes the workspace). The header `Workspace` link returns to the home page without discarding the live session.
+- **Save and Build 3D are manual.** The header `Simpan` button (or `Ctrl/Cmd+S`) writes the project to the backend `workspace/` folder; there is no autosave and the page warns before closing with unsaved changes. Stage 4 cannot be entered while there are unsaved changes. Stage 4 shows the last built 3D with a banner (`Belum ada 3D` or `Denah berubah sejak build terakhir`) and a `Build 3D` button; a build always uses the saved version. Stage 5 equipment stays live on top of the built structure.
+- Dev/test boot: `?sample=<id>` skips the home page, loads that sample and backs it with a workspace.
 - `?ui=v3` switches to the legacy UI and remembers the choice; `?ui=v4` switches back. Below 1100 px the dock becomes the existing dismissible drawer (`Escape` closes it).
 
 ### Stage 1: Input (`data-stage="1"`)
+- **v4**: Stage 1 offers only upload (no sample picker). After extraction (Stage 2 reached) ROI and scale become a read-only summary; `Ubah ROI/Skala dan ekstrak ulang` asks first and then discards the Stage 3 edits and the built 3D. Re-running extraction in Stage 2 asks the same.
 - **Goal**: Load the 2D source floorplan, select the target PDF page (e.g., Page 4 for Gatsu, Page 13 for Ancol), isolate the floorplan geometry using the **Active ROI Crop Box (`[C]`)** to exclude the right-hand *Kop Surat* (Title Block), and calibrate `scale_px_per_meter` via **Auto-Calibrate Grid** or the **2-Point Metric Ruler (`[R]`)**.
 - **Viewport State**: 2D Blueprint Canvas (`viewMode: "2d"`), structural overlays hidden so the user can clearly inspect the raw drawing and ROI boundaries.
 

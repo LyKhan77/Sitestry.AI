@@ -2899,3 +2899,56 @@ body[data-ui="v4"][data-view="home"] .workspace-home {
 body[data-view="home"] #btnPagePicker {
   display: none;
 }
+
+
+/* ---- v4 stage 1: upload only, calibration locks after extraction ---- */
+.lbl-workspace,
+.calib-summary {
+  display: none;
+}
+
+body[data-ui="v4"] .lbl-legacy,
+body[data-ui="v4"] .sample-cards-list {
+  display: none;
+}
+
+body[data-ui="v4"] .lbl-workspace {
+  display: inline;
+}
+
+body[data-ui="v4"][data-calib="locked"] #stagePanel1 .calib-tools-row,
+body[data-ui="v4"][data-calib="locked"] #stagePanel1 .scale-inline-box,
+body[data-ui="v4"][data-calib="locked"] #stagePanel1 > .surface-card > .card-helper-text {
+  display: none;
+}
+
+body[data-ui="v4"][data-calib="locked"] .calib-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.calib-summary dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.calib-summary dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.calib-summary dt {
+  color: var(--text-warm-muted);
+  font-weight: 600;
+}
+
+.calib-summary dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  color: var(--text-espresso);
+  text-align: right;
+}

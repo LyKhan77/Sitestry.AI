@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
-import { gotoAppV4, loadStage, resetWorkspace } from "./helpers.mjs";
+import { gotoApp, gotoAppV4, loadStage, resetWorkspace } from "./helpers.mjs";
 
 const VIEWPORT = { width: 1440, height: 960 };
 
@@ -361,5 +361,93 @@ test.describe("v4 workspace home", () => {
     await gotoAppV4(page, VIEWPORT);
     expect(await viewOf(page)).toBe("stage");
     await expect(page.locator("#workspaceHome")).toBeHidden();
+  });
+});
+
+const calibTool = (page, tool) => page.locator(`#stagePanel1 [data-tool="${tool}"]`);
+const activeTool = (page) => page.evaluate(() => window.sitestryApp.canvas2d.store.ui.activeTool);
+const wallCount = (page) => page.evaluate(() => window.sitestryApp.canvas2d.store.project.walls.length);
+
+test.describe("v4 stage 1 upload-only and locked calibration", () => {
+  test("stage 1 shows no sample choices in v4 but still does in v3", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    await expect(page.locator("#btnSampleGatsuPdf")).toBeHidden();
+    await expect(page.locator("#fileUploadInput")).toHaveCount(1);
+    await gotoApp(page, VIEWPORT, "/?ui=v3&sample=gatsu_p4");
+    await expect(page.locator("#btnSampleGatsuPdf")).toBeVisible();
+  });
+
+  test("before extraction ROI and scale controls are editable", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    expect(await page.evaluate(() => document.body.dataset.calib)).toBe("open");
+    await expect(calibTool(page, "roi")).toBeVisible();
+    await expect(page.locator("#btnAutoScale")).toBeVisible();
+    await expect(page.locator("#calibSummary")).toBeHidden();
+  });
+
+  test("after extraction ROI and scale are read-only and summarized", async ({ page }) => {
+    await startAtStage3(page);
+    await loadStage(page, 1);
+    expect(await page.evaluate(() => document.body.dataset.calib)).toBe("locked");
+    await expect(page.locator("#calibSummary")).toBeVisible();
+    await expect(page.locator("#calibSummary")).toContainText("30.68");
+    await expect(calibTool(page, "roi")).toBeHidden();
+    await expect(calibTool(page, "ruler")).toBeHidden();
+    await expect(page.locator("#btnAutoScale")).toBeHidden();
+    expect(await activeTool(page)).not.toBe("roi");
+    await page.keyboard.press("c");
+    await page.keyboard.press("r");
+    expect(["roi", "ruler"]).not.toContain(await activeTool(page));
+  });
+
+  test("Ubah ROI/Skala asks first and cancel keeps the project", async ({ page }) => {
+    await startAtStage3(page);
+    await loadStage(page, 1);
+    const walls = await wallCount(page);
+    await page.locator("#btnReextract").click();
+    await expect(page.locator("#confirmModal")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#confirmModal")).toBeHidden();
+    expect(await wallCount(page)).toBe(walls);
+    await expect(page.locator("#calibSummary")).toBeVisible();
+  });
+
+  test("confirming unlocks the controls and clears the project and built 3D", async ({ page }) => {
+    await builtAtStage4(page);
+    await loadStage(page, 1);
+    await page.locator("#btnReextract").click();
+    await page.locator("#confirmOk").click();
+    await expect(page.locator("#calibSummary")).toBeHidden();
+    await expect(calibTool(page, "roi")).toBeVisible();
+    expect(await wallCount(page)).toBe(0);
+    expect(await page.evaluate(() => window.sitestryApp.canvas2d.store.builtProject)).toBe(null);
+    await expect.poll(() => buildState(page)).toBe("none");
+    await page.evaluate(() => window.sitestryApp.canvas2d.store.setActiveTool("roi"));
+    expect(await activeTool(page)).toBe("roi");
+    await expect.poll(async () => (await (await page.request.get("/api/workspace")).json()).meta.extracted).toBe(false);
+    const meta = (await (await page.request.get("/api/workspace")).json()).meta;
+    expect(meta.extracted).toBe(false);
+    expect(meta.built_hash).toBe(null);
+  });
+
+  test("rerun in stage 2 asks first and cancel leaves the project", async ({ page }) => {
+    await startAtStage3(page);
+    await loadStage(page, 2);
+    const walls = await wallCount(page);
+    await page.locator("#btnRunExtract").click();
+    await expect(page.locator("#confirmModal")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#confirmModal")).toBeHidden();
+    expect(await wallCount(page)).toBe(walls);
+  });
+
+  test("extraction state survives reload", async ({ page }) => {
+    await uploadAndSave(page, { stage: 3 });
+    await page.reload();
+    await page.locator("#btnContinue").click();
+    await expect.poll(() => stepOf(page)).toBe(3);
+    await loadStage(page, 1);
+    expect(await page.evaluate(() => document.body.dataset.calib)).toBe("locked");
+    await expect(page.locator("#calibSummary")).toBeVisible();
   });
 });

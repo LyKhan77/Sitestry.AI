@@ -132,7 +132,7 @@
         </div>
 
         <div class="surface-card">
-          <div class="card-header-label">1. SAMPLE FLOORPLAN / UPLOAD</div>
+          <div class="card-header-label"><span class="lbl-legacy">1. SAMPLE FLOORPLAN / UPLOAD</span><span class="lbl-workspace">1. FILE DENAH</span></div>
           <div class="sample-cards-list">
             <button id="btnSampleGatsuPdf" class="sample-select-card active">
               <div class="sample-dot-indicator"></div>
@@ -186,6 +186,15 @@
               <strong id="lblStage1Scale" class="mono-val">30.68 px/m</strong>
             </div>
             <button id="btnAutoScale" class="btn-ceramic-sm">Auto-Calibrate Grid</button>
+          </div>
+          <div id="calibSummary" class="calib-summary">
+            <dl>
+              <div><dt>Halaman</dt><dd id="calibPage"></dd></div>
+              <div><dt>ROI</dt><dd id="calibRoi"></dd></div>
+              <div><dt>Skala</dt><dd id="calibScale"></dd></div>
+            </dl>
+            <p class="card-helper-text">ROI dan skala dikunci setelah ekstraksi supaya editan Stage 3 tetap cocok dengan denahnya.</p>
+            <button id="btnReextract" type="button" class="btn-ceramic-sm">Ubah ROI/Skala dan ekstrak ulang</button>
           </div>
         </div>
 

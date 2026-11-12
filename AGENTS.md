@@ -63,12 +63,14 @@ The system prioritizes **structural precision first** (Topological Walls, Small-
 │   └── superpowers/
 │       ├── plans/             # Local uncommitted implementation plans (DO NOT COMMIT)
 │       └── specs/             # Local uncommitted specifications (DO NOT COMMIT)
+├── workspace/                 # The single saved project: source file, project.json, meta.json (gitignored; override with SITESTRY_WORKSPACE_DIR)
 ├── floorplan/                 # Built-in Telco APD PDF & Raster sample blueprints
 │   ├── WP-1-APD-IOH- GATSUBARAT-BALI-17DPS0040-MEP-R1-16.09.26_Full Signed.pdf
 │   ├── WP1 - APD - ANCOL, JAKARTA (12JKU0508)_R04_22-09-2026_Full signed.pdf
 │   └── plan.jpeg
 ├── backend/
 │   ├── main.py                # FastAPI server, sample catalog, PDF renderer & endpoints
+│   ├── workspace.py           # Single-workspace storage (atomic writes) behind /api/workspace/*
 │   ├── cad_parser.py          # Procedural PDF Vector CAD Extractor (v3.0)
 │   ├── vectorizer.py          # ORB-RANSAC & Morphological Raster Vectorizer (v3.0)
 │   └── requirements.txt       # Python dependencies
@@ -82,6 +84,7 @@ The system prioritizes **structural precision first** (Topological Walls, Small-
         ├── canvas2d.js        # Konva.js 2D topological CAD & door/window/stair renderer
         ├── viewer3d.js        # Three.js + three-bvh-csg 3D Digital Twin & GLB exporter
         ├── api.js             # FastAPI client & offline fallback generator
+        ├── workspaceState.js  # Pure structure hash and dirty/stale flags (Save and Build 3D)
         └── uiV4.js            # v4 Dock + Wizard UI: flag, timeline, dock/flyout, palette, Stage 2 reveal (default; `?ui=v3` = legacy)
 ```
 

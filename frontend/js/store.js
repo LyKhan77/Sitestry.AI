@@ -60,6 +60,7 @@ export class SitestryStore extends EventTarget {
       endpointSnap: false,
       orthoSnap: false,
       panelOpen: false,
+      calibLocked: false, // v4 workspace: ROI and scale are read-only after extraction
       stairDefaults: {
         shape: "straight",
         width_m: 1.2,
@@ -366,6 +367,7 @@ export class SitestryStore extends EventTarget {
 
   // ==================== SELECTION & ACTIVE TOOL ====================
   setActiveTool(toolName) {
+    if (this.ui.calibLocked && (toolName === "roi" || toolName === "ruler")) return;
     if (ISOLATING_TOOLS.has(toolName) && this.ui.selected) this.selectObject(null, null);
     this.ui.activeTool = toolName;
     this.emit("toolChanged", { tool: toolName });

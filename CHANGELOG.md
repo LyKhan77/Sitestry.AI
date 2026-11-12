@@ -6,6 +6,14 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ## [v3.3.0] — Unreleased
 
+### Added — Workspace, Save and Build 3D (v4 UI)
+- **Single-workspace storage (`backend/workspace.py`, `/api/workspace/*`)**: one project folder (`workspace/`, gitignored) with the original source, `project.json` and `meta.json`; atomic writes, whitelisted meta keys, 25 MiB source and 300 KB thumbnail limits, corrupt folders reported instead of crashing. `SITESTRY_WORKSPACE_DIR` overrides the folder (the Playwright server uses a temp dir).
+- **Workspace home**: upload-only start page, project card with status chips, `Lanjutkan` restore, `Ganti denah` with confirmation, header `Workspace` link.
+- **Manual Save** (`Simpan`, `Ctrl/Cmd+S`, palette): dirty state is a content hash (`workspaceState.js`), so undoing back to the saved state is clean again. `beforeunload` warns only when unsaved. Stage 4 is blocked until saved.
+- **Build 3D from the saved version**: 3D structure comes from `store.builtProject`; Stage 1-3 edits never touch 3D; Stage 4/5 banner and `Build 3D` button; equipment stays live.
+- **Stage 1 upload-only**: samples hidden in v4, ROI and scale read-only after extraction with a confirmed re-extract.
+- Dev/test: `?sample=<id>` boot (skips the home page, creates a workspace from the sample).
+
 ### Changed — Stage 1-4 quick fixes (v4 UI)
 - **Stage 3 is 2D only**: the `2D | Split | 3D` pill is hidden in Stages 1-3 and the command palette offers the view actions only from Stage 4.
 - **Tool isolation**: while Wall, Stair, Door, Double Door, Window, Pillar or Room Zone is active, no other canvas element can be selected or dragged. Switching to one of these tools clears the selection and closes the inspector. In v4, `Esc` cancels a draft in progress, and with nothing in progress returns to Select. Stage 5 `equipment` and `tray` tools are unchanged. The selection/drag guards live in `canvas2d.js` and also apply to `?ui=v3`.

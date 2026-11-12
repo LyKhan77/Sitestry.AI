@@ -257,6 +257,7 @@ class SitestryStudioApp {
       return false;
     }
     this.abortReveal();
+    this.syncCalib();
     store.ui.step = step;
     document.body.dataset.stage = String(step);
     document.body.dataset.tools = "closed";
@@ -287,7 +288,7 @@ class SitestryStudioApp {
       store.ui.layers.roi = true;
       if (badge2D) badge2D.textContent = "STAGE 1: 2D BLUEPRINT & ROI CALIBRATION";
       this.setViewMode("2d");
-      store.setActiveTool("roi");
+      store.setActiveTool(store.ui.calibLocked ? "select" : "roi");
     } else if (step === 2) {
       // Stage 2: Process Extraction -> Show extracted structural overlay in 2D
       store.ui.layers.walls = true;
@@ -354,6 +355,10 @@ class SitestryStudioApp {
   /** The furthest stage reached is what "Lanjutkan" resumes at; recorded as soon as it advances. */
   recordStageReached(step) {
     if (!this.workspaceActive() || !this.sessionLoaded) return;
+    if (step >= 2 && !this.extractionDone) {
+      this.extractionDone = true;
+      this.syncCalib();
+    }
     const reached = this.workspace.meta?.stage_reached || 1;
     if (step <= reached) return;
     this.workspace.meta = { ...this.workspace.meta, stage_reached: step };
@@ -366,6 +371,12 @@ class SitestryStudioApp {
     document.body.dataset.workspace = "off";
     document.getElementById("btnSave")?.addEventListener("click", () => this.saveWorkspace());
     document.getElementById("btnBuild3D")?.addEventListener("click", () => this.buildFromSaved());
+    document.getElementById("btnReextract")?.addEventListener("click", async () => {
+      if (await this.confirmDiscardExtraction("Ubah ROI/Skala?")) {
+        this.setWorkflowStage(1);
+        this.showToast("ROI dan skala terbuka. Atur ulang lalu lanjut ke ekstraksi.");
+      }
+    });
     store.addEventListener("geometryChanged", () => this.scheduleFlagRefresh());
     window.addEventListener("beforeunload", (e) => {
       if (this.hasUnsavedChanges()) {
@@ -411,7 +422,73 @@ class SitestryStudioApp {
     if (status) status.textContent = labels[state] || "";
   }
 
+  calibLocked() {
+    return this.workspaceActive() && this.sessionLoaded && this.extractionDone;
+  }
+
+  /** ROI and scale lock once the project has moved past Stage 1; the summary mirrors the live values. */
+  syncCalib() {
+    const locked = this.calibLocked();
+    store.ui.calibLocked = locked;
+    document.body.dataset.calib = locked ? "locked" : "open";
+    if (!locked) return;
+    const m = store.project.metadata;
+    const roi = m.roi_px;
+    const text = (id, value) => {
+      const node = document.getElementById(id);
+      if (node) node.textContent = value;
+    };
+    text("calibPage", `${m.page_number ?? 1}/${m.total_pages ?? 1}`);
+    text("calibRoi", roi ? `${Math.round(roi.x)}, ${Math.round(roi.y)} \u00b7 ${Math.round(roi.width)} \u00d7 ${Math.round(roi.height)} px` : "\u2014");
+    text("calibScale", `${m.scale_px_per_meter} px/m`);
+  }
+
+  /** Throw away everything derived from the current extraction: project edits, built 3D, extracted flag. */
+  async discardExtraction() {
+    store.builtProject = null;
+    this.workspace.builtHash = null;
+    this.extractionDone = false;
+    this.workspace.meta = { ...this.workspace.meta, stage_reached: 1 };
+    const m = store.project.metadata;
+    store.loadProjectData(
+      {
+        project_id: store.project.project_id,
+        project_name: store.project.project_name,
+        metadata: m,
+        nodes: [],
+        walls: [],
+        columns: [],
+        openings: [],
+        rooms: [],
+        stairs: [],
+        equipments: [],
+        cable_trays: [],
+      },
+      true
+    );
+    store.resetHistory();
+    this.refreshWorkspaceFlags();
+    try {
+      await api.patchWorkspaceMeta({ built_hash: null, stage_reached: 1, extracted: false });
+    } catch (err) {
+      this.showToast(`Gagal memperbarui workspace: ${err.message}`);
+    }
+    await this.saveWorkspace();
+    this.refreshWorkspaceFlags();
+  }
+
+  async confirmDiscardExtraction(title) {
+    const ok = await this.confirmDialog({
+      title,
+      body: "Ekstraksi ulang menghapus semua editan Stage 3 dan 3D.",
+      confirmLabel: "Hapus dan ekstrak ulang",
+    });
+    if (ok) await this.discardExtraction();
+    return ok;
+  }
+
   refreshWorkspaceFlags() {
+    this.syncCalib();
     const active = this.workspaceActive();
     document.body.dataset.workspace = active ? "on" : "off";
     if (!active) {
@@ -963,7 +1040,6 @@ class SitestryStudioApp {
       return false;
     }
     this.lastExtractionFallback = layout.extractionFallback === true;
-    this.extractionDone = !this.lastExtractionFallback;
     beforeLoad?.();
     const currentMeta = store.project.metadata;
     const safeLayout = {
@@ -1037,6 +1113,9 @@ class SitestryStudioApp {
   initStage2ExtractionControls() {
     document.getElementById("btnRunExtract")?.addEventListener("click", async () => {
       if (isV4()) {
+        if (this.workspaceActive() && this.sessionLoaded) {
+          if (!(await this.confirmDiscardExtraction("Jalankan ulang ekstraksi?"))) return;
+        }
         await this.startExtractionV4();
         return;
       }
