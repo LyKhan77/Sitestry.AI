@@ -93,36 +93,6 @@ test.describe("v4 stage 3 dock", () => {
     await expect(page.locator(".view-mode-group")).toBeVisible();
   });
 
-  test("floating inspector sits inside the canvas", async ({ page }) => {
-    await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 3);
-    await selectFirstWall(page);
-    await expect(page.locator("#rightInspector")).toBeVisible();
-    await page.waitForTimeout(300);
-    expectInside(await rectOf(page, "#rightInspector"), await rectOf(page, "#pane2D"));
-  });
-
-  test("inspector clamps at the edge", async ({ page }) => {
-    await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 3);
-    await selectFirstWall(page);
-    await page.evaluate(async () => {
-      const { store } = await import("/js/store.js");
-      const wall = store.project.walls[0];
-      const a = store.getNodeById(wall.start_node);
-      const b = store.getNodeById(wall.end_node);
-      const mx = (a.x_px + b.x_px) / 2;
-      const my = (a.y_px + b.y_px) / 2;
-      const stage = window.sitestryApp.canvas2d.stage;
-      stage.scale({ x: 4, y: 4 });
-      stage.position({ x: stage.width() - 6 - mx * 4, y: stage.height() / 2 - my * 4 });
-      stage.batchDraw();
-    });
-    await page.waitForTimeout(400);
-    await expect(page.locator("#rightInspector")).toBeVisible();
-    expectInside(await rectOf(page, "#rightInspector"), await rectOf(page, "#pane2D"));
-  });
-
   test("Escape closes the inspector", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
     await loadStage(page, 3);

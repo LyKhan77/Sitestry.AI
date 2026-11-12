@@ -81,44 +81,7 @@ export function decorateToolButtons(root = document) {
   });
 }
 
-const DOCK_MIN_WIDTH = "(min-width: 1101px)";
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-
-/** Place #rightInspector beside the selected object, flipped/clamped to stay inside #pane2D. */
-export function positionFloatingInspector(app) {
-  const insp = document.getElementById("rightInspector");
-  const pane2d = document.getElementById("pane2D");
-  const host = document.getElementById("studioBody");
-  if (!insp || !pane2d || !host) return;
-  // In 3D-only mode #pane2D is display:none; clamp to the whole split area instead.
-  const pane2dVisible = pane2d.offsetWidth > 10;
-  const pane = pane2dVisible ? pane2d : document.getElementById("splitContainer");
-  const step = store.ui.step;
-  const active = isV4() && step >= 3 && step <= 5 && window.matchMedia(DOCK_MIN_WIDTH).matches;
-  if (!active) {
-    ["left", "top", "right", "maxHeight"].forEach((p) => (insp.style[p] = ""));
-    return;
-  }
-  if (document.body.dataset.inspector !== "open") return;
-  const GAP = 12;
-  const MARGIN = 8;
-  const TOP = 52; // keep the floating view/hint row visible
-  const BOTTOM = 72; // keep the bottom timeline visible
-  const p = pane.getBoundingClientRect();
-  const h = host.getBoundingClientRect();
-  insp.style.maxHeight = `${Math.max(160, p.height - TOP - BOTTOM)}px`;
-  const w = insp.offsetWidth;
-  const ht = insp.offsetHeight;
-  const rect = pane2dVisible ? app.canvas2d.selectedScreenRect() : null;
-  let x = rect ? rect.x + rect.width + GAP : p.width - w - MARGIN;
-  const y = rect ? rect.y : TOP;
-  if (rect && x + w > p.width - MARGIN) x = rect.x - GAP - w;
-  x = clamp(x, MARGIN, p.width - w - MARGIN);
-  const yy = clamp(y, TOP, p.height - ht - BOTTOM);
-  insp.style.right = "auto";
-  insp.style.left = `${p.left - h.left + x}px`;
-  insp.style.top = `${p.top - h.top + yy}px`;
-}
 
 /** Collapse the dock flyout and refresh its toggle for the stage that just became active. */
 export function syncDock(step) {
@@ -566,30 +529,4 @@ export function initV4Dock(app) {
     }
   });
 
-  // ponytail: per-frame check while the inspector is open; swap for stage/store events if it ever shows in profiles.
-  let last = "";
-  const tick = () => {
-    if (isV4() && document.body.dataset.inspector === "open") {
-      const st = app.canvas2d.stage;
-      const insp = document.getElementById("rightInspector");
-      const r = app.canvas2d.selectedScreenRect();
-      const key = [
-        store.ui.step,
-        st.x(),
-        st.y(),
-        st.scaleX(),
-        insp?.offsetWidth,
-        insp?.offsetHeight,
-        window.innerWidth,
-        window.innerHeight,
-        r ? `${r.x},${r.y},${r.width},${r.height}` : "none",
-      ].join("|");
-      if (key !== last) {
-        last = key;
-        positionFloatingInspector(app);
-      }
-    } else last = "";
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
 }

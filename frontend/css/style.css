@@ -2191,13 +2191,15 @@ body[data-ui="v4"][data-stage="3"] #btnCamWalk {
     min-height: 0;
   }
 
-  /* Property panel floats next to the selection; uiV4.js sets left/top/max-height. */
+  /* Property panel is docked at the top right, below the view controls (2D Fit, camera buttons). */
   body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"]) .right-inspector {
     position: absolute;
-    top: 52px;
+    top: 96px;
     right: 12px;
-    width: 320px;
+    left: auto;
+    width: 300px;
     height: auto;
+    max-height: calc(100% - 96px - 84px);
     border: 0;
     border-radius: 12px;
     box-shadow: 0 8px 12px rgba(0, 0, 0, 0.14), 0 0 6px rgba(0, 0, 0, 0.24);
@@ -2321,6 +2323,11 @@ body[data-ui="v4"] .telemetry-bar .tele-item:last-child strong {
     border-radius: 12px;
     box-shadow: 0 8px 12px rgba(0, 0, 0, 0.14), 0 0 6px rgba(0, 0, 0, 0.24);
     z-index: 30;
+  }
+
+  /* the BoQ panel yields the top right corner to an open inspector */
+  body[data-ui="v4"][data-stage="5"][data-inspector="open"] .boq-panel {
+    right: 324px;
   }
 
   /* keep the 3D legend clear of the bottom timeline */
