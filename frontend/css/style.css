@@ -2796,9 +2796,16 @@ body[data-ui="v4"][data-view="home"] .workspace-home {
   flex: none;
   width: 180px;
   height: 130px;
-  object-fit: cover;
+  overflow: hidden;
   background: var(--bg-ceramic);
   border-radius: 8px;
+}
+
+.home-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .home-card-body {

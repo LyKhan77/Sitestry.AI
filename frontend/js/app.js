@@ -648,7 +648,14 @@ class SitestryStudioApp {
       `${counts.stairs ?? 0} tangga \u00b7 ${counts.rooms ?? 0} ruangan`;
     const thumb = el("homeThumb");
     thumb.hidden = !meta.thumbnail;
-    if (meta.thumbnail) thumb.src = meta.thumbnail;
+    if (meta.thumbnail) {
+      const img = new Image();
+      img.alt = "Pratinjau denah";
+      img.src = meta.thumbnail;
+      thumb.replaceChildren(img);
+    } else {
+      thumb.replaceChildren();
+    }
 
     const live = this.sessionLoaded && this.workspaceActive();
     const savedHash = live ? this.workspace.savedHash : meta.saved_hash;

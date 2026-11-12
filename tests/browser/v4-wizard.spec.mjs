@@ -43,17 +43,10 @@ test.describe("v4 stage 1 wizard card", () => {
     expect(await activeTool(page)).toBe("roi");
   });
 
-  test("sample selection and scale remain functional", async ({ page }) => {
+  test("sample choices are gone and the scale readout remains", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
     await loadStage(page, 1);
-    await page.locator("#btnSampleAncolPdf").click();
-    await expect
-      .poll(
-        () =>
-          page.evaluate(async () => (await import("/js/store.js")).store.currentSource.sampleId),
-        { timeout: 60000 }
-      )
-      .toBe("ancol_p13");
+    await expect(page.locator("#btnSampleAncolPdf")).toBeHidden();
     await expect(page.locator("#lblStage1Scale")).toHaveText(/px\/m$/);
   });
 
@@ -181,8 +174,11 @@ test.describe("v4 stage 2 wizard", () => {
         { attributes: true, attributeFilter: ["data-extract"] }
       );
     });
+    // Re-running discards Stage 3 edits, so each rerun is confirmed first.
     await page.locator("#btnRunExtract").click();
+    await page.locator("#confirmOk").click();
     await page.locator("#btnRunExtract").click();
+    await page.locator("#confirmOk").click();
     await waitExtract(page, "done");
     await page.waitForTimeout(1800);
     await expect.poll(() => responses.length).toBe(3);
