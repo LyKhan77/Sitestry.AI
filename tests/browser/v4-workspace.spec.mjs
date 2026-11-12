@@ -1,6 +1,14 @@
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
-import { gotoApp, gotoAppV4, loadStage, resetWorkspace } from "./helpers.mjs";
+import {
+  currentProject,
+  gotoApp,
+  gotoAppV4,
+  listProjects,
+  loadStage,
+  resetWorkspace,
+  savedProjectJson,
+} from "./helpers.mjs";
 
 const VIEWPORT = { width: 1440, height: 960 };
 
@@ -12,7 +20,7 @@ const edit = (page) =>
 
 const saveState = (page) => page.evaluate(() => document.body.dataset.save);
 
-const savedProject = async (page) => (await page.request.get("/api/workspace/project")).json();
+const savedProject = (page) => savedProjectJson(page);
 
 async function startAtStage3(page) {
   await gotoAppV4(page, VIEWPORT);
@@ -49,7 +57,7 @@ test.describe("v4 save", () => {
       return { columns: store.project.columns.length, hash: structureHash(store.project) };
     });
     expect((await savedProject(page)).columns.length).toBe(live.columns);
-    const meta = (await (await page.request.get("/api/workspace")).json()).meta;
+    const meta = (await currentProject(page)).meta;
     expect(meta.saved_hash).toBe(live.hash);
     expect(meta.saved_at).toBeTruthy();
     expect(meta.thumbnail).toMatch(/^data:image\/jpeg/);
@@ -125,7 +133,7 @@ test.describe("v4 save", () => {
     await startAtStage3(page);
     await edit(page);
     await expect.poll(() => saveState(page)).toBe("dirty");
-    await page.route("**/api/workspace/project", (route) =>
+    await page.route("**/api/projects/*/project", (route) =>
       route.request().method() === "PUT" ? route.abort() : route.continue()
     );
     await page.locator("#btnSave").click();
@@ -166,7 +174,7 @@ test.describe("v4 build 3d", () => {
     await builtAtStage4(page);
     await expect(page.locator("#buildBanner")).toBeHidden();
     expect(await sceneCount(page, "column")).toBe(await savedColumns(page));
-    const meta = (await (await page.request.get("/api/workspace")).json()).meta;
+    const meta = (await currentProject(page)).meta;
     expect(meta.built_hash).toBe(meta.saved_hash);
   });
 
@@ -270,7 +278,7 @@ test.describe("v4 workspace home", () => {
     await page.setInputFiles("#homeUploadInput", FIXTURE);
     await expect.poll(() => viewOf(page)).toBe("stage");
     expect(await stepOf(page)).toBe(1);
-    const info = await (await page.request.get("/api/workspace")).json();
+    const info = await currentProject(page);
     expect(info.exists).toBe(true);
     expect(info.meta.source.kind).toBe("image");
     expect(await page.evaluate(() => document.body.dataset.save)).toBe("dirty");
@@ -288,7 +296,7 @@ test.describe("v4 workspace home", () => {
 
   test("Lanjutkan restores project and stage", async ({ page }) => {
     await uploadAndSave(page, { stage: 3 });
-    const saved = (await (await page.request.get("/api/workspace")).json()).meta;
+    const saved = (await currentProject(page)).meta;
     await page.reload();
     await page.locator("#btnContinue").click();
     await expect.poll(() => viewOf(page)).toBe("stage");
@@ -343,17 +351,18 @@ test.describe("v4 workspace home", () => {
     await expect(page.locator("#confirmModal")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.locator("#confirmModal")).toBeHidden();
-    expect((await (await page.request.get("/api/workspace")).json()).exists).toBe(true);
+    expect(await listProjects(page)).toHaveLength(1);
 
     await page.locator("#btnReplace").click();
     await page.locator("#confirmOk").click();
     await expect(page.locator("#homeEmpty")).toBeVisible();
-    expect((await (await page.request.get("/api/workspace")).json()).exists).toBe(false);
+    expect(await listProjects(page)).toHaveLength(0);
   });
 
   test("corrupt workspace shows an error card with only Ganti denah", async ({ page }) => {
     await uploadAndSave(page);
-    fs.writeFileSync(`${WORKSPACE_DIR}/project.json`, "{not json");
+    const id = await page.evaluate(() => window.sitestryApp.workspace.id);
+    fs.writeFileSync(`${WORKSPACE_DIR}/projects/${id}/project.json`, "{not json");
     await page.reload();
     await expect(page.locator("#homeError")).toBeVisible();
     await expect(page.locator("#btnContinue")).toBeHidden();
@@ -371,6 +380,28 @@ test.describe("v4 workspace home", () => {
     await expect.poll(() => viewOf(page)).toBe("stage");
     expect(await stepOf(page)).toBe(3);
     expect(await page.evaluate(() => window.sitestryApp.hasUnsavedChanges())).toBe(true);
+  });
+
+  test("project id is set after sample boot and after upload", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    const id = () => page.evaluate(() => window.sitestryApp.workspace.id);
+    expect(await id()).toMatch(/^[0-9a-f]{8}$/);
+    await openHome(page);
+    await page.setInputFiles("#homeUploadInput", FIXTURE);
+    await expect.poll(() => viewOf(page)).toBe("stage");
+    expect(await id()).toMatch(/^[0-9a-f]{8}$/);
+  });
+
+  test("uploading from stage 1 creates a second project and keeps the first", async ({ page }) => {
+    await startAtStage3(page);
+    const id = () => page.evaluate(() => window.sitestryApp.workspace.id);
+    const first = await id();
+    await page.setInputFiles("#fileUploadInput", FIXTURE);
+    await expect.poll(async () => (await listProjects(page)).length).toBe(2);
+    await expect.poll(id).not.toBe(first);
+    const kept = await (await page.request.get(`/api/projects/${first}`)).json();
+    expect(kept.has_project).toBe(true);
+    await expect(page.locator("#confirmModal")).toBeHidden();
   });
 
   test("sample boot still skips home", async ({ page }) => {
@@ -440,8 +471,8 @@ test.describe("v4 stage 1 upload-only and locked calibration", () => {
     await expect.poll(() => buildState(page)).toBe("none");
     await page.evaluate(() => window.sitestryApp.canvas2d.store.setActiveTool("roi"));
     expect(await activeTool(page)).toBe("roi");
-    await expect.poll(async () => (await (await page.request.get("/api/workspace")).json()).meta.extracted).toBe(false);
-    const meta = (await (await page.request.get("/api/workspace")).json()).meta;
+    await expect.poll(async () => (await currentProject(page)).meta.extracted).toBe(false);
+    const meta = (await currentProject(page)).meta;
     expect(meta.extracted).toBe(false);
     expect(meta.built_hash).toBe(null);
   });

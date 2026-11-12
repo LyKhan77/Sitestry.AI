@@ -4,16 +4,30 @@ export async function gotoAppV4(page, viewport) {
   return gotoApp(page, viewport, "/?ui=v4&sample=gatsu_p4");
 }
 
-/** Wipe the single workspace, but only on a server started with SITESTRY_WORKSPACE_DIR. */
+/** Wipe every project, but only on a server started with SITESTRY_WORKSPACE_DIR. */
 export async function resetWorkspace(page) {
-  const res = await page.request.get("/api/workspace");
-  const body = await res.json();
+  const body = await (await page.request.get("/api/projects")).json();
   if (!body.test_dir) {
     throw new Error(
-      "Refusing to wipe a real workspace: restart the server through Playwright (SITESTRY_WORKSPACE_DIR must be set)."
+      "Refusing to wipe real projects: restart the server through Playwright (SITESTRY_WORKSPACE_DIR must be set)."
     );
   }
-  await page.request.delete("/api/workspace");
+  await page.request.delete("/api/projects");
+}
+
+export async function listProjects(page) {
+  return (await (await page.request.get("/api/projects")).json()).projects;
+}
+
+const openProjectId = (page) => page.evaluate(() => window.sitestryApp.workspace.id);
+
+/** Summary of the project the app currently has open. */
+export async function currentProject(page) {
+  return (await page.request.get(`/api/projects/${await openProjectId(page)}`)).json();
+}
+
+export async function savedProjectJson(page) {
+  return (await page.request.get(`/api/projects/${await openProjectId(page)}/project`)).json();
 }
 
 export async function gotoApp(page, viewport, path = "/?ui=v3&sample=gatsu_p4") {

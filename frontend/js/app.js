@@ -83,7 +83,8 @@ class SitestryStudioApp {
     this.revealAbort = null;
     this.lastExtractionFallback = false;
     this.extractionDone = false;
-    this.workspace = { exists: false, savedHash: null, builtHash: null, savedProject: null, meta: null };
+    this.workspace = { exists: false, id: null, savedHash: null, builtHash: null, savedProject: null, meta: null };
+    this.homeProjectId = null;
     this.saveChain = Promise.resolve();
     this.saving = false;
     this.saveError = false;
@@ -166,7 +167,7 @@ class SitestryStudioApp {
     if (!isV4()) return;
     try {
       const meta = store.project.metadata;
-      const created = await api.createWorkspaceSource({
+      const created = await api.createProject({
         sampleId,
         meta: {
           title: store.project.project_name,
@@ -178,7 +179,7 @@ class SitestryStudioApp {
           image_height_px: meta.image_height_px,
         },
       });
-      this.workspace = { exists: true, savedHash: null, builtHash: null, savedProject: null, meta: created.meta };
+      this.workspace = { exists: true, id: created.id, savedHash: null, builtHash: null, savedProject: null, meta: created.meta };
       await this.saveWorkspace();
     } catch (err) {
       console.warn("[Sitestry] sample workspace unavailable:", err);
@@ -354,7 +355,7 @@ class SitestryStudioApp {
 
   /** The furthest stage reached is what "Lanjutkan" resumes at; recorded as soon as it advances. */
   recordStageReached(step) {
-    if (!this.workspaceActive() || !this.sessionLoaded) return;
+    if (!this.workspaceActive() || !this.sessionLoaded || !this.workspace.id) return;
     if (step >= 2 && !this.extractionDone) {
       this.extractionDone = true;
       this.syncCalib();
@@ -362,7 +363,7 @@ class SitestryStudioApp {
     const reached = this.workspace.meta?.stage_reached || 1;
     if (step <= reached) return;
     this.workspace.meta = { ...this.workspace.meta, stage_reached: step };
-    api.patchWorkspaceMeta({ stage_reached: step }).catch(() => {});
+    api.patchProjectMeta(this.workspace.id, { stage_reached: step }).catch(() => {});
   }
 
   // ==================== WORKSPACE: SAVE ====================
@@ -469,7 +470,7 @@ class SitestryStudioApp {
     store.resetHistory();
     this.refreshWorkspaceFlags();
     try {
-      await api.patchWorkspaceMeta({ built_hash: null, stage_reached: 1, extracted: false });
+      await api.patchProjectMeta(this.workspace.id, { built_hash: null, stage_reached: 1, extracted: false });
     } catch (err) {
       this.showToast(`Gagal memperbarui workspace: ${err.message}`);
     }
@@ -511,7 +512,7 @@ class SitestryStudioApp {
     this.viewer3d.rebuildScene();
     this.refreshWorkspaceFlags();
     try {
-      await api.patchWorkspaceMeta({ built_hash: this.workspace.builtHash });
+      await api.patchProjectMeta(this.workspace.id, { built_hash: this.workspace.builtHash });
     } catch (err) {
       this.showToast(`Build tersimpan di sesi ini, tetapi gagal dicatat: ${err.message}`);
     }
@@ -569,18 +570,24 @@ class SitestryStudioApp {
   }
 
   async performSave() {
-    if (!this.workspaceActive()) return false;
+    if (!this.workspaceActive() || !this.workspace.id) return false;
     if (store.activeTransaction) {
       this.showToast("Selesaikan edit yang sedang berjalan sebelum menyimpan.");
       return false;
     }
+    const projectId = this.workspace.id;
     const project = structuredClone(store.project);
     const hash = structureHash(project);
     this.saving = true;
     this.setSaveState("saving");
     try {
       const meta = await this.buildSaveMeta(project, hash);
-      const result = await api.saveWorkspaceProject({ project, meta });
+      const result = await api.saveProject(projectId, { project, meta });
+      if (this.workspace.id !== projectId) {
+        // The open project changed while saving; the write landed on the right project, state is not ours.
+        this.saving = false;
+        return true;
+      }
       this.workspace.savedProject = project;
       this.workspace.savedHash = hash;
       this.workspace.meta = result.meta;
@@ -617,11 +624,13 @@ class SitestryStudioApp {
   async renderHome() {
     let info;
     try {
-      info = await api.getWorkspace();
+      const { projects } = await api.listProjects();
+      info = projects[0] || { exists: false };
     } catch (err) {
       info = { exists: false };
       this.showToast("Server tidak terjangkau.");
     }
+    this.homeProjectId = info.id || null;
     const el = (id) => document.getElementById(id);
     const empty = !info.exists;
     el("homeEmpty").hidden = !empty;
@@ -686,12 +695,12 @@ class SitestryStudioApp {
   }
 
   async continueFromHome() {
-    if (this.sessionLoaded && this.workspace.exists) {
+    if (this.sessionLoaded && this.workspace.exists && this.workspace.id === this.homeProjectId) {
       document.body.dataset.view = "stage";
       this.canvas2d.resize();
       return;
     }
-    await this.restoreWorkspace();
+    await this.restoreWorkspace(this.homeProjectId);
   }
 
   async replaceWorkspace() {
@@ -702,9 +711,9 @@ class SitestryStudioApp {
     });
     if (!ok) return;
     try {
-      await api.deleteWorkspace();
+      await api.deleteProject(this.homeProjectId);
     } catch (err) {
-      this.showToast(`Gagal menghapus workspace: ${err.message}`);
+      this.showToast(`Gagal menghapus project: ${err.message}`);
       return;
     }
     this.workspace.exists = false;
@@ -751,12 +760,12 @@ class SitestryStudioApp {
     });
   }
 
-  /** A freshly chosen source (PDF page or image) becomes the one workspace, replacing any previous one. */
+  /** A freshly chosen source (PDF page or image) becomes a new project; existing projects are kept. */
   async registerWorkspaceSource(file) {
     if (!isV4()) return;
     const m = store.project.metadata;
     try {
-      const created = await api.createWorkspaceSource({
+      const created = await api.createProject({
         file,
         meta: {
           title: store.project.project_name,
@@ -768,7 +777,7 @@ class SitestryStudioApp {
           image_height_px: m.image_height_px,
         },
       });
-      this.workspace = { exists: true, savedHash: null, builtHash: null, savedProject: null, meta: created.meta };
+      this.workspace = { exists: true, id: created.id, savedHash: null, builtHash: null, savedProject: null, meta: created.meta };
       store.builtProject = null;
       this.extractionDone = false;
       this.saveError = false;
@@ -796,13 +805,13 @@ class SitestryStudioApp {
   }
 
   /** Rebuild the session from the saved workspace: source file, saved project, and 3D when current. */
-  async restoreWorkspace() {
+  async restoreWorkspace(id) {
     try {
-      const info = await api.getWorkspace();
+      const info = await api.getProject(id);
       const meta = info.meta;
-      const { blob, filename } = await api.getWorkspaceSource();
+      const { blob, filename } = await api.getProjectSource(id);
       const file = new File([blob], filename, { type: blob.type });
-      const project = info.has_project ? await api.getWorkspaceProject() : null;
+      const project = info.has_project ? await api.getProjectData(id) : null;
 
       const overrides = {
         title: meta.title,
@@ -837,6 +846,7 @@ class SitestryStudioApp {
       const builtMatches = Boolean(project) && meta.built_hash != null && meta.built_hash === savedHash;
       this.workspace = {
         exists: true,
+        id,
         savedHash,
         builtHash: meta.built_hash ?? null,
         savedProject: project ? structuredClone(project) : null,
@@ -906,14 +916,6 @@ class SitestryStudioApp {
   }
 
   async handleUploadFile(file) {
-    if (this.workspaceActive() && this.sessionLoaded) {
-      const ok = await this.confirmDialog({
-        title: "Ganti denah?",
-        body: "Mengunggah file baru menghapus project tersimpan dan 3D.",
-        confirmLabel: "Ganti denah",
-      });
-      if (!ok) return;
-    }
     const seq = ++this.sourceRequestSeq;
     document.querySelectorAll(".sample-select-card").forEach((b) => b.classList.remove("active"));
 
