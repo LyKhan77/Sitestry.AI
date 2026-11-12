@@ -13,6 +13,7 @@ import { api } from "./api.js";
 import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
 import { BlueprintGuideSession } from "./blueprintGuides.js";
+import { countsOf, structureHash, workspaceFlags } from "./workspaceState.js";
 import {
   hideExtractionLayers,
   initUiFlag,
@@ -81,6 +82,12 @@ class SitestryStudioApp {
     this.extractV4Seq = 0;
     this.revealAbort = null;
     this.lastExtractionFallback = false;
+    this.extractionDone = false;
+    this.workspace = { exists: false, savedHash: null, builtHash: null, savedProject: null, meta: null };
+    this.saveChain = Promise.resolve();
+    this.saving = false;
+    this.saveError = false;
+    this.thumbCache = null;
     this.guideSession = new BlueprintGuideSession(store, (args) => api.fetchBlueprintGuides(args));
 
     initUiFlag();
@@ -93,6 +100,7 @@ class SitestryStudioApp {
     this.initWorkspaceControls();
     this.initRulerPopover();
     this.initPdfModal();
+    this.initWorkspaceSave();
     this.initKeyboardShortcuts();
     this.initSplitResizer();
     this.initResponsiveWorkspace();
@@ -137,8 +145,35 @@ class SitestryStudioApp {
   }
 
   async bootInitialSample() {
-    await this.loadSamplePreset("gatsu_p4", true);
+    // `?sample=<id>` is the dev/test boot: load that sample and back it with a workspace.
+    const params = new URLSearchParams(window.location.search);
+    const sampleId = params.get("sample") || "gatsu_p4";
+    await this.loadSamplePreset(sampleId, true);
+    if (params.has("sample")) await this.ensureSampleWorkspace(sampleId);
     this.setWorkflowStage(1);
+  }
+
+  async ensureSampleWorkspace(sampleId) {
+    if (!isV4()) return;
+    try {
+      const meta = store.project.metadata;
+      const created = await api.createWorkspaceSource({
+        sampleId,
+        meta: {
+          title: store.project.project_name,
+          page_number: meta.page_number,
+          total_pages: meta.total_pages,
+          scale_px_per_meter: meta.scale_px_per_meter,
+          roi_px: meta.roi_px,
+          image_width_px: meta.image_width_px,
+          image_height_px: meta.image_height_px,
+        },
+      });
+      this.workspace = { exists: true, savedHash: null, builtHash: null, savedProject: null, meta: created.meta };
+      await this.saveWorkspace();
+    } catch (err) {
+      console.warn("[Sitestry] sample workspace unavailable:", err);
+    }
   }
 
   showToast(message) {
@@ -205,6 +240,13 @@ class SitestryStudioApp {
   }
 
   setWorkflowStage(step) {
+    if (this.workspaceActive() && step >= 4 && store.ui.step <= 3 && this.hasUnsavedChanges()) {
+      this.showToast("Simpan dulu sebelum lanjut ke 3D");
+      const save = document.getElementById("btnSave");
+      save?.classList.add("pulse");
+      setTimeout(() => save?.classList.remove("pulse"), 1200);
+      return false;
+    }
     this.abortReveal();
     store.ui.step = step;
     document.body.dataset.stage = String(step);
@@ -295,6 +337,149 @@ class SitestryStudioApp {
       this.canvas2d.zoomToFit();
       this.viewer3d.resize();
     }, 60);
+    return true;
+  }
+
+  // ==================== WORKSPACE: SAVE ====================
+  initWorkspaceSave() {
+    document.body.dataset.save = "off";
+    document.body.dataset.workspace = "off";
+    document.getElementById("btnSave")?.addEventListener("click", () => this.saveWorkspace());
+    store.addEventListener("geometryChanged", () => this.scheduleFlagRefresh());
+    window.addEventListener("beforeunload", (e) => {
+      if (this.hasUnsavedChanges()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
+  }
+
+  workspaceActive() {
+    return isV4() && this.workspace.exists;
+  }
+
+  currentFlags() {
+    return workspaceFlags({
+      liveHash: structureHash(store.project),
+      savedHash: this.workspace.savedHash,
+      builtHash: this.workspace.builtHash,
+    });
+  }
+
+  hasUnsavedChanges() {
+    return this.workspaceActive() && this.currentFlags().dirty;
+  }
+
+  scheduleFlagRefresh() {
+    if (this.flagFrame) return;
+    this.flagFrame = requestAnimationFrame(() => {
+      this.flagFrame = null;
+      this.refreshWorkspaceFlags();
+    });
+  }
+
+  setSaveState(state) {
+    const labels = {
+      clean: "Tersimpan",
+      dirty: "Belum disimpan",
+      saving: "Menyimpan...",
+      error: "Gagal menyimpan",
+    };
+    document.body.dataset.save = state;
+    const status = document.getElementById("saveStatus");
+    if (status) status.textContent = labels[state] || "";
+  }
+
+  refreshWorkspaceFlags() {
+    const active = this.workspaceActive();
+    document.body.dataset.workspace = active ? "on" : "off";
+    if (!active) {
+      document.body.dataset.save = "off";
+      return;
+    }
+    if (this.saving) return;
+    const { dirty } = this.currentFlags();
+    if (this.saveError && dirty) this.setSaveState("error");
+    else this.setSaveState(dirty ? "dirty" : "clean");
+  }
+
+  async makeThumbnail(dataUrl) {
+    if (!dataUrl) return null;
+    if (this.thumbCache?.revision === store.currentSource.revision) return this.thumbCache.url;
+    const url = await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const width = 240;
+          const height = Math.max(1, Math.round((img.height * width) / img.width));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL("image/jpeg", 0.6));
+        } catch (_err) {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+    this.thumbCache = { revision: store.currentSource.revision, url };
+    return url;
+  }
+
+  async buildSaveMeta(project, hash) {
+    const m = project.metadata;
+    return {
+      title: project.project_name,
+      page_number: m.page_number,
+      total_pages: m.total_pages,
+      roi_px: m.roi_px,
+      scale_px_per_meter: m.scale_px_per_meter,
+      image_width_px: m.image_width_px,
+      image_height_px: m.image_height_px,
+      stage_reached: Math.max(this.workspace.meta?.stage_reached || 1, store.ui.step),
+      extracted: this.extractionDone,
+      saved_hash: hash,
+      counts: countsOf(project),
+      thumbnail: await this.makeThumbnail(store.blueprintDataUrl),
+    };
+  }
+
+  /** Saves are serialized: the later call always lands last and its hash matches the body it wrote. */
+  saveWorkspace() {
+    const run = () => this.performSave();
+    this.saveChain = this.saveChain.then(run, run);
+    return this.saveChain;
+  }
+
+  async performSave() {
+    if (!this.workspaceActive()) return false;
+    if (store.activeTransaction) {
+      this.showToast("Selesaikan edit yang sedang berjalan sebelum menyimpan.");
+      return false;
+    }
+    const project = structuredClone(store.project);
+    const hash = structureHash(project);
+    this.saving = true;
+    this.setSaveState("saving");
+    try {
+      const meta = await this.buildSaveMeta(project, hash);
+      const result = await api.saveWorkspaceProject({ project, meta });
+      this.workspace.savedProject = project;
+      this.workspace.savedHash = hash;
+      this.workspace.meta = result.meta;
+      this.saveError = false;
+      this.saving = false;
+      this.refreshWorkspaceFlags();
+      return true;
+    } catch (err) {
+      this.saving = false;
+      this.saveError = true;
+      this.setSaveState("error");
+      this.showToast(`Gagal menyimpan: ${err.message}`);
+      return false;
+    }
   }
 
   // ==================== STAGE 1: INPUT & CALIBRATION ====================
@@ -474,6 +659,7 @@ class SitestryStudioApp {
       return false;
     }
     this.lastExtractionFallback = layout.extractionFallback === true;
+    this.extractionDone = !this.lastExtractionFallback;
     beforeLoad?.();
     const currentMeta = store.project.metadata;
     const safeLayout = {
@@ -1018,6 +1204,11 @@ class SitestryStudioApp {
   // ==================== KEYBOARD SHORTCUTS ====================
   initKeyboardShortcuts() {
     window.addEventListener("keydown", (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && isV4()) {
+        e.preventDefault();
+        if (this.workspaceActive()) this.saveWorkspace();
+        return;
+      }
       if (["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
 
       const key = e.key.toLowerCase();

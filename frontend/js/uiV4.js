@@ -255,6 +255,13 @@ export const PALETTE_ACTIONS = [
     run: (app) => app.setViewMode(mode),
   })),
   {
+    id: "save",
+    label: "Simpan project",
+    keywords: "save simpan",
+    when: () => ["clean", "dirty", "error"].includes(document.body.dataset.save),
+    run: (app) => app.saveWorkspace(),
+  },
+  {
     id: "run-extraction",
     label: "Jalankan ulang ekstraksi",
     keywords: "extract ekstraksi run",

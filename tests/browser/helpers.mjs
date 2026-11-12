@@ -33,7 +33,12 @@ export async function gotoApp(page, viewport, path = "/?ui=v3&sample=gatsu_p4") 
 }
 
 export async function loadStage(page, stage) {
-  await page.evaluate((step) => window.sitestryApp.setWorkflowStage(step), stage);
+  await page.evaluate(async (step) => {
+    const app = window.sitestryApp;
+    // v4 workspace: Stage 4+ requires a saved project.
+    if (step >= 4 && app.workspaceActive?.()) await app.saveWorkspace();
+    app.setWorkflowStage(step);
+  }, stage);
   await page.waitForTimeout(250);
 }
 
