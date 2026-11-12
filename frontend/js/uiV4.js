@@ -251,7 +251,7 @@ export const PALETTE_ACTIONS = [
     id: `view-${mode}`,
     label: `Tampilan: ${name}`,
     keywords: "view tampilan",
-    when: () => store.ui.step >= 3,
+    when: () => store.ui.step >= 4,
     run: (app) => app.setViewMode(mode),
   })),
   {

@@ -77,3 +77,40 @@ test.describe("v4 stair parameter card", () => {
     expectFits(await fitReport(page, "#rightInspector"));
   });
 });
+
+test.describe("v4 stage 3 is 2D only", () => {
+  test("view pill is hidden in stages 1-3 and shown in 4-5", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    for (const stage of [1, 2, 3]) {
+      await loadStage(page, stage);
+      await expect(page.locator(".view-mode-group")).toBeHidden();
+    }
+    for (const stage of [4, 5]) {
+      await loadStage(page, stage);
+      await expect(page.locator(".view-mode-group")).toBeVisible();
+    }
+  });
+
+  test("palette view actions are offered only from stage 4", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    const enabled = () =>
+      page.evaluate(async () => {
+        const { PALETTE_ACTIONS } = await import("/js/uiV4.js");
+        return PALETTE_ACTIONS.filter((a) => a.id.startsWith("view-")).map((a) =>
+          a.when ? a.when() : true
+        );
+      });
+    await loadStage(page, 3);
+    const atStage3 = await enabled();
+    expect(atStage3.length).toBe(3);
+    expect(atStage3.every((v) => v === false)).toBe(true);
+    await loadStage(page, 4);
+    expect((await enabled()).every((v) => v === true)).toBe(true);
+  });
+
+  test("stage 3 keeps the 2D view", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    await loadStage(page, 3);
+    expect(await page.evaluate(() => window.sitestryApp.canvas2d.store.ui.viewMode)).toBe("2d");
+  });
+});

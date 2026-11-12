@@ -1945,7 +1945,8 @@ body[data-ui="v4"] .tl-step:not(.active) .tl-label {
 
 /* ---- v4 dock: view switch and 3D camera presets only where they apply ---- */
 body[data-ui="v4"][data-stage="1"] .view-mode-group,
-body[data-ui="v4"][data-stage="2"] .view-mode-group {
+body[data-ui="v4"][data-stage="2"] .view-mode-group,
+body[data-ui="v4"][data-stage="3"] .view-mode-group {
   display: none;
 }
 
