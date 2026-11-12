@@ -54,7 +54,8 @@ export class SitestryAPI {
 
   async getWorkspaceSource() {
     const res = await this._workspaceFetch("/source");
-    return { blob: await res.blob(), filename: res.headers.get("X-Source-Filename") || "source" };
+    const header = res.headers.get("X-Source-Filename");
+    return { blob: await res.blob(), filename: header ? decodeURIComponent(header) : "source" };
   }
 
   async getWorkspaceProject() {

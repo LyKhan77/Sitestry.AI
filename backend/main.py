@@ -11,6 +11,7 @@ import json
 import mimetypes
 import os
 from pathlib import Path
+from urllib.parse import quote
 from typing import Optional, Dict, Any
 import fitz  # PyMuPDF
 import cv2
@@ -465,7 +466,7 @@ async def workspace_create(
 async def workspace_source():
     data, filename = _workspace_call(workspace_store.read_source)
     media = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    return Response(content=data, media_type=media, headers={"X-Source-Filename": filename})
+    return Response(content=data, media_type=media, headers={"X-Source-Filename": quote(filename)})
 
 
 @app.get("/api/workspace/project")

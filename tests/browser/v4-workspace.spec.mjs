@@ -320,6 +320,22 @@ test.describe("v4 workspace home", () => {
     expect(await sceneCount(page, "column")).toBe(0);
   });
 
+  test("restore works with a non-ASCII file name", async ({ page }) => {
+    await openHome(page);
+    await page.setInputFiles("#homeUploadInput", {
+      name: "Denah Lantai 1 \u2013 Gatsu.png",
+      mimeType: "image/png",
+      buffer: fs.readFileSync(FIXTURE),
+    });
+    await expect.poll(() => viewOf(page)).toBe("stage");
+    await page.evaluate(() => window.sitestryApp.saveWorkspace());
+    await page.reload();
+    await expect(page.locator("#homeTitle")).toContainText("Gatsu");
+    await page.locator("#btnContinue").click();
+    await expect.poll(() => viewOf(page)).toBe("stage");
+    expect(await stepOf(page)).toBe(1);
+  });
+
   test("Ganti denah asks first and cancel changes nothing", async ({ page }) => {
     await uploadAndSave(page);
     await page.reload();

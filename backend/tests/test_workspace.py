@@ -172,3 +172,14 @@ def test_sample_source_copies_the_sample_file(client):
     meta = client.get("/api/workspace").json()["meta"]
     assert meta["source"]["kind"] == "sample" and meta["source"]["sample_id"] == "gatsu_jpeg"
     assert client.get("/api/workspace/source").content == (main.FLOORPLAN_DIR / sample["filename"]).read_bytes()
+
+
+def test_source_download_survives_a_non_latin1_filename(client):
+    name = "Denah Lantai 1 – Gatsu.png"
+    assert upload(client, name=name).status_code == 200
+    res = client.get("/api/workspace/source")
+    assert res.status_code == 200
+    assert res.content == PNG
+    from urllib.parse import unquote
+
+    assert unquote(res.headers["X-Source-Filename"]) == name
