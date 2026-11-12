@@ -6,6 +6,7 @@
  */
 
 import { planWallInsertion, planWallSplit } from "./annotationGeometry.js";
+import { isSimplePolygon, polygonArea } from "./roomFaces.js";
 import {
   resolveStairGeometry,
   computeDefaultHeading,
@@ -60,6 +61,7 @@ export class SitestryStore extends EventTarget {
       endpointSnap: false,
       orthoSnap: false,
       panelOpen: false,
+      roomMode: "auto", // "auto" (click inside a closed room) | "polygon" (manual points)
       calibLocked: false, // v4 workspace: ROI and scale are read-only after extraction
       stairDefaults: {
         shape: "straight",
@@ -685,6 +687,50 @@ export class SitestryStore extends EventTarget {
     this.selectObject("room", room.id);
     this.emit("geometryChanged", { source: "addRoom" });
     return room;
+  }
+
+  setRoomMode(mode) {
+    if (mode !== "auto" && mode !== "polygon") return;
+    this.ui.roomMode = mode;
+    this.emit("roomModeChanged", { mode });
+  }
+
+  /** Create a zone from a simple polygon (a detected face or manual points). One history step. */
+  addRoomPolygon(points, { name = null } = {}) {
+    const round = (v) => Math.round(Number(v) * 10) / 10;
+    const polygon = (points || []).map(([x, y]) => [round(x), round(y)]);
+    const scale = this.project.metadata.scale_px_per_meter || 30.68;
+    if (polygon.length < 3 || polygon.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y))) return null;
+    if (!isSimplePolygon(polygon)) return null;
+    if (Math.abs(polygonArea(polygon)) < 0.25 * scale * scale) return null;
+
+    this.pushHistorySnapshot();
+    const taken = new Set(this.project.rooms.map((r) => r.name));
+    let n = this.project.rooms.length + 1;
+    while (!name && taken.has(`Ruangan ${n}`)) n += 1;
+    const room = {
+      id: `room_${this.project.rooms.length + 1}_${Date.now().toString(36).slice(-3)}`,
+      name: name || `Ruangan ${n}`,
+      floor_type: "raised_floor_60cm",
+      elevation_m: 0.45,
+      color: "#00754A",
+      polygon_px: polygon,
+    };
+    this.project.rooms.push(room);
+    this.selectObject("room", room.id);
+    this.emit("geometryChanged", { source: "addRoom" });
+    return room;
+  }
+
+  setRoomVertex(roomId, index, x, y) {
+    const nx = Number(x);
+    const ny = Number(y);
+    const room = this.project.rooms.find((r) => r.id === roomId);
+    if (!room || !Number.isInteger(index) || index < 0 || index >= (room.polygon_px || []).length) return false;
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return false;
+    room.polygon_px[index] = [Math.round(nx * 10) / 10, Math.round(ny * 10) / 10];
+    this.notifyGeometryChange("moveRoomVertex", [roomId]);
+    return true;
   }
 
   addEquipment(x_px, y_px, category = null) {

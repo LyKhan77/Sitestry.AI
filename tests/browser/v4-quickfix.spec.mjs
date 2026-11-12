@@ -239,7 +239,9 @@ test.describe("v4 tool isolation", () => {
         const target = await page.evaluate(readTarget, kind);
         // Door/window tools may legitimately place a new opening when the click lands on a wall
         // beneath the element; that new object may be selected, but no pre-existing one may be.
-        const existing = await page.evaluate(() => {
+        // The room tool may legitimately select an existing zone (or create one) for a click inside a
+        // room, so zones are not part of the "must stay unselected" set for that tool.
+        const existing = await page.evaluate((activeTool) => {
           const { project } = window.sitestryApp.canvas2d.store;
           return [
             ...project.nodes,
@@ -247,9 +249,9 @@ test.describe("v4 tool isolation", () => {
             ...project.columns,
             ...project.openings,
             ...project.stairs,
-            ...project.rooms,
+            ...(activeTool === "room" ? [] : project.rooms),
           ].map((item) => item.id);
-        });
+        }, tool);
         await setTool(page, tool);
         const [point] = await worldPointsToScreen(page, [{ x: target.x, y: target.y }], 0.9);
         await page.mouse.click(point.x, point.y);
@@ -277,7 +279,8 @@ test.describe("v4 tool isolation", () => {
     const [point] = await worldPointsToScreen(page, [{ x: wall.x, y: wall.y }], 0.9);
     await page.mouse.click(point.x, point.y);
     await page.waitForTimeout(250);
-    expect((await storeState(page)).selected).toBe(null);
+    // A zone may be selected or created by the room tool; the wall itself must not be.
+    expect((await storeState(page)).selected?.kind).not.toBe("wall");
   });
 
   test("switching to a drawing tool clears the selection", async ({ page }) => {

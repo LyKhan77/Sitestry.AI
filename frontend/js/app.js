@@ -50,7 +50,9 @@ const TOOL_HINTS = {
     "Mode: <strong>Add Pillar [P]</strong> — Klik pada denah untuk menempatkan Kolom Struktur H-Beam atau Beton.",
   stair:
     "Mode: <strong>Parametric Stairs [S]</strong> — Pilih Lurus/L/U, klik titik masuk bawah lalu titik keluar atas. Preview menampilkan flight, landing, tread, dan arah naik; parameter dapat diedit di inspector.",
-  room: "Mode: <strong>Room Zone [Z]</strong> — Klik dua sudut berlawanan untuk membuat Zona Ruangan & Label 3D.",
+  room: "Mode: <strong>Room Zone [Z]</strong> — Arahkan kursor ke ruangan tertutup dinding lalu klik untuk membuat zona. Ruang yang sudah punya zona akan dipilih.",
+  room_polygon:
+    "Mode: <strong>Room Zone [Z] · Poligon</strong> — Klik titik sudut (menempel ke sudut dinding). Klik titik awal atau Enter untuk menutup, Esc membatalkan.",
   equipment:
     "Mode: <strong>Place CME Equipment [E]</strong> — Klik pada denah untuk memasang Rak Server 42U, UPS, Battery, Rectifier, Panel, atau PAC.",
   tray: "Mode: <strong>Draw 3D Cable Ladder [T]</strong> — Klik titik-titik jalur kabel; tekan Enter atau Double-Click untuk membangun 3D Ladder.",
@@ -108,10 +110,20 @@ class SitestryStudioApp {
     this.initResponsiveWorkspace();
     initV4Dock(this);
 
-    store.addEventListener("geometryChanged", () => {
+    store.addEventListener("geometryChanged", (e) => {
       this.updateTelemetryAndStageMetrics();
       this.renderInspector();
+      if (e.detail?.source === "addRoom") {
+        // The zone is created on mousedown; the browser's default focus change runs right after the
+        // handlers, so focusing the name field has to wait one tick.
+        setTimeout(() => {
+          const name = document.getElementById("inpRoomName");
+          name?.focus();
+          name?.select();
+        }, 0);
+      }
     });
+    store.addEventListener("roomModeChanged", () => this.syncRoomModeUI());
     store.addEventListener("selectionChanged", () => {
       this.renderInspector();
     });
@@ -1270,6 +1282,9 @@ class SitestryStudioApp {
     document.getElementById("chkEndpointSnap")?.addEventListener("change", (e) => {
       store.ui.endpointSnap = e.target.checked;
     });
+    document.querySelectorAll("[data-room-mode]").forEach((btn) => {
+      btn.addEventListener("click", () => store.setRoomMode(btn.dataset.roomMode));
+    });
     document.querySelectorAll("[data-wall-mode]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.disabled) return;
@@ -1331,14 +1346,24 @@ class SitestryStudioApp {
     });
   }
 
+  syncRoomModeUI() {
+    document.querySelectorAll("[data-room-mode]").forEach((b) => {
+      const on = b.dataset.roomMode === store.ui.roomMode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    this.syncActiveToolUI(store.ui.activeTool);
+  }
+
   syncActiveToolUI(tool) {
     document.body.dataset.tool = tool;
     document.querySelectorAll(".tool-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.tool === tool);
     });
     const hintEl = document.getElementById("lblActiveToolHint");
-    if (hintEl && TOOL_HINTS[tool]) {
-      hintEl.innerHTML = TOOL_HINTS[tool];
+    const hintKey = tool === "room" && store.ui.roomMode === "polygon" ? "room_polygon" : tool;
+    if (hintEl && TOOL_HINTS[hintKey]) {
+      hintEl.innerHTML = TOOL_HINTS[hintKey];
     }
   }
 

@@ -9,6 +9,7 @@
 import { computeWallPreview } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { ISOLATING_TOOLS } from "./store.js";
+import { buildRoomFaces, faceAt, pointInPolygon, polygonArea } from "./roomFaces.js";
 
 const NODE_HIT_DIAMETER_PX = 11;
 
@@ -46,7 +47,8 @@ export class Canvas2DEngine {
     // Interactive drawing state
     this.wallChainNode = null;
     this.rulerPoints = [];
-    this.roomDragStart = null;
+    this.roomDraft = [];
+    this.roomFacesCache = null;
     this.trayDraftPoints = [];
     this.cursorPosPx = { x: 0, y: 0 };
     this.isDraggingNode = false;
@@ -72,6 +74,7 @@ export class Canvas2DEngine {
       this.loadBlueprintImage(e.detail.dataUrl);
     });
     this.store.addEventListener("geometryChanged", () => {
+      this.roomFacesCache = null;
       if (this.isDraggingNode) {
         this.syncDraggedGeometry();
         return;
@@ -92,7 +95,11 @@ export class Canvas2DEngine {
     this.store.addEventListener("roiChanged", () => {
       this.renderRoiOverlay();
     });
+    this.store.addEventListener("roomModeChanged", () => {
+      this.clearTempDrawing();
+    });
     this.store.addEventListener("sourceChanged", () => {
+      this.roomFacesCache = null;
       this.cancelNodeDrag();
       this.cancelStairDrag();
       this.clearTempDrawing();
@@ -282,7 +289,7 @@ export class Canvas2DEngine {
         this.stairDraft ||
         this.wallChainNode ||
         this.rulerPoints.length ||
-        this.roomDragStart ||
+        this.roomDraft.length ||
         this.trayDraftPoints.length
     );
   }
@@ -401,7 +408,7 @@ export class Canvas2DEngine {
     this.stairDraft = null;
     this.wallChainNode = null;
     this.rulerPoints = [];
-    this.roomDragStart = null;
+    this.roomDraft = [];
     this.trayDraftPoints = [];
     this.overlayLayer.destroyChildren();
     this.overlayLayer.batchDraw();
@@ -475,6 +482,10 @@ export class Canvas2DEngine {
         this.handleStairClick(pt);
         return;
       }
+      if (tool === "room") {
+        this.handleRoomToolClick(pt);
+        return;
+      }
 
       if (e.target === this.stage) {
         if (tool === "select") {
@@ -504,8 +515,6 @@ export class Canvas2DEngine {
           this.store.addStaircase(pt.x, pt.y);
         } else if (tool === "ruler") {
           this.handleRulerClick(pt);
-        } else if (tool === "room") {
-          this.handleRoomToolClick(pt);
         } else if (tool === "tray") {
           this.handleTrayToolClick(pt);
         }
@@ -653,13 +662,49 @@ export class Canvas2DEngine {
     }
   }
 
-  handleRoomToolClick(pt) {
-    if (!this.roomDragStart) {
-      this.roomDragStart = pt;
-    } else {
-      this.store.addRoomZone(this.roomDragStart.x, this.roomDragStart.y, pt.x, pt.y);
-      this.clearTempDrawing();
+  // ==================== ROOM ZONES ====================
+  roomFaces() {
+    if (!this.roomFacesCache) this.roomFacesCache = buildRoomFaces(this.store.project);
+    return this.roomFacesCache;
+  }
+
+  roomFaceAt(x, y) {
+    return faceAt(this.roomFaces(), x, y);
+  }
+
+  /** Smallest existing zone containing the point, so a click on a zoned room selects it. */
+  existingRoomAt(x, y) {
+    let best = null;
+    for (const room of this.store.project.rooms) {
+      const polygon = room.polygon_px;
+      if (!polygon || polygon.length < 3 || !pointInPolygon([x, y], polygon)) continue;
+      const area = Math.abs(polygonArea(polygon));
+      if (!best || area < best.area) best = { room, area };
     }
+    return best?.room || null;
+  }
+
+  handleRoomToolClick(pt) {
+    if (this.store.ui.roomMode === "polygon") {
+      this.handleRoomPolygonClick(pt);
+      return;
+    }
+    const existing = this.existingRoomAt(pt.x, pt.y);
+    if (existing) {
+      this.store.selectObject("room", existing.id);
+      return;
+    }
+    const face = this.roomFaceAt(pt.x, pt.y);
+    if (face) {
+      this.store.addRoomPolygon(face.polygon);
+      return;
+    }
+    this.store.emit("toast", { message: "Ruangan tidak tertutup dinding. Beralih ke mode Poligon." });
+    this.store.setRoomMode("polygon");
+  }
+
+  handleRoomPolygonClick() {
+    // Manual polygon drawing is added in the next change.
   }
 
   handleTrayToolClick(pt) {
@@ -1801,23 +1846,23 @@ export class Canvas2DEngine {
           fill: "#006241",
         })
       );
-    } else if (tool === "room" && this.roomDragStart) {
-      const x = Math.min(this.roomDragStart.x, cursorPt.x);
-      const y = Math.min(this.roomDragStart.y, cursorPt.y);
-      const w = Math.abs(cursorPt.x - this.roomDragStart.x);
-      const h = Math.abs(cursorPt.y - this.roomDragStart.y);
-      this.overlayLayer.add(
-        new Konva.Rect({
-          x,
-          y,
-          width: w,
-          height: h,
-          fill: "rgba(0, 117, 74, 0.14)",
-          stroke: "#00754A",
-          strokeWidth: 2,
-          dash: [6, 4],
-        })
-      );
+    } else if (tool === "room" && this.store.ui.roomMode === "auto") {
+      const existing = this.existingRoomAt(cursorPt.x, cursorPt.y);
+      const polygon = existing ? existing.polygon_px : this.roomFaceAt(cursorPt.x, cursorPt.y)?.polygon;
+      if (polygon) {
+        this.overlayLayer.add(
+          new Konva.Line({
+            name: "room-hover",
+            points: polygon.flat(),
+            closed: true,
+            fill: existing ? "rgba(0, 117, 74, 0.06)" : "rgba(0, 117, 74, 0.18)",
+            stroke: "#00754A",
+            strokeWidth: 2,
+            dash: existing ? [4, 3] : [],
+            listening: false,
+          })
+        );
+      }
     } else if (tool === "tray" && this.trayDraftPoints.length > 0) {
       const pts = [...this.trayDraftPoints.flat(), cursorPt.x, cursorPt.y];
       this.overlayLayer.add(

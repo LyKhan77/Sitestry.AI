@@ -533,7 +533,7 @@ export async function revealExtraction(app, layout, { signal }) {
 export function initV4Dock(app) {
   if (!isV4()) return;
   decorateToolButtons();
-  buildDockFlyout(3, [".wall-assist-bar", "#stairSettingsCard", ".layer-card"]);
+  buildDockFlyout(3, [".wall-assist-bar", "#stairSettingsCard", "#roomSettingsCard", ".layer-card"]);
   buildDockFlyout(4, [".cam-toggles-row", ".surface-card:has(#stage4SummaryGrid)"]);
   buildDockFlyout(5, [".eq-catalog-grid", ".preset-cme-row", "label.layer-check-row"]);
   initExportMenu();

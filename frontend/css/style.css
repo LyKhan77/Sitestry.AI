@@ -1705,6 +1705,14 @@ body[data-tool="stair"] #stairSettingsCard {
   display: flex;
 }
 
+#roomSettingsCard {
+  display: none;
+}
+
+body[data-tool="room"] #roomSettingsCard {
+  display: flex;
+}
+
 .insp-error {
   background: rgba(214, 43, 31, 0.08);
   border: 1px solid rgba(214, 43, 31, 0.35);
@@ -2118,12 +2126,14 @@ body[data-ui="v4"][data-stage="3"] #btnCamWalk {
   }
 
   body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"])[data-dock="open"] .dock-flyout,
-  body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"])[data-tool="stair"] .dock-flyout {
+  body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"])[data-tool="stair"] .dock-flyout,
+  body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"])[data-tool="room"] .dock-flyout {
     display: flex;
   }
 
   /* Stair tool alone: show just the stair parameters unless the flyout was opened. */
-  body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"])[data-tool="stair"]:not([data-dock="open"]) .dock-flyout > :not(#stairSettingsCard) {
+  body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"])[data-tool="stair"]:not([data-dock="open"]) .dock-flyout > :not(#stairSettingsCard),
+  body[data-ui="v4"]:is([data-stage="3"], [data-stage="4"], [data-stage="5"])[data-tool="room"]:not([data-dock="open"]) .dock-flyout > :not(#roomSettingsCard) {
     display: none;
   }
 
