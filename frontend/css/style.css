@@ -1360,9 +1360,14 @@ body[data-stage="5"] .studio-body {
   justify-content: space-between;
 }
 
-.modal-header h3 {
+.modal-header h3,
+.modal-header h2 {
   font-size: 16px;
   color: var(--green-house);
+}
+
+.modal-header h2 {
+  margin: 0;
 }
 
 .modal-sub {
