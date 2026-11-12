@@ -3,7 +3,11 @@ import { gotoAppV4, loadStage, setTool, storeState, worldPointsToScreen } from "
 
 const VIEWPORT = { width: 1440, height: 960 };
 
+/** These tests are about shapes and clicks, so OCR answers with no text (generic names). */
 async function boot(page) {
+  await page.route("**/api/blueprint-text", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ image_width_px: 1584, image_height_px: 1224, texts: [] }) })
+  );
   await gotoAppV4(page, VIEWPORT);
   await loadStage(page, 3);
 }

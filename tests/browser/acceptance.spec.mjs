@@ -113,6 +113,11 @@ for (const sample of SAMPLES) {
     expect((await storeState(page)).walls).toBe(wallBefore + 1);
 
     // 3. Guided wall drag from the actual source.
+    // Endpoint snap is on by default; guide ends coincide with extracted walls and would snap onto
+    // them (rejected as a duplicate), so the guide step runs with snap off.
+    await page.evaluate(() => {
+      window.sitestryApp.canvas2d.store.ui.endpointSnap = false;
+    });
     await page.locator("#btnWallModeGuided").click();
     await page.waitForFunction(
       () => ["ready", "unavailable", "error"].includes(
