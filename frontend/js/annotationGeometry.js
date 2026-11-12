@@ -54,7 +54,7 @@ function angleDifferenceDeg(a, b) {
   return diff;
 }
 
-function resolveConnection(point, project, tolerancePx) {
+export function resolveConnection(point, project, tolerancePx) {
   let bestNode = null;
   let bestNodeDistance = Infinity;
   for (const node of project.nodes || []) {

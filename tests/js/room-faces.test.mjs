@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   buildRoomFaces,
   faceAt,
+  findFreeEnds,
   isSimplePolygon,
   pointInPolygon,
   polygonArea,
@@ -141,6 +142,27 @@ test("buildRoomFaces does not mutate the project", () => {
   const before = JSON.stringify(project);
   buildRoomFaces(project, OPTS);
   assert.equal(JSON.stringify(project), before);
+});
+
+test("findFreeEnds returns the two ends of an isolated wall", () => {
+  const ends = findFreeEnds(mk([[0, 0, 200, 0]]), { gapPx: 8 });
+  assert.equal(ends.length, 2);
+  assert.deepEqual(ends.map((p) => p.map(Math.round)).sort((a, b) => a[0] - b[0]), [[0, 0], [200, 0]]);
+});
+
+test("findFreeEnds ignores ends bridged within the gap", () => {
+  assert.equal(findFreeEnds(mk([[0, 0, 98, 0], [102, 0, 200, 0]]), { gapPx: 8 }).length, 2);
+  const closedChain = [...box(0, 0, 200, 100), [200, 0, 300, 0]];
+  assert.equal(findFreeEnds(mk(closedChain), { gapPx: 8 }).length, 1);
+});
+
+test("findFreeEnds returns the open ends of a U shape", () => {
+  const walls = [[0, 0, 0, 200], [0, 200, 200, 200], [200, 200, 200, 0]];
+  assert.equal(findFreeEnds(mk(walls), { gapPx: 8 }).length, 2);
+});
+
+test("findFreeEnds returns nothing for a closed rectangle", () => {
+  assert.equal(findFreeEnds(mk(box(0, 0, 200, 100)), { gapPx: 8 }).length, 0);
 });
 
 test("real saved rooms are found (local acceptance, skipped without workspace data)", (t) => {

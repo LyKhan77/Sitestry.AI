@@ -6,10 +6,10 @@
  * Multi-Line Window Glazing Symbols (W-xx), and Stage 5 CME Equipments / Cable Ladders.
  */
 
-import { computeWallPreview } from "./annotationGeometry.js";
+import { computeWallPreview, resolveConnection, WALL_SNAP_CSS_PX } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { ISOLATING_TOOLS } from "./store.js";
-import { buildRoomFaces, faceAt, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
+import { buildRoomFaces, faceAt, findFreeEnds, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
 
 const NODE_HIT_DIAMETER_PX = 11;
 const ROOM_HANDLE_RADIUS_PX = 6;
@@ -51,6 +51,8 @@ export class Canvas2DEngine {
     this.roomDraft = [];
     this.roomDraftRepeated = false;
     this.roomFacesCache = null;
+    this.freeEndsCache = null;
+    this.freeEndMarks = [];
     this.roomHandles = [];
     this.isDraggingRoomVertex = false;
     this.roomDragTransaction = null;
@@ -80,6 +82,7 @@ export class Canvas2DEngine {
     });
     this.store.addEventListener("geometryChanged", () => {
       this.roomFacesCache = null;
+      this.freeEndsCache = null;
       if (this.isDraggingNode) {
         this.syncDraggedGeometry();
         return;
@@ -106,6 +109,7 @@ export class Canvas2DEngine {
     });
     this.store.addEventListener("sourceChanged", () => {
       this.roomFacesCache = null;
+      this.freeEndsCache = null;
       this.cancelRoomVertexDrag();
       this.cancelNodeDrag();
       this.cancelStairDrag();
@@ -316,6 +320,10 @@ export class Canvas2DEngine {
       circle.radius(radiusCss / nodeScale);
       circle.hitStrokeWidth(Math.max(0, NODE_HIT_DIAMETER_PX - radiusCss * 2) / nodeScale);
       circle.strokeWidth(1.8 / nodeScale);
+    }
+    for (const mark of this.freeEndMarks) {
+      mark.radius(7 / nodeScale);
+      mark.strokeWidth(2 / nodeScale);
     }
     for (const handle of this.roomHandles) {
       handle.radius(ROOM_HANDLE_RADIUS_PX / nodeScale);
@@ -705,6 +713,56 @@ export class Canvas2DEngine {
     }
   }
 
+  // ==================== WALL CONNECTION FEEDBACK ====================
+  /** Ring on a node or dot on a wall interior: what the wall being drawn will connect to. */
+  addWallSnapMarker(connection) {
+    if (!connection || connection.type === "free") return;
+    const scale = this.stageScale();
+    const onNode = connection.type === "node";
+    this.overlayLayer.add(
+      new Konva.Circle({
+        name: "wall-snap",
+        kind: onNode ? "node" : "wall",
+        x: connection.point.x_px,
+        y: connection.point.y_px,
+        radius: (onNode ? 8 : 4) / scale,
+        stroke: "#00754A",
+        strokeWidth: 2 / scale,
+        fill: onNode ? "rgba(0, 117, 74, 0.12)" : "#00754A",
+        listening: false,
+      })
+    );
+  }
+
+  freeEnds() {
+    if (!this.freeEndsCache) this.freeEndsCache = findFreeEnds(this.store.project);
+    return this.freeEndsCache;
+  }
+
+  /** Red rings on wall ends that stay open after near ends are bridged (Stage 3 only). */
+  renderFreeEnds() {
+    for (const mark of this.freeEndMarks) mark.destroy();
+    this.freeEndMarks = [];
+    const ui = this.store.ui;
+    if (ui.step === 3 && ui.layers.walls && ui.layers.freeEnds) {
+      const scale = this.stageScale();
+      for (const [x, y] of this.freeEnds()) {
+        const mark = new Konva.Circle({
+          name: "free-end",
+          x,
+          y,
+          radius: 7 / scale,
+          stroke: "#d62b1f",
+          strokeWidth: 2 / scale,
+          listening: false,
+        });
+        this.cadLayer.add(mark);
+        this.freeEndMarks.push(mark);
+      }
+    }
+    this.cadLayer.batchDraw();
+  }
+
   // ==================== ROOM ZONES ====================
   roomFaces() {
     if (!this.roomFacesCache) this.roomFacesCache = buildRoomFaces(this.store.project);
@@ -871,6 +929,7 @@ export class Canvas2DEngine {
     this.renderCadTopology();
     this.renderCmeAndTrays();
     this.renderRoiOverlay();
+    this.renderFreeEnds();
     this.renderRoomHandles();
   }
 
@@ -1925,6 +1984,12 @@ export class Canvas2DEngine {
           listening: false,
         })
       );
+      for (const connection of [preview.connections?.start, preview.connections?.end]) {
+        this.addWallSnapMarker(connection);
+      }
+    } else if (tool === "wall" && this.store.ui.endpointSnap) {
+      const tolerance = WALL_SNAP_CSS_PX / Math.max(0.0001, this.stageScale());
+      this.addWallSnapMarker(resolveConnection({ x_px: cursorPt.x, y_px: cursorPt.y }, this.store.project, tolerance));
     } else if (tool === "stair" && this.stairDraft) {
       const defaults = this.store.ui.stairDefaults || {};
       const preview = this.store.previewParametricStair({

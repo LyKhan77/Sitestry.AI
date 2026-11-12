@@ -3006,3 +3006,10 @@ body[data-ui="v4"][data-calib="locked"] .calib-summary {
   color: var(--text-espresso);
   text-align: right;
 }
+
+
+.swatch-free-end {
+  background: transparent;
+  border: 2px solid #d62b1f;
+  border-radius: 50%;
+}

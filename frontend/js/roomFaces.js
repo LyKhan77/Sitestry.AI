@@ -101,11 +101,8 @@ function simplify(poly) {
   return pts;
 }
 
-export function buildRoomFaces(project, options = {}) {
-  const scale = project?.metadata?.scale_px_per_meter || 30.68;
-  const gap = options.gapPx ?? 0.6 * scale;
-  const minArea = options.minAreaPx ?? scale * scale;
-
+/** Merge near points, split walls at near endpoints and crossings; returns points and adjacency sets. */
+function planarize(project, gap) {
   const nodes = new Map((project?.nodes || []).map((n) => [n.id, [n.x_px, n.y_px]]));
   const segments = [];
   for (const wall of project?.walls || []) {
@@ -113,7 +110,7 @@ export function buildRoomFaces(project, options = {}) {
     const b = nodes.get(wall.end_node);
     if (a && b && Math.hypot(b[0] - a[0], b[1] - a[1]) > EPS) segments.push([a, b]);
   }
-  if (segments.length === 0) return [];
+  if (segments.length === 0) return { points: [], adjacency: [] };
 
   const points = [];
   const register = (p) => {
@@ -159,6 +156,24 @@ export function buildRoomFaces(project, options = {}) {
     adjacency[p].add(q);
     adjacency[q].add(p);
   }
+  return { points, adjacency };
+}
+
+/** Wall ends that stay alone after near ends are bridged: the gaps worth pointing out to the user. */
+export function findFreeEnds(project, options = {}) {
+  const scale = project?.metadata?.scale_px_per_meter || 30.68;
+  const { points, adjacency } = planarize(project, options.gapPx ?? 0.3 * scale);
+  return points.filter((_, i) => adjacency[i].size === 1).map(([x, y]) => [x, y]);
+}
+
+export function buildRoomFaces(project, options = {}) {
+  const scale = project?.metadata?.scale_px_per_meter || 30.68;
+  const gap = options.gapPx ?? 0.6 * scale;
+  const minArea = options.minAreaPx ?? scale * scale;
+
+  const { points, adjacency } = planarize(project, gap);
+  if (points.length === 0) return [];
+
   let pruned = true;
   while (pruned) {
     pruned = false;

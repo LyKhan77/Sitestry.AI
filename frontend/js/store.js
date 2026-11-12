@@ -58,7 +58,7 @@ export class SitestryStore extends EventTarget {
       pendingEquipmentCategory: "rack",
       selected: null, // { kind: "wall"|"node"|"column"|"opening"|"room"|"equipment"|"tray"|"stair", id: string }
       wallMode: "manual", // "manual" | "guided"
-      endpointSnap: false,
+      endpointSnap: true,
       orthoSnap: false,
       panelOpen: false,
       roomMode: "auto", // "auto" (click inside a closed room) | "polygon" (manual points)
@@ -86,6 +86,7 @@ export class SitestryStore extends EventTarget {
         equipments: true,
         trays: true,
         grid: true,
+        freeEnds: true,
       },
     };
 
@@ -1069,14 +1070,31 @@ export class SitestryStore extends EventTarget {
     if (!sel) return false;
     this.pushHistorySnapshot();
 
+    // Nodes that only the removed walls used would otherwise stay behind as orphan vertices.
+    const loosened = new Set();
     if (sel.kind === "node") {
+      for (const w of this.project.walls) {
+        if (w.start_node === sel.id || w.end_node === sel.id) {
+          loosened.add(w.start_node);
+          loosened.add(w.end_node);
+        }
+      }
       this.project.nodes = this.project.nodes.filter((n) => n.id !== sel.id);
       this.project.walls = this.project.walls.filter(
         (w) => w.start_node !== sel.id && w.end_node !== sel.id
       );
     } else if (sel.kind === "wall") {
+      const wall = this.project.walls.find((w) => w.id === sel.id);
+      if (wall) {
+        loosened.add(wall.start_node);
+        loosened.add(wall.end_node);
+      }
       this.project.walls = this.project.walls.filter((w) => w.id !== sel.id);
       this.project.openings = this.project.openings.filter((o) => o.wall_id !== sel.id);
+    }
+    if (loosened.size) {
+      const used = new Set(this.project.walls.flatMap((w) => [w.start_node, w.end_node]));
+      this.project.nodes = this.project.nodes.filter((n) => !loosened.has(n.id) || used.has(n.id));
     } else if (sel.kind === "column") {
       this.project.columns = this.project.columns.filter((c) => c.id !== sel.id);
     } else if (sel.kind === "opening") {

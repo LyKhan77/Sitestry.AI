@@ -82,6 +82,11 @@ test.describe("source-guided walls", () => {
   test("guided drag on the PDF source commits a wall on the candidate centerline", async ({ page }) => {
     await gotoApp(page);
     await loadStage(page, 3);
+    // Endpoint snap is on by default; here the guide ends would snap onto the extracted walls they
+    // coincide with and be rejected as a duplicate, so this test isolates the guide centerline.
+    await page.evaluate(() => {
+      window.sitestryApp.canvas2d.store.ui.endpointSnap = false;
+    });
     await setTool(page, "wall");
     await page.locator("#btnWallModeGuided").click();
     await page.waitForFunction(
