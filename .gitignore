@@ -42,3 +42,4 @@ Thumbs.db
 # Brainstorm visual companion (throwaway mockups)
 .superpowers/
 .impeccable/
+tests/browser/pw8031.config.mjs

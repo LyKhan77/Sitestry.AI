@@ -299,6 +299,15 @@ export class Canvas2DEngine {
     this.stage.draggable(tool === "select");
   }
 
+  /**
+   * Zone polygons only take clicks while the select tool is read-or-edit active (stages 3-4).
+   * Otherwise a drawing tool would hit the zone instead of the stage and never place anything.
+   */
+  syncLayerListening() {
+    const { step, activeTool } = this.store.ui;
+    this.roomsLayer.listening((step === 3 || step === 4) && activeTool === "select");
+  }
+
   isDrawingTool() {
     return ISOLATING_TOOLS.has(this.store.ui.activeTool);
   }
@@ -957,6 +966,7 @@ export class Canvas2DEngine {
   // ==================== MASTER RENDER PIPELINE ====================
   renderAll() {
     const layers = this.store.ui.layers;
+    this.syncLayerListening();
 
     if (this.blueprintImageNode) {
       this.blueprintImageNode.visible(layers.blueprint);
