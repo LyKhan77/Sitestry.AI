@@ -9,9 +9,10 @@
 import { computeWallPreview } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { ISOLATING_TOOLS } from "./store.js";
-import { buildRoomFaces, faceAt, pointInPolygon, polygonArea } from "./roomFaces.js";
+import { buildRoomFaces, faceAt, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
 
 const NODE_HIT_DIAMETER_PX = 11;
+const ROOM_HANDLE_RADIUS_PX = 6;
 
 export class Canvas2DEngine {
   constructor(containerId, store) {
@@ -48,7 +49,11 @@ export class Canvas2DEngine {
     this.wallChainNode = null;
     this.rulerPoints = [];
     this.roomDraft = [];
+    this.roomDraftRepeated = false;
     this.roomFacesCache = null;
+    this.roomHandles = [];
+    this.isDraggingRoomVertex = false;
+    this.roomDragTransaction = null;
     this.trayDraftPoints = [];
     this.cursorPosPx = { x: 0, y: 0 };
     this.isDraggingNode = false;
@@ -83,6 +88,7 @@ export class Canvas2DEngine {
       this.renderAll();
     });
     this.store.addEventListener("geometryPreviewChanged", () => {
+      if (this.isDraggingRoomVertex) this.renderRoomZones();
       if (this.isDraggingNode) {
         this.syncDraggedGeometry();
       }
@@ -100,6 +106,7 @@ export class Canvas2DEngine {
     });
     this.store.addEventListener("sourceChanged", () => {
       this.roomFacesCache = null;
+      this.cancelRoomVertexDrag();
       this.cancelNodeDrag();
       this.cancelStairDrag();
       this.clearTempDrawing();
@@ -111,6 +118,7 @@ export class Canvas2DEngine {
       }
     });
     this.store.addEventListener("toolChanged", () => {
+      this.cancelRoomVertexDrag();
       this.cancelNodeDrag();
       this.cancelStairDrag();
       this.clearTempDrawing();
@@ -309,6 +317,11 @@ export class Canvas2DEngine {
       circle.hitStrokeWidth(Math.max(0, NODE_HIT_DIAMETER_PX - radiusCss * 2) / nodeScale);
       circle.strokeWidth(1.8 / nodeScale);
     }
+    for (const handle of this.roomHandles) {
+      handle.radius(ROOM_HANDLE_RADIUS_PX / nodeScale);
+      handle.strokeWidth(2 / nodeScale);
+      handle.hitStrokeWidth(Math.max(0, NODE_HIT_DIAMETER_PX - ROOM_HANDLE_RADIUS_PX * 2) / nodeScale);
+    }
     this.cadLayer.batchDraw();
   }
 
@@ -409,6 +422,7 @@ export class Canvas2DEngine {
     this.wallChainNode = null;
     this.rulerPoints = [];
     this.roomDraft = [];
+    this.roomDraftRepeated = false;
     this.trayDraftPoints = [];
     this.overlayLayer.destroyChildren();
     this.overlayLayer.batchDraw();
@@ -522,7 +536,16 @@ export class Canvas2DEngine {
     });
 
     this.stage.on("dblclick", () => {
-      if (this.store.ui.activeTool === "wall") {
+      if (
+        this.store.ui.activeTool === "room" &&
+        this.store.ui.roomMode === "polygon" &&
+        this.roomDraft.length >= 3
+      ) {
+        // Konva reports a dblclick for any two clicks within 400 ms, wherever they land. Only a
+        // second click on the same spot (ignored as a repeat) closes the polygon, so quick clicks
+        // on different spots keep adding vertices.
+        if (this.roomDraftRepeated) this.closeRoomDraft();
+      } else if (this.store.ui.activeTool === "wall") {
         this.clearTempDrawing();
       } else if (this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
         this.store.addCableTray(this.trayDraftPoints);
@@ -558,12 +581,14 @@ export class Canvas2DEngine {
         this.spacePan = true;
       }
       if (e.key === "Escape") {
+        const hadVertexDrag = this.cancelRoomVertexDrag();
         const hadNodeDrag = this.cancelNodeDrag();
         const hadStairDrag = this.cancelStairDrag();
         const hadDraft = this.hasTempDrawing();
         this.clearTempDrawing();
         const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName);
         if (
+          !hadVertexDrag &&
           !hadNodeDrag &&
           !hadStairDrag &&
           !hadDraft &&
@@ -576,6 +601,23 @@ export class Canvas2DEngine {
       } else if (e.key === "Enter" && this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
         this.store.addCableTray(this.trayDraftPoints);
         this.clearTempDrawing();
+      } else if (
+        e.key === "Enter" &&
+        this.store.ui.activeTool === "room" &&
+        this.store.ui.roomMode === "polygon" &&
+        this.roomDraft.length > 0 &&
+        !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName)
+      ) {
+        this.closeRoomDraft();
+      } else if (
+        e.key === "Backspace" &&
+        this.store.ui.activeTool === "room" &&
+        this.roomDraft.length > 0 &&
+        !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName)
+      ) {
+        e.preventDefault();
+        this.roomDraft.pop();
+        this.renderTempOverlay(this.cursorPosPx);
       }
     });
 
@@ -584,6 +626,7 @@ export class Canvas2DEngine {
     });
 
     window.addEventListener("pointercancel", () => {
+      this.cancelRoomVertexDrag();
       this.cancelNodeDrag();
       this.cancelStairDrag();
       this.clearTempDrawing();
@@ -703,8 +746,110 @@ export class Canvas2DEngine {
     this.store.setRoomMode("polygon");
   }
 
-  handleRoomPolygonClick() {
-    // Manual polygon drawing is added in the next change.
+  snapToNode(pt, radius) {
+    let best = null;
+    for (const node of this.store.project.nodes) {
+      const d = Math.hypot(node.x_px - pt.x, node.y_px - pt.y);
+      if (d <= radius && (!best || d < best.d)) best = { d, point: [node.x_px, node.y_px] };
+    }
+    return best ? best.point : null;
+  }
+
+  handleRoomPolygonClick(pt) {
+    const radius = 10 / this.stageScale();
+    if (this.roomDraft.length >= 3) {
+      const [fx, fy] = this.roomDraft[0];
+      if (Math.hypot(pt.x - fx, pt.y - fy) <= radius) {
+        this.closeRoomDraft();
+        return;
+      }
+    }
+    const point = this.snapToNode(pt, radius) || [pt.x, pt.y];
+    const last = this.roomDraft[this.roomDraft.length - 1];
+    // The second mousedown of a double click lands on the same spot: ignore it.
+    if (last && Math.hypot(point[0] - last[0], point[1] - last[1]) < 3 / this.stageScale()) {
+      this.roomDraftRepeated = true;
+      return;
+    }
+    this.roomDraftRepeated = false;
+    this.roomDraft.push(point);
+    this.renderTempOverlay(pt);
+  }
+
+  /** Validate and create the zone from the draft; an invalid draft is kept so it can be fixed. */
+  closeRoomDraft() {
+    const points = this.roomDraft;
+    const toast = (message) => this.store.emit("toast", { message });
+    if (points.length < 3) {
+      toast("Zona butuh minimal 3 titik.");
+      return false;
+    }
+    if (!isSimplePolygon(points)) {
+      toast("Poligon tidak valid: garis saling berpotongan.");
+      return false;
+    }
+    const scale = this.store.project.metadata.scale_px_per_meter || 30.68;
+    if (Math.abs(polygonArea(points)) < 0.25 * scale * scale) {
+      toast("Zona terlalu kecil.");
+      return false;
+    }
+    const room = this.store.addRoomPolygon(points);
+    if (!room) return false;
+    this.clearTempDrawing();
+    return true;
+  }
+
+  // ==================== ROOM ZONE VERTEX HANDLES ====================
+  cancelRoomVertexDrag() {
+    if (!this.isDraggingRoomVertex) return false;
+    const token = this.roomDragTransaction;
+    this.isDraggingRoomVertex = false;
+    this.roomDragTransaction = null;
+    if (token) this.store.cancelTransaction(token);
+    return true;
+  }
+
+  renderRoomHandles() {
+    for (const handle of this.roomHandles) handle.destroy();
+    this.roomHandles = [];
+    const sel = this.store.ui.selected;
+    if (sel?.kind === "room" && !this.isDrawingTool() && this.store.ui.layers.rooms) {
+      const room = this.store.project.rooms.find((r) => r.id === sel.id);
+      const scale = this.stageScale();
+      (room?.polygon_px || []).forEach(([x, y], index) => {
+        const handle = new Konva.Circle({
+          name: "room-vertex",
+          x,
+          y,
+          radius: ROOM_HANDLE_RADIUS_PX / scale,
+          fill: "#ffffff",
+          stroke: "#00754A",
+          strokeWidth: 2 / scale,
+          draggable: true,
+          hitStrokeWidth: Math.max(0, NODE_HIT_DIAMETER_PX - ROOM_HANDLE_RADIUS_PX * 2) / scale,
+        });
+        handle.on("dragstart", () => {
+          this.isDraggingRoomVertex = true;
+          this.roomDragTransaction = this.store.beginTransaction("room-vertex-drag");
+        });
+        handle.on("dragmove", () => {
+          const snapped = this.snapToNode({ x: handle.x(), y: handle.y() }, 10 / this.stageScale());
+          const [nx, ny] = snapped || [handle.x(), handle.y()];
+          if (snapped) handle.position({ x: nx, y: ny });
+          this.store.setRoomVertex(room.id, index, nx, ny);
+        });
+        handle.on("dragend", () => {
+          const token = this.roomDragTransaction;
+          this.isDraggingRoomVertex = false;
+          this.roomDragTransaction = null;
+          if (token) this.store.commitTransaction(token);
+          this.renderAll();
+        });
+        this.cadLayer.add(handle);
+        this.roomHandles.push(handle);
+      });
+    }
+    this.cadLayer.batchDraw();
   }
 
   handleTrayToolClick(pt) {
@@ -726,6 +871,7 @@ export class Canvas2DEngine {
     this.renderCadTopology();
     this.renderCmeAndTrays();
     this.renderRoiOverlay();
+    this.renderRoomHandles();
   }
 
   renderRaisedFloorGrid() {
@@ -1863,6 +2009,33 @@ export class Canvas2DEngine {
           })
         );
       }
+    } else if (tool === "room" && this.store.ui.roomMode === "polygon" && this.roomDraft.length > 0) {
+      this.overlayLayer.add(
+        new Konva.Line({
+          name: "room-draft",
+          points: [...this.roomDraft.flat(), cursorPt.x, cursorPt.y],
+          stroke: "#00754A",
+          strokeWidth: 2,
+          dash: [6, 4],
+          fill: "rgba(0, 117, 74, 0.10)",
+          closed: false,
+          listening: false,
+        })
+      );
+      const scale = this.stageScale();
+      this.roomDraft.forEach(([x, y], index) => {
+        this.overlayLayer.add(
+          new Konva.Circle({
+            x,
+            y,
+            radius: (index === 0 ? 6 : 4) / scale,
+            fill: index === 0 ? "#00754A" : "#ffffff",
+            stroke: "#00754A",
+            strokeWidth: 1.6 / scale,
+            listening: false,
+          })
+        );
+      });
     } else if (tool === "tray" && this.trayDraftPoints.length > 0) {
       const pts = [...this.trayDraftPoints.flat(), cursorPt.x, cursorPt.y];
       this.overlayLayer.add(
