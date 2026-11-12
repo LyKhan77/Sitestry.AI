@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
-from workspace import WorkspaceError, WorkspaceStore
+from workspace import ProjectsStore, WorkspaceError
 
 from cad_parser import extract_from_pdf_vector
 from vectorizer import extract_from_raster_image, detect_grid_scale_from_image
@@ -402,13 +402,19 @@ async def blueprint_guides(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail())
 
 
-# ==================== SINGLE WORKSPACE (one project) ====================
-workspace_store = WorkspaceStore(
+# ==================== PROJECTS (one folder each under workspace/projects/) ====================
+projects_store = ProjectsStore(
     Path(os.environ.get("SITESTRY_WORKSPACE_DIR") or BASE_DIR / "workspace")
 )
 
 
-def _workspace_call(fn, *args):
+@app.on_event("startup")
+async def migrate_single_workspace_layout():
+    """Move the old single-workspace layout into a project once, when the server starts."""
+    projects_store.migrate_legacy()
+
+
+def _project_call(fn, *args):
     try:
         return fn(*args)
     except WorkspaceError as exc:
@@ -428,13 +434,17 @@ async def _json_body(request: Request) -> Dict[str, Any]:
     return body
 
 
-@app.get("/api/workspace")
-async def workspace_summary():
-    return {**workspace_store.summary(), "test_dir": bool(os.environ.get("SITESTRY_WORKSPACE_DIR"))}
+def _test_dir() -> bool:
+    return bool(os.environ.get("SITESTRY_WORKSPACE_DIR"))
 
 
-@app.post("/api/workspace/source")
-async def workspace_create(
+@app.get("/api/projects")
+async def projects_list():
+    return {"test_dir": _test_dir(), "projects": projects_store.list()}
+
+
+@app.post("/api/projects")
+async def projects_create(
     file: Optional[UploadFile] = File(None),
     sample_id: Optional[str] = Form(None),
     meta_json: str = Form("{}"),
@@ -459,39 +469,54 @@ async def workspace_create(
             raise HTTPException(status_code=413, detail="Source exceeds the 25 MiB limit.")
         filename = file.filename or "source"
         kind = "pdf" if filename.lower().endswith(".pdf") or data[:5] == b"%PDF-" else "image"
-    return _workspace_call(workspace_store.create, data, filename, kind, sample_id, meta)
+    return _project_call(projects_store.create, data, filename, kind, sample_id, meta)
 
 
-@app.get("/api/workspace/source")
-async def workspace_source():
-    data, filename = _workspace_call(workspace_store.read_source)
+@app.delete("/api/projects")
+async def projects_delete_all():
+    if not _test_dir():
+        raise HTTPException(status_code=403, detail="Deleting every project is only allowed on a test workspace.")
+    projects_store.delete_all()
+    return {"projects": []}
+
+
+@app.get("/api/projects/{project_id}")
+async def project_summary(project_id: str):
+    return _project_call(projects_store.summary, project_id)
+
+
+@app.get("/api/projects/{project_id}/source")
+async def project_source(project_id: str):
+    data, filename = _project_call(lambda: projects_store.get(project_id).read_source())
     media = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     return Response(content=data, media_type=media, headers={"X-Source-Filename": quote(filename)})
 
 
-@app.get("/api/workspace/project")
-async def workspace_project():
-    return _workspace_call(workspace_store.read_project)
+@app.get("/api/projects/{project_id}/project")
+async def project_data(project_id: str):
+    return _project_call(lambda: projects_store.get(project_id).read_project())
 
 
-@app.put("/api/workspace/project")
-async def workspace_save(request: Request):
+@app.put("/api/projects/{project_id}/project")
+async def project_save(project_id: str, request: Request):
+    store = _project_call(projects_store.get, project_id)
     body = await _json_body(request)
     project = body.get("project")
     if not isinstance(project, dict):
         raise HTTPException(status_code=400, detail="project must be an object.")
-    return _workspace_call(workspace_store.save_project, project, body.get("meta"))
+    return {**_project_call(store.save_project, project, body.get("meta")), "id": project_id}
 
 
-@app.patch("/api/workspace/meta")
-async def workspace_patch(request: Request):
-    return _workspace_call(workspace_store.patch_meta, await _json_body(request))
+@app.patch("/api/projects/{project_id}/meta")
+async def project_patch(project_id: str, request: Request):
+    store = _project_call(projects_store.get, project_id)
+    return {**_project_call(store.patch_meta, await _json_body(request)), "id": project_id}
 
 
-@app.delete("/api/workspace")
-async def workspace_delete():
-    workspace_store.delete()
-    return {"exists": False}
+@app.delete("/api/projects/{project_id}")
+async def project_delete(project_id: str):
+    _project_call(projects_store.delete, project_id)
+    return {"id": project_id, "exists": False}
 
 
 # Mount frontend static files

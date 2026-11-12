@@ -10,13 +10,19 @@ leaves a half-written file behind.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
+import secrets
 import shutil
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+logger = logging.getLogger(__name__)
+
+PROJECT_ID_RE = re.compile(r"^[0-9a-f]{8}$")
 THUMBNAIL_MAX_CHARS = 300 * 1024
 SOURCE_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
 
@@ -46,7 +52,7 @@ class WorkspaceError(Exception):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
@@ -176,3 +182,96 @@ class WorkspaceStore:
     def delete(self) -> None:
         with self._lock:
             shutil.rmtree(self.root, ignore_errors=True)
+
+
+class ProjectsStore:
+    """Many projects, one folder each: `<root>/projects/<id>/`. Ids are validated before any path join."""
+
+    def __init__(self, root: Path):
+        self.root = Path(root)
+        self.projects_dir = self.root / "projects"
+
+    def _dir(self, project_id: str) -> Path:
+        if not isinstance(project_id, str) or not PROJECT_ID_RE.fullmatch(project_id):
+            raise WorkspaceError(404, "Unknown project.")
+        return self.projects_dir / project_id
+
+    def _new_id(self) -> str:
+        while True:
+            candidate = secrets.token_hex(4)
+            if not (self.projects_dir / candidate).exists():
+                return candidate
+
+    def get(self, project_id: str) -> WorkspaceStore:
+        folder = self._dir(project_id)
+        if not folder.is_dir():
+            raise WorkspaceError(404, "Unknown project.")
+        return WorkspaceStore(folder)
+
+    def summary(self, project_id: str) -> Dict[str, Any]:
+        return {**self.get(project_id).summary(), "id": project_id}
+
+    def list(self) -> list:
+        if not self.projects_dir.is_dir():
+            return []
+        entries = []
+        for child in self.projects_dir.iterdir():
+            if not child.is_dir() or not PROJECT_ID_RE.fullmatch(child.name):
+                continue
+            entry = WorkspaceStore(child).summary()
+            if not entry.get("exists"):
+                continue
+            entries.append({**entry, "id": child.name})
+
+        def recency(entry: Dict[str, Any]) -> str:
+            meta = entry.get("meta") or {}
+            return meta.get("saved_at") or meta.get("created_at") or ""
+
+        return sorted(entries, key=recency, reverse=True)
+
+    def create(
+        self,
+        source_bytes: bytes,
+        filename: str,
+        kind: str,
+        sample_id: Optional[str],
+        meta: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        project_id = self._new_id()
+        summary = WorkspaceStore(self.projects_dir / project_id).create(
+            source_bytes, filename, kind, sample_id, meta
+        )
+        return {**summary, "id": project_id}
+
+    def delete(self, project_id: str) -> None:
+        WorkspaceStore(self._dir(project_id)).delete()
+
+    def delete_all(self) -> None:
+        shutil.rmtree(self.projects_dir, ignore_errors=True)
+
+    def migrate_legacy(self) -> Optional[str]:
+        """Move the old single-workspace layout into a project. Legacy files go only after a verified copy."""
+        legacy_meta = self.root / "meta.json"
+        if not legacy_meta.exists():
+            return None
+        files = [legacy_meta]
+        if (self.root / "project.json").exists():
+            files.append(self.root / "project.json")
+        files += sorted(p for p in self.root.glob("source.*") if p.suffix.lower() in SOURCE_EXTENSIONS)
+        project_id = self._new_id()
+        staging = self.projects_dir / f"{project_id}.tmp"
+        try:
+            staging.mkdir(parents=True)
+            for src in files:
+                shutil.copy2(src, staging / src.name)
+            for src in files:
+                if (staging / src.name).stat().st_size != src.stat().st_size:
+                    raise OSError(f"size mismatch while copying {src.name}")
+            os.replace(staging, self.projects_dir / project_id)
+        except Exception:
+            logger.exception("Legacy workspace migration failed; legacy files left untouched")
+            shutil.rmtree(staging, ignore_errors=True)
+            return None
+        for src in files:
+            src.unlink(missing_ok=True)
+        return project_id
