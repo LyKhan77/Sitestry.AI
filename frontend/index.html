@@ -623,6 +623,11 @@
 
         <!-- RIGHT PANE: 3D THREE.JS DIGITAL TWIN -->
         <div class="pane pane-3d" id="pane3D">
+          <div id="buildBanner" class="build-banner" role="status">
+            <span class="build-msg build-msg-none">Belum ada 3D. Bangun model dari denah yang sudah disimpan.</span>
+            <span class="build-msg build-msg-stale">Denah berubah sejak build terakhir. Build ulang untuk memperbarui 3D.</span>
+            <button type="button" id="btnBuild3D" class="btn-save">Build 3D</button>
+          </div>
           <div class="pane-badge">3D ARCHITECTURAL &amp; TELCO DIGITAL TWIN</div>
           <div id="threeContainer" class="canvas-mount"></div>
           <div id="labels3DOverlay" class="labels-3d-overlay"></div>

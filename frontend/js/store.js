@@ -87,6 +87,8 @@ export class SitestryStore extends EventTarget {
     };
 
     this.blueprintDataUrl = null;
+    // Snapshot of the saved project that Build 3D renders in the v4 workspace.
+    this.builtProject = null;
     this.uploadedFile = null;
     this.activeSampleId = "gatsu_p4";
 

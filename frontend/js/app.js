@@ -331,6 +331,7 @@ class SitestryStudioApp {
     this.renderInspector();
     syncTimeline(step);
     syncDock(step);
+    this.refreshWorkspaceFlags();
 
     setTimeout(() => {
       this.canvas2d.resize();
@@ -345,6 +346,7 @@ class SitestryStudioApp {
     document.body.dataset.save = "off";
     document.body.dataset.workspace = "off";
     document.getElementById("btnSave")?.addEventListener("click", () => this.saveWorkspace());
+    document.getElementById("btnBuild3D")?.addEventListener("click", () => this.buildFromSaved());
     store.addEventListener("geometryChanged", () => this.scheduleFlagRefresh());
     window.addEventListener("beforeunload", (e) => {
       if (this.hasUnsavedChanges()) {
@@ -395,12 +397,29 @@ class SitestryStudioApp {
     document.body.dataset.workspace = active ? "on" : "off";
     if (!active) {
       document.body.dataset.save = "off";
+      document.body.dataset.build = "off";
       return;
     }
     if (this.saving) return;
-    const { dirty } = this.currentFlags();
+    const { dirty, stale, built } = this.currentFlags();
+    document.body.dataset.build = !built ? "none" : stale ? "stale" : "fresh";
     if (this.saveError && dirty) this.setSaveState("error");
     else this.setSaveState(dirty ? "dirty" : "clean");
+  }
+
+  /** Build 3D always renders the last saved project, never unsaved edits. */
+  async buildFromSaved() {
+    if (!this.workspaceActive() || !this.workspace.savedProject) return false;
+    store.builtProject = structuredClone(this.workspace.savedProject);
+    this.workspace.builtHash = this.workspace.savedHash;
+    this.viewer3d.rebuildScene();
+    this.refreshWorkspaceFlags();
+    try {
+      await api.patchWorkspaceMeta({ built_hash: this.workspace.builtHash });
+    } catch (err) {
+      this.showToast(`Build tersimpan di sesi ini, tetapi gagal dicatat: ${err.message}`);
+    }
+    return true;
   }
 
   async makeThumbnail(dataUrl) {

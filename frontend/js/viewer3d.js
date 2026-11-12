@@ -155,6 +155,8 @@ export class Viewer3DEngine {
 
   bindEvents() {
     this.store.addEventListener("geometryChanged", (event) => {
+      // Stage 1-3 edits never touch 3D in the v4 workspace; Build 3D does.
+      if (this.usesBuiltProject() && this.store.ui.step < 4) return;
       this.sceneSync.markDirty(event.detail?.revision ?? this.store.revision);
     });
     this.store.addEventListener("selectionChanged", () => {
@@ -181,9 +183,26 @@ export class Viewer3DEngine {
     });
   }
 
+  /**
+   * In the v4 workspace the structure (walls, rooms, openings, columns, stairs) comes from the
+   * snapshot taken by Build 3D; otherwise it is the live project. Equipment and cable trays are
+   * always live. `null` means nothing has been built yet.
+   */
+  usesBuiltProject() {
+    return document.body.dataset.ui === "v4" && document.body.dataset.workspace === "on";
+  }
+
+  structureProject() {
+    return this.usesBuiltProject() ? this.store.builtProject : this.store.project;
+  }
+
+  metaProject() {
+    return this.structureProject() || this.store.project;
+  }
+
   // Convert 2D Blueprint Pixel (x_px, y_px) -> Centered 3D Meter Coordinates (X, Z)
   pxToMeter3D(x_px, y_px) {
-    const meta = this.store.project.metadata;
+    const meta = this.metaProject().metadata;
     const scale = meta.scale_px_per_meter || 30.68;
     const roi = meta.roi_px || { x: 0, y: 0, width: meta.image_width_px, height: meta.image_height_px };
     const centerPxX = roi.x + roi.width / 2;
@@ -271,20 +290,22 @@ export class Viewer3DEngine {
 
     const layers = this.store.ui.layers;
     const sel = this.store.ui.selected;
-    const scale = this.store.project.metadata.scale_px_per_meter || 30.68;
+    const scale = this.metaProject().metadata.scale_px_per_meter || 30.68;
+
+    const hasStructure = Boolean(this.structureProject());
 
     // 1. Build Room Zones & 60x60cm Raised Floor Plenums
-    if (layers.rooms) {
+    if (hasStructure && layers.rooms) {
       this.buildRooms3D(scale, sel);
     }
 
     // 2. Build Topological Walls + CSG Door & Window Cutouts
-    if (layers.walls) {
+    if (hasStructure && layers.walls) {
       this.buildWallsAndOpenings3D(scale, sel);
     }
 
     // 3. Build Steel H-Beam & Concrete Structural Columns
-    if (layers.columns) {
+    if (hasStructure && layers.columns) {
       this.buildColumns3D(scale, sel);
     }
 
@@ -296,7 +317,7 @@ export class Viewer3DEngine {
     // 5. Build 3D Overhead/Underfloor Cable Ladders & Stepped Staircases
     if (layers.trays) {
       this.buildCableTrays3D(scale, sel);
-      this.buildStairs3D(scale, sel);
+      if (hasStructure) this.buildStairs3D(scale, sel);
     }
 
     this.update3DLabelsOverlay();
@@ -328,7 +349,7 @@ export class Viewer3DEngine {
   }
 
   buildRooms3D(scale, sel) {
-    for (const room of this.store.project.rooms) {
+    for (const room of this.structureProject().rooms) {
       if (!room.polygon_px || room.polygon_px.length < 3) continue;
       const pts3D = room.polygon_px.map(([px, py]) => this.pxToMeter3D(px, py));
 
@@ -394,7 +415,7 @@ export class Viewer3DEngine {
   buildWallsAndOpenings3D(scale, sel) {
     const xray = this.store.ui.xrayWalls;
 
-    for (const wall of this.store.project.walls) {
+    for (const wall of this.structureProject().walls) {
       const n1 = this.store.getNodeById(wall.start_node);
       const n2 = this.store.getNodeById(wall.end_node);
       if (!n1 || !n2) continue;
@@ -449,7 +470,7 @@ export class Viewer3DEngine {
         });
       }
 
-      const wallOpenings = this.store.project.openings.filter((o) => o.wall_id === wall.id);
+      const wallOpenings = this.structureProject().openings.filter((o) => o.wall_id === wall.id);
       let finalWallMesh;
 
       if (wallOpenings.length > 0 && wall.type === "solid") {
@@ -624,7 +645,7 @@ export class Viewer3DEngine {
   }
 
   buildColumns3D(scale, sel) {
-    for (const col of this.store.project.columns) {
+    for (const col of this.structureProject().columns) {
       const pos = this.pxToMeter3D(col.x_px, col.y_px);
       const w = Number(col.width_m) || 0.55;
       const d = Number(col.depth_m) || 0.55;
@@ -887,7 +908,7 @@ export class Viewer3DEngine {
   }
 
   buildStairs3D(scale, sel) {
-    for (const st of this.store.project.stairs) {
+    for (const st of this.structureProject().stairs) {
       if (st.template_version !== undefined) {
         this.buildParametricStair3D(st, scale, sel);
         continue;
