@@ -21,6 +21,10 @@ import {
 /** Tools whose gesture owns the canvas: other elements are neither selectable nor draggable while one is active. */
 export const ISOLATING_TOOLS = new Set(["wall", "stair", "door", "double_door", "window", "column", "room"]);
 
+// Annotation is edited only in Stage 3; equipment and cable trays only in Stage 5.
+const STRUCTURAL_KINDS = new Set(["node", "wall", "opening", "column", "stair", "room"]);
+const INSTALL_KINDS = new Set(["equipment", "tray"]);
+
 export class SitestryStore extends EventTarget {
   constructor() {
     super();
@@ -375,6 +379,13 @@ export class SitestryStore extends EventTarget {
     if (ISOLATING_TOOLS.has(toolName) && this.ui.selected) this.selectObject(null, null);
     this.ui.activeTool = toolName;
     this.emit("toolChanged", { tool: toolName });
+  }
+
+  /** True when objects of this kind may be changed in the current workflow stage. */
+  canEdit(kind) {
+    if (this.ui.step === 3) return STRUCTURAL_KINDS.has(kind);
+    if (this.ui.step === 5) return INSTALL_KINDS.has(kind);
+    return false;
   }
 
   selectObject(kind, id) {
