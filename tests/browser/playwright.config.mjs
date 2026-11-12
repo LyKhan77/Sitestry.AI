@@ -16,6 +16,7 @@ export default defineConfig({
   webServer: {
     command:
       "cd /Users/leekhan/project/floorplan3d_OS3/backend && /Users/leekhan/project/floorplan3d_blender/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8030",
+    env: { SITESTRY_WORKSPACE_DIR: "/tmp/sitestry-workspace-test" },
     url: "http://localhost:8030/api/samples",
     reuseExistingServer: true,
     timeout: 60000,

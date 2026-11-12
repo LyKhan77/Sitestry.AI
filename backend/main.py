@@ -8,17 +8,20 @@ automatic metric scale calibration, and Procedural Architectural CAD/CV layout e
 from __future__ import annotations
 import base64
 import json
+import mimetypes
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any
 import fitz  # PyMuPDF
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
+from workspace import WorkspaceError, WorkspaceStore
 
 from cad_parser import extract_from_pdf_vector
 from vectorizer import extract_from_raster_image, detect_grid_scale_from_image
@@ -396,6 +399,98 @@ async def blueprint_guides(
         )
     except GuideError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail())
+
+
+# ==================== SINGLE WORKSPACE (one project) ====================
+workspace_store = WorkspaceStore(
+    Path(os.environ.get("SITESTRY_WORKSPACE_DIR") or BASE_DIR / "workspace")
+)
+
+
+def _workspace_call(fn, *args):
+    try:
+        return fn(*args)
+    except WorkspaceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+async def _json_body(request: Request) -> Dict[str, Any]:
+    raw = await request.body()
+    if len(raw) > MAX_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Request body exceeds the 25 MiB limit.")
+    try:
+        body = json.loads(raw or b"{}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Body is not valid JSON.")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object.")
+    return body
+
+
+@app.get("/api/workspace")
+async def workspace_summary():
+    return {**workspace_store.summary(), "test_dir": bool(os.environ.get("SITESTRY_WORKSPACE_DIR"))}
+
+
+@app.post("/api/workspace/source")
+async def workspace_create(
+    file: Optional[UploadFile] = File(None),
+    sample_id: Optional[str] = Form(None),
+    meta_json: str = Form("{}"),
+):
+    if bool(file) == bool(sample_id):
+        raise HTTPException(status_code=400, detail="Provide exactly one of file or sample_id.")
+    try:
+        meta = json.loads(meta_json or "{}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="meta_json is not valid JSON.")
+    if sample_id:
+        sample = SAMPLES_CATALOG.get(sample_id)
+        if not sample:
+            raise HTTPException(status_code=404, detail=f"Unknown sample_id: {sample_id}")
+        fpath = FLOORPLAN_DIR / sample["filename"]
+        if not fpath.exists():
+            raise HTTPException(status_code=404, detail="Sample file missing on disk.")
+        data, filename, kind = fpath.read_bytes(), sample["filename"], "sample"
+    else:
+        data = await file.read(MAX_FILE_BYTES + 1)
+        if len(data) > MAX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail="Source exceeds the 25 MiB limit.")
+        filename = file.filename or "source"
+        kind = "pdf" if filename.lower().endswith(".pdf") or data[:5] == b"%PDF-" else "image"
+    return _workspace_call(workspace_store.create, data, filename, kind, sample_id, meta)
+
+
+@app.get("/api/workspace/source")
+async def workspace_source():
+    data, filename = _workspace_call(workspace_store.read_source)
+    media = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return Response(content=data, media_type=media, headers={"X-Source-Filename": filename})
+
+
+@app.get("/api/workspace/project")
+async def workspace_project():
+    return _workspace_call(workspace_store.read_project)
+
+
+@app.put("/api/workspace/project")
+async def workspace_save(request: Request):
+    body = await _json_body(request)
+    project = body.get("project")
+    if not isinstance(project, dict):
+        raise HTTPException(status_code=400, detail="project must be an object.")
+    return _workspace_call(workspace_store.save_project, project, body.get("meta"))
+
+
+@app.patch("/api/workspace/meta")
+async def workspace_patch(request: Request):
+    return _workspace_call(workspace_store.patch_meta, await _json_body(request))
+
+
+@app.delete("/api/workspace")
+async def workspace_delete():
+    workspace_store.delete()
+    return {"exists": False}
 
 
 # Mount frontend static files
