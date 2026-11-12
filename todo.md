@@ -52,7 +52,7 @@ Spec: `docs/superpowers/specs/2026-11-12-workspace-save-room-design.md` (uncommi
 - [x] P1 Quick fixes: stair card overlap, Stage 3 2D-only, rail shortcut badges, tool isolation (commits fixed in Tasks 1-4)
 - [x] P2 Workspace home, backend save (`workspace/`), Stage 1 upload-only, mandatory Save and manual Build 3D (plan: `docs/superpowers/plans/2026-11-12-workspace-save-build.md`)
 - [x] P2b Multi-project workspace: many projects per workspace, migration of the single saved project (plan: `docs/superpowers/plans/2026-11-12-multi-project-workspace.md`)
-- [ ] P3 Room zones: click-inside-room (A) plus snapped polygon (C) plus zone vertex edit
+- [x] P3 Room zones: click-inside-room (A) plus snapped polygon (C) plus zone vertex edit (plan: `docs/superpowers/plans/2026-11-12-room-zones.md`)
 
 ## Pending Phase: Phase 4 — Next Agent Handover & Engineering Improvements (Pending Grill Validation)
 

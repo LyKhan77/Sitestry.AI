@@ -14,6 +14,12 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 - **Stage 1 upload-only**: samples hidden in v4, ROI and scale read-only after extraction with a confirmed re-extract.
 - Dev/test: `?sample=<id>` boot (skips the home page, creates a workspace from the sample).
 
+### Added — Room zones (v4 and legacy UI)
+- **Click inside a room** (`frontend/js/roomFaces.js`): closed rooms are found from the wall graph (planarized with a 0.6 m gap tolerance, dangling walls pruned, outer faces dropped). Hover highlights the room, one click creates a zone of the exact shape; clicking an existing zone selects it. On the real Ancol and Gatsu projects 16 of 19 saved rooms are detected in 5-9 ms.
+- **Manual polygon fallback** with node snapping, close by first point / `Enter` / double click on the last point, `Backspace`, `Esc`, and validation messages.
+- **Zone vertex handles** in Select mode (one drag = one undo, `Esc` cancels, snap to nodes).
+- The room tool now works when the click lands on a wall, node or element. It replaces the old two-corner rectangle. `store.addRoomPolygon` and `store.setRoomVertex` are new; default names are `Ruangan N`.
+
 ### Changed — Stage 1-4 quick fixes (v4 UI)
 - **Stage 3 is 2D only**: the `2D | Split | 3D` pill is hidden in Stages 1-3 and the command palette offers the view actions only from Stage 4.
 - **Tool isolation**: while Wall, Stair, Door, Double Door, Window, Pillar or Room Zone is active, no other canvas element can be selected or dragged. Switching to one of these tools clears the selection and closes the inspector. In v4, `Esc` cancels a draft in progress, and with nothing in progress returns to Select. Stage 5 `equipment` and `tray` tools are unchanged. The selection/drag guards live in `canvas2d.js` and also apply to `?ui=v3`.
