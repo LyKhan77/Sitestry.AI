@@ -3013,3 +3013,7 @@ body[data-ui="v4"][data-calib="locked"] .calib-summary {
   border: 2px solid #d62b1f;
   border-radius: 50%;
 }
+
+.swatch-base-floor {
+  background: #8d9792;
+}

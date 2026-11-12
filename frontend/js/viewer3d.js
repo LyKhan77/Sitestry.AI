@@ -15,6 +15,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
 import { SceneSync } from "./sceneSync.js";
+import { buildRoomFaces } from "./roomFaces.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 
 export class Viewer3DEngine {
@@ -294,6 +295,11 @@ export class Viewer3DEngine {
 
     const hasStructure = Boolean(this.structureProject());
 
+    // 0. Automatic thin base floor under every closed room (zones sit on top of it)
+    if (hasStructure && layers.baseFloor) {
+      this.buildBaseFloor3D();
+    }
+
     // 1. Build Room Zones & 60x60cm Raised Floor Plenums
     if (hasStructure && layers.rooms) {
       this.buildRooms3D(scale, sel);
@@ -346,6 +352,32 @@ export class Viewer3DEngine {
         }
       });
     }
+  }
+
+  /**
+   * One slab (0.02 m thick) per closed room found from the walls, so corridors and unnamed rooms
+   * are not left as holes. Zones extrude at least 0.06 m, so their tops never share a plane with it.
+   */
+  buildBaseFloor3D() {
+    const faces = buildRoomFaces(this.structureProject());
+    if (!faces.length) return;
+    const group = new THREE.Group();
+    group.name = "BaseFloor";
+    const material = new THREE.MeshStandardMaterial({ color: 0x8d9792, roughness: 0.9, metalness: 0.05 });
+    for (const face of faces) {
+      const pts3D = face.polygon.map(([px, py]) => this.pxToMeter3D(px, py));
+      const shape = new THREE.Shape();
+      shape.moveTo(pts3D[0].x, -pts3D[0].z);
+      for (let i = 1; i < pts3D.length; i++) shape.lineTo(pts3D[i].x, -pts3D[i].z);
+      shape.closePath();
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.02, bevelEnabled: false });
+      geometry.rotateX(-Math.PI / 2);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.receiveShadow = true;
+      mesh.userData = { role: "base_floor" };
+      group.add(mesh);
+    }
+    this.rootGroup.add(group);
   }
 
   buildRooms3D(scale, sel) {

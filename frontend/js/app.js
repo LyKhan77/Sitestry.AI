@@ -1267,6 +1267,7 @@ class SitestryStudioApp {
     bindLayerCheck("chkLayerTrays", "trays");
     bindLayerCheck("chkLayerGrid", "grid");
     bindLayerCheck("chkLayerFreeEnds", "freeEnds");
+    bindLayerCheck("chkLayerBaseFloor", "baseFloor");
 
     const rngOpacity = document.getElementById("rngBlueprintOpacity");
     const lblOpacity = document.getElementById("lblBlueprintOpacity");
@@ -1341,6 +1342,7 @@ class SitestryStudioApp {
       chkLayerTrays: "trays",
       chkLayerGrid: "grid",
       chkLayerFreeEnds: "freeEnds",
+      chkLayerBaseFloor: "baseFloor",
     };
     Object.entries(map).forEach(([id, key]) => {
       const el = document.getElementById(id);

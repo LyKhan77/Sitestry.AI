@@ -87,6 +87,7 @@ export class SitestryStore extends EventTarget {
         trays: true,
         grid: true,
         freeEnds: true,
+        baseFloor: true,
       },
     };
 
