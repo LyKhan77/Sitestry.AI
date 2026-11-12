@@ -45,6 +45,8 @@ flowchart LR
   - Attach `Single Door [D]`, `Double Door [B]`, `Window [N]`, `Pillar [P]`, parametric `Stair [S]`, and `Room Zone [Z]`.
   - Parametric stairs support **Straight, L, and U** templates. Click the lower entrance, preview flights/treads/landing/route, then click the upper exit. L/U expose heading, turn, landing depth, and U flight run; invalid configurations keep an editable preview and a field-specific reason instead of moving endpoints. Legacy extracted stairs remain on the legacy path until an explicit, undoable conversion.
   - Edit **Door Tag** (`DD-01`, `D-02`, `TD-01`), **Swing Direction** (`in-left`, `in-right`, `out-left`, `out-right`), wall material (`solid`, `cage_mesh`, `glass`), and dimensions in the contextual Right Property Inspector.
+  - Stage 3 is the 2D editor only: the `2D | Split | 3D` pill is hidden and the palette view actions start at Stage 4. Each rail tool shows its shortcut key.
+  - **Tool isolation**: an active drawing tool (`[W]`, `[D]`, `[B]`, `[N]`, `[P]`, `[S]`, `[Z]`) ignores every other element, so nothing is selected or dragged by accident. Switching to such a tool clears the selection. `Esc` cancels a draft in progress; with nothing in progress it returns to Select (v4).
   - The inspector is hidden when nothing is selected, so the 2D canvas occupies at least 75% of the workspace at 1280 px and wider. Layer/opacity controls live in an on-demand disclosure; below 1100 px tools and properties become dismissible overlays.
 
 ### Stage 4: Build 3D (`data-stage="4"`)

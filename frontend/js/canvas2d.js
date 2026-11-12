@@ -8,6 +8,7 @@
 
 import { computeWallPreview } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
+import { ISOLATING_TOOLS } from "./store.js";
 
 const NODE_HIT_DIAMETER_PX = 11;
 
@@ -272,8 +273,18 @@ export class Canvas2DEngine {
   }
 
   isDrawingTool() {
-    const tool = this.store.ui.activeTool;
-    return tool === "wall" || tool === "stair";
+    return ISOLATING_TOOLS.has(this.store.ui.activeTool);
+  }
+
+  hasTempDrawing() {
+    return Boolean(
+      this.wallDrag ||
+        this.stairDraft ||
+        this.wallChainNode ||
+        this.rulerPoints.length ||
+        this.roomDragStart ||
+        this.trayDraftPoints.length
+    );
   }
 
   stageScale() {
@@ -538,9 +549,21 @@ export class Canvas2DEngine {
         this.spacePan = true;
       }
       if (e.key === "Escape") {
-        this.cancelNodeDrag();
-        this.cancelStairDrag();
+        const hadNodeDrag = this.cancelNodeDrag();
+        const hadStairDrag = this.cancelStairDrag();
+        const hadDraft = this.hasTempDrawing();
         this.clearTempDrawing();
+        const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement?.tagName);
+        if (
+          !hadNodeDrag &&
+          !hadStairDrag &&
+          !hadDraft &&
+          !typing &&
+          document.body.dataset.ui === "v4" &&
+          this.isDrawingTool()
+        ) {
+          this.store.setActiveTool("select");
+        }
       } else if (e.key === "Enter" && this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
         this.store.addCableTray(this.trayDraftPoints);
         this.clearTempDrawing();
@@ -721,6 +744,7 @@ export class Canvas2DEngine {
       });
 
       poly.on("click", (ev) => {
+        if (this.isDrawingTool()) return;
         ev.cancelBubble = true;
         this.store.selectObject("room", room.id);
       });
@@ -808,6 +832,7 @@ export class Canvas2DEngine {
           ev.cancelBubble = true;
           const tool = this.store.ui.activeTool;
           if (tool === "wall" || tool === "stair") return;
+          if (tool === "room" || tool === "column") return;
           if (tool === "door") {
             const pt = this.getWorldPointerPosition();
             this.store.addOpeningOnNearestWall(pt.x, pt.y, "single_door");
@@ -1197,7 +1222,7 @@ export class Canvas2DEngine {
     const group = new Konva.Group({
       x: 0,
       y: 0,
-      draggable: this.store.ui.activeTool !== "wall" && this.store.ui.activeTool !== "stair",
+      draggable: !this.isDrawingTool(),
     });
     group.userData = { sitestryKind: "stair", sitestryId: st.id };
 
@@ -1382,7 +1407,7 @@ export class Canvas2DEngine {
         const stGroup = new Konva.Group({
           x: st.x_px,
           y: st.y_px,
-          draggable: this.store.ui.activeTool !== "wall" && this.store.ui.activeTool !== "stair",
+          draggable: !this.isDrawingTool(),
         });
 
         stGroup.add(

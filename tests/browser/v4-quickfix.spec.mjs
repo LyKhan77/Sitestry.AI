@@ -171,3 +171,178 @@ test.describe("v4 dock shortcut badges", () => {
     expect(sizes.kbd).toBeGreaterThan(14);
   });
 });
+
+function readTarget(kind) {
+  const { store } = window.sitestryApp.canvas2d;
+  if (kind === "node") {
+    const node = store.project.nodes[0];
+    return { id: node.id, x: node.x_px, y: node.y_px };
+  }
+  if (kind === "column") {
+    const column = store.project.columns[0];
+    return { id: column.id, x: column.x_px, y: column.y_px };
+  }
+  if (kind === "stair") {
+    const stair = store.project.stairs.find((s) => Number.isFinite(s.x_px) && Number.isFinite(s.y_px));
+    return { id: stair.id, x: stair.x_px, y: stair.y_px };
+  }
+  const opening = store.project.openings[0];
+  const wall = store.project.walls.find((item) => item.id === opening.wall_id);
+  const n1 = store.getNodeById(wall.start_node);
+  const n2 = store.getNodeById(wall.end_node);
+  const ratio = opening.offset_ratio ?? 0.5;
+  return {
+    id: opening.id,
+    x: n1.x_px + (n2.x_px - n1.x_px) * ratio,
+    y: n1.y_px + (n2.y_px - n1.y_px) * ratio,
+  };
+}
+
+function readPosition({ kind, id }) {
+  const { store } = window.sitestryApp.canvas2d;
+  if (kind === "opening") {
+    const opening = store.project.openings.find((o) => o.id === id);
+    return { x: opening.offset_ratio, y: 0 };
+  }
+  const list = { node: store.project.nodes, column: store.project.columns, stair: store.project.stairs }[kind];
+  const item = list.find((entry) => entry.id === id);
+  return { x: item.x_px, y: item.y_px };
+}
+
+// Longest wall without openings: its midpoint is clear of nodes, columns and door symbols.
+function plainWallMidpoint() {
+  const { store } = window.sitestryApp.canvas2d;
+  const hosts = new Set(store.project.openings.map((o) => o.wall_id));
+  let best = null;
+  for (const wall of store.project.walls) {
+    if (hosts.has(wall.id)) continue;
+    const n1 = store.getNodeById(wall.start_node);
+    const n2 = store.getNodeById(wall.end_node);
+    const len = Math.hypot(n2.x_px - n1.x_px, n2.y_px - n1.y_px);
+    if (!best || len > best.len) {
+      best = { id: wall.id, len, x: (n1.x_px + n2.x_px) / 2, y: (n1.y_px + n2.y_px) / 2 };
+    }
+  }
+  return best;
+}
+
+test.describe("v4 tool isolation", () => {
+  test.beforeEach(async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    await loadStage(page, 3);
+    await page.evaluate(() => window.sitestryApp.canvas2d.store.selectObject(null, null));
+  });
+
+  for (const tool of ["room", "column", "door", "window"]) {
+    for (const kind of ["node", "opening", "column", "stair"]) {
+      test(`click on ${kind} with ${tool} tool does not select it`, async ({ page }) => {
+        const target = await page.evaluate(readTarget, kind);
+        // Door/window tools may legitimately place a new opening when the click lands on a wall
+        // beneath the element; that new object may be selected, but no pre-existing one may be.
+        const existing = await page.evaluate(() => {
+          const { project } = window.sitestryApp.canvas2d.store;
+          return [
+            ...project.nodes,
+            ...project.walls,
+            ...project.columns,
+            ...project.openings,
+            ...project.stairs,
+            ...project.rooms,
+          ].map((item) => item.id);
+        });
+        await setTool(page, tool);
+        const [point] = await worldPointsToScreen(page, [{ x: target.x, y: target.y }], 0.9);
+        await page.mouse.click(point.x, point.y);
+        await page.waitForTimeout(250);
+        const { selected } = await storeState(page);
+        if (selected) expect(existing).not.toContain(selected.id);
+      });
+
+      test(`drag on ${kind} with ${tool} tool does not move it`, async ({ page }) => {
+        const target = await page.evaluate(readTarget, kind);
+        const before = await page.evaluate(readPosition, { kind, id: target.id });
+        await setTool(page, tool);
+        const [point] = await worldPointsToScreen(page, [{ x: target.x, y: target.y }], 0.9);
+        await dragBy(page, point, 70, 40);
+        const after = await page.evaluate(readPosition, { kind, id: target.id });
+        expect(after.x).toBeCloseTo(before.x, 4);
+        expect(after.y).toBeCloseTo(before.y, 4);
+      });
+    }
+  }
+
+  test("clicking a wall with the room tool does not select it", async ({ page }) => {
+    const wall = await page.evaluate(plainWallMidpoint);
+    await setTool(page, "room");
+    const [point] = await worldPointsToScreen(page, [{ x: wall.x, y: wall.y }], 0.9);
+    await page.mouse.click(point.x, point.y);
+    await page.waitForTimeout(250);
+    expect((await storeState(page)).selected).toBe(null);
+  });
+
+  test("switching to a drawing tool clears the selection", async ({ page }) => {
+    await page.evaluate(() => {
+      const { store } = window.sitestryApp.canvas2d;
+      store.selectObject("wall", store.project.walls[0].id);
+    });
+    await page.waitForTimeout(250);
+    await setTool(page, "room");
+    expect((await storeState(page)).selected).toBe(null);
+    await expect(page.locator("#rightInspector")).toBeHidden();
+  });
+
+  test("switching to Select keeps the selection", async ({ page }) => {
+    await page.evaluate(() => {
+      const { store } = window.sitestryApp.canvas2d;
+      store.selectObject("wall", store.project.walls[0].id);
+    });
+    await setTool(page, "select");
+    expect((await storeState(page)).selected?.kind).toBe("wall");
+  });
+
+  test("a selection made by the tool gesture survives", async ({ page }) => {
+    const wall = await page.evaluate(plainWallMidpoint);
+    const before = await storeState(page);
+    await setTool(page, "door");
+    const [point] = await worldPointsToScreen(page, [{ x: wall.x, y: wall.y }], 0.9);
+    await page.mouse.click(point.x, point.y);
+    await page.waitForTimeout(300);
+    const after = await storeState(page);
+    expect(after.openings).toBe(before.openings + 1);
+    expect(after.selected?.kind).toBe("opening");
+  });
+
+  test("stage 5 equipment stays selectable", async ({ page }) => {
+    await loadStage(page, 5);
+    const eq = await page.evaluate(() => {
+      const { store } = window.sitestryApp.canvas2d;
+      const wall = store.project.walls[0];
+      const n1 = store.getNodeById(wall.start_node);
+      const item = store.addEquipment(n1.x_px + 40, n1.y_px + 40, "rack");
+      store.selectObject(null, null);
+      return { id: item.id, x: item.x_px, y: item.y_px };
+    });
+    await setTool(page, "equipment");
+    const [point] = await worldPointsToScreen(page, [{ x: eq.x, y: eq.y }], 0.9);
+    await page.mouse.click(point.x, point.y);
+    await page.waitForTimeout(300);
+    expect((await storeState(page)).selected).toEqual({ kind: "equipment", id: eq.id });
+  });
+
+  test("Esc returns to Select only when nothing is in progress", async ({ page }) => {
+    await setTool(page, "wall");
+    await page.keyboard.press("Escape");
+    expect((await storeState(page)).tool).toBe("select");
+
+    await setTool(page, "stair");
+    const [point] = await worldPointsToScreen(page, [{ x: 1200, y: 900 }], 0.9);
+    await page.mouse.click(point.x, point.y);
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => window.sitestryApp.canvas2d.stairDraft !== null)).toBe(true);
+    await page.keyboard.press("Escape");
+    expect((await storeState(page)).tool).toBe("stair");
+    expect(await page.evaluate(() => window.sitestryApp.canvas2d.stairDraft)).toBe(null);
+    await page.keyboard.press("Escape");
+    expect((await storeState(page)).tool).toBe("select");
+  });
+});

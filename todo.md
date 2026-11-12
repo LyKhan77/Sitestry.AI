@@ -45,6 +45,14 @@ Spec: `docs/superpowers/specs/2026-11-11-dock-wizard-ui-design.md`. Plan: `docs/
 - [x] Task 6: Stage 2 wizard with honest, progressive extraction reveal (commits ec7c654, 606717a; 33/33 specs incl. v4-wizard 12/12)
 - [x] Task 7: Responsive, accessibility, default flip to v4, docs (commits 0d50ee5, 381dee7; full Playwright suite 98/98)
 
+## Current Phase: Phase 6 — Workspace, Save/Build, Room Zones (branch `feat/dock-wizard-ui`)
+
+Spec: `docs/superpowers/specs/2026-11-12-workspace-save-room-design.md` (uncommitted). P1 plan: `docs/superpowers/plans/2026-11-12-quick-fixes-tool-isolation.md`.
+
+- [x] P1 Quick fixes: stair card overlap, Stage 3 2D-only, rail shortcut badges, tool isolation (commits fixed in Tasks 1-4)
+- [ ] P2 Workspace home, backend save (`workspace/`), Stage 1 upload-only, mandatory Save and manual Build 3D
+- [ ] P3 Room zones: click-inside-room (A) plus snapped polygon (C) plus zone vertex edit
+
 ## Pending Phase: Phase 4 — Next Agent Handover & Engineering Improvements (Pending Grill Validation)
 
 - [ ] Validate Phase 4 architectural priorities with the user via `grill-me` (Persistence & Project Save/Load, Automatic Polygon Room Cycle Detection `shapely.ops.polygonize`, Multi-Floor Elevation Stacking, and Automated Pytest Suite).

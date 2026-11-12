@@ -17,6 +17,9 @@ import {
   STAIR_MIN_RISERS,
 } from "./stairGeometry.js";
 
+/** Tools whose gesture owns the canvas: other elements are neither selectable nor draggable while one is active. */
+export const ISOLATING_TOOLS = new Set(["wall", "stair", "door", "double_door", "window", "column", "room"]);
+
 export class SitestryStore extends EventTarget {
   constructor() {
     super();
@@ -361,6 +364,7 @@ export class SitestryStore extends EventTarget {
 
   // ==================== SELECTION & ACTIVE TOOL ====================
   setActiveTool(toolName) {
+    if (ISOLATING_TOOLS.has(toolName) && this.ui.selected) this.selectObject(null, null);
     this.ui.activeTool = toolName;
     this.emit("toolChanged", { tool: toolName });
   }

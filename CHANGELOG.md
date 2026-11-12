@@ -4,6 +4,18 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ---
 
+## [v3.3.0] — Unreleased
+
+### Changed — Stage 1-4 quick fixes (v4 UI)
+- **Stage 3 is 2D only**: the `2D | Split | 3D` pill is hidden in Stages 1-3 and the command palette offers the view actions only from Stage 4.
+- **Tool isolation**: while Wall, Stair, Door, Double Door, Window, Pillar or Room Zone is active, no other canvas element can be selected or dragged. Switching to one of these tools clears the selection and closes the inspector. In v4, `Esc` cancels a draft in progress, and with nothing in progress returns to Select. Stage 5 `equipment` and `tray` tools are unchanged. The selection/drag guards live in `canvas2d.js` and also apply to `?ui=v3`.
+- **Dock rail shows each tool's shortcut key** as a corner badge.
+
+### Fixed
+- The parametric stair parameter card no longer overflows its flyout, drawer or inspector (grid items now shrink; three long labels shortened).
+
+---
+
 ## [v3.2.0] — 2026-11-11
 
 ### Added — Dock + Wizard UI (v4, default)
