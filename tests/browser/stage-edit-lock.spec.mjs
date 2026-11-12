@@ -109,3 +109,65 @@ test.describe("drawing tools click through zoned rooms", () => {
     expect(await store(page, (s) => s.ui.selected?.kind)).toBe("room");
   });
 });
+
+/** Konva nodes that can be dragged in the drawing layers (stage pan and ROI handles excluded). */
+const draggableCount = (page, layerName) =>
+  page.evaluate(
+    (name) => window.sitestryApp.canvas2d[name].find((n) => n.draggable()).length,
+    layerName
+  );
+
+const layerListening = (page, layerName) =>
+  page.evaluate((name) => window.sitestryApp.canvas2d[name].listening(), layerName);
+
+/** Zone + one equipment, then back to stage 3 so the app is in a known state. */
+async function bootWithZoneAndEquipment(page) {
+  const spot = await bootWithZone(page);
+  await store(page, (s, p) => s.addEquipment(p.x, p.y), spot);
+  await store(page, (s) => s.selectObject(null, null));
+  return spot;
+}
+
+test.describe("edit lock per stage", () => {
+  test("stage 4: nothing in the 2D canvas can be dragged, but objects can still be selected", async ({ page }) => {
+    await bootWithZoneAndEquipment(page);
+    await loadStage(page, 4);
+    await setTool(page, "select");
+    await store(page, (s) => s.selectObject("room", s.project.rooms[0].id));
+    for (const layer of ["roomsLayer", "cadLayer", "cmeLayer", "overlayLayer"]) {
+      expect(await draggableCount(page, layer), layer).toBe(0);
+    }
+    expect(await layerListening(page, "cadLayer")).toBe(true);
+    expect(await layerListening(page, "roomsLayer")).toBe(true);
+  });
+
+  test("stage 5: annotation is click-through and only equipment can be dragged", async ({ page }) => {
+    await bootWithZoneAndEquipment(page);
+    await loadStage(page, 5);
+    await setTool(page, "select");
+    expect(await layerListening(page, "cadLayer")).toBe(false);
+    expect(await layerListening(page, "roomsLayer")).toBe(false);
+    expect(await draggableCount(page, "cadLayer")).toBe(0);
+    // cmeLayer also draws stairs; in stage 5 only the single equipment may be draggable.
+    expect(await draggableCount(page, "cmeLayer")).toBe(1);
+    const mid = await store(page, (s) => {
+      const w = s.project.walls[0];
+      const a = s.getNodeById(w.start_node);
+      const b = s.getNodeById(w.end_node);
+      return { x: (a.x_px + b.x_px) / 2, y: (a.y_px + b.y_px) / 2 };
+    });
+    await clickWorld(page, mid);
+    expect(await store(page, (s) => s.ui.selected)).toBeNull();
+  });
+
+  test("stage 3: annotation is editable again after visiting stage 5", async ({ page }) => {
+    await bootWithZoneAndEquipment(page);
+    await loadStage(page, 5);
+    await loadStage(page, 3);
+    await setTool(page, "select");
+    expect(await layerListening(page, "cadLayer")).toBe(true);
+    expect(await draggableCount(page, "cadLayer")).toBeGreaterThan(0);
+    // cmeLayer holds stairs (editable here) and no draggable equipment.
+    expect(await draggableCount(page, "cmeLayer")).toBe(await store(page, (s) => s.project.stairs.length));
+  });
+});

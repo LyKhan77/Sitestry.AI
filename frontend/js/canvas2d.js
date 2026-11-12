@@ -306,6 +306,13 @@ export class Canvas2DEngine {
   syncLayerListening() {
     const { step, activeTool } = this.store.ui;
     this.roomsLayer.listening((step === 3 || step === 4) && activeTool === "select");
+    // Stage 5 installs on top of the blueprint: annotation (rooms above too) must not take clicks.
+    this.cadLayer.listening(step !== 5);
+  }
+
+  /** A shape of this kind may be dragged: not while drawing, and only where the stage allows editing it. */
+  canDrag(kind) {
+    return !this.isDrawingTool() && this.store.canEdit(kind);
   }
 
   isDrawingTool() {
@@ -932,7 +939,7 @@ export class Canvas2DEngine {
           fill: "#ffffff",
           stroke: "#00754A",
           strokeWidth: 2 / scale,
-          draggable: true,
+          draggable: this.canDrag("room"),
           hitStrokeWidth: Math.max(0, NODE_HIT_DIAMETER_PX - ROOM_HANDLE_RADIUS_PX * 2) / scale,
         });
         handle.on("dragstart", () => {
@@ -1205,7 +1212,7 @@ export class Canvas2DEngine {
           x: ox,
           y: oy,
           rotation: angleDeg,
-          draggable: !this.isDrawingTool(),
+          draggable: this.canDrag("opening"),
         });
 
         // White wall cut-out mask
@@ -1406,7 +1413,7 @@ export class Canvas2DEngine {
           fill: isSelected ? "#cba258" : "#ffffff",
           stroke: isSelected ? "#006241" : "#1E3932",
           strokeWidth: 1.8 / nodeScale,
-          draggable: !this.isDrawingTool(),
+          draggable: this.canDrag("node"),
           hitStrokeWidth: Math.max(0, NODE_HIT_DIAMETER_PX - radiusCss * 2) / nodeScale,
         });
         this.nodeVisuals.push({ circle, selected: isSelected });
@@ -1450,7 +1457,7 @@ export class Canvas2DEngine {
         const group = new Konva.Group({
           x: col.x_px,
           y: col.y_px,
-          draggable: !this.isDrawingTool(),
+          draggable: this.canDrag("column"),
         });
 
         group.add(
@@ -1522,7 +1529,7 @@ export class Canvas2DEngine {
     const group = new Konva.Group({
       x: 0,
       y: 0,
-      draggable: !this.isDrawingTool(),
+      draggable: this.canDrag("stair"),
     });
     group.userData = { sitestryKind: "stair", sitestryId: st.id };
 
@@ -1581,7 +1588,7 @@ export class Canvas2DEngine {
           fill: which === "start_px" ? "#cba258" : "#00754A",
           stroke: "#ffffff",
           strokeWidth: 1.5,
-          draggable: this.store.ui.activeTool === "select",
+          draggable: this.store.ui.activeTool === "select" && this.canDrag("stair"),
         });
         handle.on("click", (ev) => {
           ev.cancelBubble = true;
@@ -1707,7 +1714,7 @@ export class Canvas2DEngine {
         const stGroup = new Konva.Group({
           x: st.x_px,
           y: st.y_px,
-          draggable: !this.isDrawingTool(),
+          draggable: this.canDrag("stair"),
         });
 
         stGroup.add(
@@ -1841,7 +1848,7 @@ export class Canvas2DEngine {
           x: eq.x_px,
           y: eq.y_px,
           rotation: eq.rotation_deg || 0,
-          draggable: true,
+          draggable: this.canDrag("equipment"),
         });
 
         eqGroup.add(
