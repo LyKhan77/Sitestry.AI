@@ -92,6 +92,7 @@
 
     <!-- RIGHT HEADER QUICK ACTIONS -->
     <div class="action-cluster">
+      <button id="btnWorkspace" type="button" class="btn-outline-pill" title="Kembali ke halaman Workspace">Workspace</button>
       <div class="save-cluster">
         <span id="saveStatus" class="save-status" role="status" aria-live="polite"></span>
         <button id="btnSave" type="button" class="btn-save" title="Simpan project (Ctrl/Cmd+S)">Simpan</button>
@@ -717,6 +718,49 @@
         <span class="modal-tip">Tip: Denah Ancol ada di <strong>Halaman 13</strong>, Denah Gatsu di <strong>Halaman 4</strong>.</span>
       </div>
       <div id="pdfThumbnailsGrid" class="pdf-thumbs-grid"></div>
+    </div>
+  </div>
+
+  <!-- ==================== V4 WORKSPACE HOME (one workspace = one project) ==================== -->
+  <section id="workspaceHome" class="workspace-home" aria-label="Workspace">
+    <div class="home-inner">
+      <div id="homeEmpty" class="home-empty" hidden>
+        <h1>Sitestry.AI Workspace</h1>
+        <p>Unggah denah (PDF, PNG, atau JPG) untuk memulai.</p>
+        <label class="home-drop">
+          <input type="file" id="homeUploadInput" class="home-file" accept=".pdf,.png,.jpg,.jpeg,.webp" />
+          <strong>Seret file ke sini atau pilih file</strong>
+          <span class="home-drop-btn">Pilih file denah</span>
+        </label>
+      </div>
+      <article id="homeCard" class="home-card" hidden>
+        <img id="homeThumb" class="home-thumb" alt="Pratinjau denah" hidden />
+        <div class="home-card-body">
+          <h2 id="homeTitle"></h2>
+          <p id="homeSaved" class="home-sub"></p>
+          <p id="homeCounts" class="home-sub"></p>
+          <ul id="homeChips" class="home-chips" aria-label="Status tahap"></ul>
+          <p id="homeError" class="home-err" role="alert" hidden></p>
+          <div class="home-actions">
+            <button id="btnContinue" type="button" class="btn-save">Lanjutkan</button>
+            <button id="btnReplace" type="button" class="btn-outline-pill">Ganti denah</button>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ==================== CONFIRM DIALOG ==================== -->
+  <div id="confirmModal" class="modal-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmBody">
+    <div class="modal-card confirm-card">
+      <div class="modal-header">
+        <h3 id="confirmTitle"></h3>
+      </div>
+      <p id="confirmBody" class="confirm-body"></p>
+      <div class="confirm-actions">
+        <button id="confirmCancel" type="button" class="btn-outline-pill">Batal</button>
+        <button id="confirmOk" type="button" class="btn-save"></button>
+      </div>
     </div>
   </div>
 

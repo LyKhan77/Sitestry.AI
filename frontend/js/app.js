@@ -88,6 +88,7 @@ class SitestryStudioApp {
     this.saving = false;
     this.saveError = false;
     this.thumbCache = null;
+    this.sessionLoaded = false;
     this.guideSession = new BlueprintGuideSession(store, (args) => api.fetchBlueprintGuides(args));
 
     initUiFlag();
@@ -101,6 +102,7 @@ class SitestryStudioApp {
     this.initRulerPopover();
     this.initPdfModal();
     this.initWorkspaceSave();
+    this.initWorkspaceHome();
     this.initKeyboardShortcuts();
     this.initSplitResizer();
     this.initResponsiveWorkspace();
@@ -147,9 +149,16 @@ class SitestryStudioApp {
   async bootInitialSample() {
     // `?sample=<id>` is the dev/test boot: load that sample and back it with a workspace.
     const params = new URLSearchParams(window.location.search);
+    if (isV4() && !params.has("sample")) {
+      this.setWorkflowStage(1);
+      document.body.dataset.view = "home";
+      await this.renderHome();
+      return;
+    }
     const sampleId = params.get("sample") || "gatsu_p4";
     await this.loadSamplePreset(sampleId, true);
     if (params.has("sample")) await this.ensureSampleWorkspace(sampleId);
+    this.sessionLoaded = true;
     this.setWorkflowStage(1);
   }
 
@@ -332,6 +341,7 @@ class SitestryStudioApp {
     syncTimeline(step);
     syncDock(step);
     this.refreshWorkspaceFlags();
+    this.recordStageReached(step);
 
     setTimeout(() => {
       this.canvas2d.resize();
@@ -339,6 +349,15 @@ class SitestryStudioApp {
       this.viewer3d.resize();
     }, 60);
     return true;
+  }
+
+  /** The furthest stage reached is what "Lanjutkan" resumes at; recorded as soon as it advances. */
+  recordStageReached(step) {
+    if (!this.workspaceActive() || !this.sessionLoaded) return;
+    const reached = this.workspace.meta?.stage_reached || 1;
+    if (step <= reached) return;
+    this.workspace.meta = { ...this.workspace.meta, stage_reached: step };
+    api.patchWorkspaceMeta({ stage_reached: step }).catch(() => {});
   }
 
   // ==================== WORKSPACE: SAVE ====================
@@ -501,6 +520,259 @@ class SitestryStudioApp {
     }
   }
 
+  // ==================== WORKSPACE: HOME, UPLOAD, RESTORE ====================
+  initWorkspaceHome() {
+    document.body.dataset.view = "stage";
+    document.getElementById("homeUploadInput")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (file) this.handleUploadFile(file);
+    });
+    document.getElementById("btnContinue")?.addEventListener("click", () => this.continueFromHome());
+    document.getElementById("btnReplace")?.addEventListener("click", () => this.replaceWorkspace());
+    document.getElementById("btnWorkspace")?.addEventListener("click", () => this.showHome());
+  }
+
+  async showHome() {
+    document.body.dataset.view = "home";
+    await this.renderHome();
+  }
+
+  async renderHome() {
+    let info;
+    try {
+      info = await api.getWorkspace();
+    } catch (err) {
+      info = { exists: false };
+      this.showToast("Server tidak terjangkau.");
+    }
+    const el = (id) => document.getElementById(id);
+    const empty = !info.exists;
+    el("homeEmpty").hidden = !empty;
+    el("homeCard").hidden = empty;
+    if (empty) return;
+
+    const failed = Boolean(info.error);
+    el("homeError").hidden = !failed;
+    el("btnContinue").hidden = failed;
+    for (const id of ["homeTitle", "homeSaved", "homeCounts", "homeChips", "homeThumb"]) el(id).hidden = failed;
+    if (failed) {
+      el("homeError").textContent = `Workspace rusak: ${info.error}. Pilih Ganti denah untuk memulai ulang.`;
+      return;
+    }
+
+    const meta = info.meta;
+    const counts = meta.counts || {};
+    el("homeTitle").textContent = meta.title || meta.source?.filename || "Project";
+    el("homeSaved").textContent = meta.saved_at
+      ? `Tersimpan ${new Date(meta.saved_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}`
+      : "Belum pernah disimpan";
+    el("homeCounts").textContent =
+      `${counts.walls ?? 0} dinding \u00b7 ${counts.openings ?? 0} bukaan \u00b7 ${counts.columns ?? 0} pilar \u00b7 ` +
+      `${counts.stairs ?? 0} tangga \u00b7 ${counts.rooms ?? 0} ruangan`;
+    const thumb = el("homeThumb");
+    thumb.hidden = !meta.thumbnail;
+    if (meta.thumbnail) thumb.src = meta.thumbnail;
+
+    const live = this.sessionLoaded && this.workspaceActive();
+    const savedHash = live ? this.workspace.savedHash : meta.saved_hash;
+    const builtHash = live ? this.workspace.builtHash : meta.built_hash;
+    const chips = [
+      ["1 Input \u2713", "done"],
+      meta.extracted ? ["2 Ekstraksi \u2713", "done"] : ["2 Ekstraksi \u2014", "muted"],
+      live && this.hasUnsavedChanges()
+        ? ["3 Review belum disimpan", "warn"]
+        : savedHash
+        ? ["3 Review tersimpan", "done"]
+        : ["3 Review \u2014", "muted"],
+      builtHash == null
+        ? ["4 3D belum dibuild", "muted"]
+        : builtHash === savedHash
+        ? ["4 3D \u2713", "done"]
+        : ["4 3D usang", "warn"],
+    ];
+    const list = el("homeChips");
+    list.replaceChildren(
+      ...chips.map(([label, tone]) => {
+        const li = document.createElement("li");
+        li.className = `chip-${tone}`;
+        li.textContent = label;
+        return li;
+      })
+    );
+  }
+
+  async continueFromHome() {
+    if (this.sessionLoaded && this.workspace.exists) {
+      document.body.dataset.view = "stage";
+      this.canvas2d.resize();
+      return;
+    }
+    await this.restoreWorkspace();
+  }
+
+  async replaceWorkspace() {
+    const ok = await this.confirmDialog({
+      title: "Ganti denah?",
+      body: "Project tersimpan dan 3D akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.",
+      confirmLabel: "Hapus dan ganti",
+    });
+    if (!ok) return;
+    try {
+      await api.deleteWorkspace();
+    } catch (err) {
+      this.showToast(`Gagal menghapus workspace: ${err.message}`);
+      return;
+    }
+    this.workspace.exists = false;
+    window.location.reload();
+  }
+
+  confirmDialog({ title, body, confirmLabel = "Ya", cancelLabel = "Batal" }) {
+    const modal = document.getElementById("confirmModal");
+    const ok = document.getElementById("confirmOk");
+    const cancel = document.getElementById("confirmCancel");
+    document.getElementById("confirmTitle").textContent = title;
+    document.getElementById("confirmBody").textContent = body;
+    ok.textContent = confirmLabel;
+    cancel.textContent = cancelLabel;
+    const previous = document.activeElement;
+    modal.classList.remove("hidden");
+    cancel.focus();
+    return new Promise((resolve) => {
+      const finish = (value) => {
+        modal.classList.add("hidden");
+        modal.removeEventListener("keydown", onKey);
+        modal.onclick = null;
+        ok.onclick = null;
+        cancel.onclick = null;
+        previous?.focus?.();
+        resolve(value);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          finish(false);
+        } else if (e.key === "Tab") {
+          e.preventDefault();
+          (document.activeElement === cancel ? ok : cancel).focus();
+        }
+      };
+      modal.addEventListener("keydown", onKey);
+      ok.onclick = () => finish(true);
+      cancel.onclick = () => finish(false);
+      modal.onclick = (e) => {
+        if (e.target === modal) finish(false);
+      };
+    });
+  }
+
+  /** A freshly chosen source (PDF page or image) becomes the one workspace, replacing any previous one. */
+  async registerWorkspaceSource(file) {
+    if (!isV4()) return;
+    const m = store.project.metadata;
+    try {
+      const created = await api.createWorkspaceSource({
+        file,
+        meta: {
+          title: store.project.project_name,
+          page_number: m.page_number,
+          total_pages: m.total_pages,
+          scale_px_per_meter: m.scale_px_per_meter,
+          roi_px: m.roi_px,
+          image_width_px: m.image_width_px,
+          image_height_px: m.image_height_px,
+        },
+      });
+      this.workspace = { exists: true, savedHash: null, builtHash: null, savedProject: null, meta: created.meta };
+      store.builtProject = null;
+      this.extractionDone = false;
+      this.saveError = false;
+      this.sessionLoaded = true;
+      this.refreshWorkspaceFlags();
+      document.body.dataset.view = "stage";
+      this.setWorkflowStage(1);
+    } catch (err) {
+      this.showToast(`Gagal membuat workspace: ${err.message}`);
+    }
+  }
+
+  readImageFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("File gambar tidak terbaca."));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("File gambar tidak valid."));
+        img.onload = () => resolve({ dataUrl: reader.result, width: img.width, height: img.height });
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /** Rebuild the session from the saved workspace: source file, saved project, and 3D when current. */
+  async restoreWorkspace() {
+    try {
+      const info = await api.getWorkspace();
+      const meta = info.meta;
+      const { blob, filename } = await api.getWorkspaceSource();
+      const file = new File([blob], filename, { type: blob.type });
+      const project = info.has_project ? await api.getWorkspaceProject() : null;
+
+      const overrides = {
+        title: meta.title,
+        scale_px_per_meter: meta.scale_px_per_meter ?? undefined,
+        page_number: meta.page_number,
+        total_pages: meta.total_pages,
+        roi_px: meta.roi_px ?? undefined,
+      };
+      let dataUrl;
+      if (filename.toLowerCase().endsWith(".pdf")) {
+        const data = await api.renderPdfPage(file, meta.page_number || 1);
+        dataUrl = data.image_data_url;
+        Object.assign(overrides, {
+          image_width_px: data.image_width_px,
+          image_height_px: data.image_height_px,
+          total_pages: data.total_pages,
+          scale_px_per_meter: meta.scale_px_per_meter ?? data.scale_px_per_meter,
+          roi_px: meta.roi_px ?? data.roi_px,
+        });
+      } else {
+        const img = await this.readImageFile(file);
+        dataUrl = img.dataUrl;
+        Object.assign(overrides, { image_width_px: img.width, image_height_px: img.height });
+      }
+      for (const key of Object.keys(overrides)) if (overrides[key] === undefined) delete overrides[key];
+
+      store.setSource({ kind: "upload", file, sampleId: null, dataUrl, metaOverrides: overrides });
+      document.getElementById("lblCurrentPage").textContent = `${overrides.page_number}/${overrides.total_pages}`;
+      if (project) store.loadProjectData(project, true);
+
+      const savedHash = project ? structureHash(project) : null;
+      const builtMatches = Boolean(project) && meta.built_hash != null && meta.built_hash === savedHash;
+      this.workspace = {
+        exists: true,
+        savedHash,
+        builtHash: meta.built_hash ?? null,
+        savedProject: project ? structuredClone(project) : null,
+        meta,
+      };
+      store.builtProject = builtMatches ? structuredClone(project) : null;
+      this.extractionDone = Boolean(meta.extracted);
+      this.saveError = false;
+      this.thumbCache = null;
+      this.sessionLoaded = true;
+      this.refreshWorkspaceFlags();
+      document.body.dataset.view = "stage";
+      this.setWorkflowStage(Math.min(5, Math.max(1, meta.stage_reached || 1)));
+      return true;
+    } catch (err) {
+      this.showToast(`Gagal membuka workspace: ${err.message}`);
+      return false;
+    }
+  }
+
   // ==================== STAGE 1: INPUT & CALIBRATION ====================
   initStage1InputControls() {
     const btnGatsuPdf = document.getElementById("btnSampleGatsuPdf");
@@ -530,57 +802,7 @@ class SitestryStudioApp {
 
     fileInput?.addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
-      if (!file) return;
-      const seq = ++this.sourceRequestSeq;
-      setSampleCardActive(null);
-
-      if (file.name.toLowerCase().endsWith(".pdf")) {
-        this.showToast(`Memeriksa halaman PDF "${file.name}"...`);
-        try {
-          const info = await api.inspectPdf(file);
-          if (seq !== this.sourceRequestSeq) return;
-          this.openPdfModalWithPages(file.name, info.pages, async (chosenPage) => {
-            await this.loadUploadedPdfPage(file, chosenPage);
-          });
-        } catch (err) {
-          if (seq !== this.sourceRequestSeq) return;
-          this.showToast("Merender Halaman 1...");
-          await this.loadUploadedPdfPage(file, 1);
-        }
-      } else {
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-          if (seq !== this.sourceRequestSeq) return;
-          const img = new Image();
-          img.onload = async () => {
-            if (seq !== this.sourceRequestSeq) return;
-            store.setSource({
-              kind: "upload",
-              file,
-              sampleId: null,
-              dataUrl: ev.target.result,
-              metaOverrides: {
-              title: file.name,
-              image_width_px: img.width,
-              image_height_px: img.height,
-                page_number: 1,
-                total_pages: 1,
-                roi_px: {
-                  x: Math.round(img.width * 0.04),
-                  y: Math.round(img.height * 0.04),
-                  width: Math.round(img.width * 0.92),
-                  height: Math.round(img.height * 0.86),
-                },
-              },
-            });
-            document.getElementById("lblCurrentPage").textContent = "1/1";
-            this.showToast(`Gambar "${file.name}" (${img.width}x${img.height}px) berhasil dimuat.`);
-            await this.runExtractionPipeline();
-          };
-          img.src = ev.target.result;
-        };
-        reader.readAsDataURL(file);
-      }
+      if (file) await this.handleUploadFile(file);
     });
 
     document.getElementById("btnAutoScale")?.addEventListener("click", async () => {
@@ -597,6 +819,68 @@ class SitestryStudioApp {
         `Skala terkalibrasi otomatis: ${res.scale_px_per_meter} px/m (${res.method})`
       );
     });
+  }
+
+  async handleUploadFile(file) {
+    if (this.workspaceActive() && this.sessionLoaded) {
+      const ok = await this.confirmDialog({
+        title: "Ganti denah?",
+        body: "Mengunggah file baru menghapus project tersimpan dan 3D.",
+        confirmLabel: "Ganti denah",
+      });
+      if (!ok) return;
+    }
+    const seq = ++this.sourceRequestSeq;
+    document.querySelectorAll(".sample-select-card").forEach((b) => b.classList.remove("active"));
+
+    if (file.name.toLowerCase().endsWith(".pdf")) {
+      this.showToast(`Memeriksa halaman PDF "${file.name}"...`);
+      try {
+        const info = await api.inspectPdf(file);
+        if (seq !== this.sourceRequestSeq) return;
+        this.openPdfModalWithPages(file.name, info.pages, async (chosenPage) => {
+          await this.loadUploadedPdfPage(file, chosenPage, { newSource: true });
+        });
+      } catch (err) {
+        if (seq !== this.sourceRequestSeq) return;
+        this.showToast("Merender Halaman 1...");
+        await this.loadUploadedPdfPage(file, 1, { newSource: true });
+      }
+    } else {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        if (seq !== this.sourceRequestSeq) return;
+        const img = new Image();
+        img.onload = async () => {
+          if (seq !== this.sourceRequestSeq) return;
+          store.setSource({
+            kind: "upload",
+            file,
+            sampleId: null,
+            dataUrl: ev.target.result,
+            metaOverrides: {
+              title: file.name,
+              image_width_px: img.width,
+              image_height_px: img.height,
+              page_number: 1,
+              total_pages: 1,
+              roi_px: {
+                x: Math.round(img.width * 0.04),
+                y: Math.round(img.height * 0.04),
+                width: Math.round(img.width * 0.92),
+                height: Math.round(img.height * 0.86),
+              },
+            },
+          });
+          document.getElementById("lblCurrentPage").textContent = "1/1";
+          this.showToast(`Gambar "${file.name}" (${img.width}x${img.height}px) berhasil dimuat.`);
+          await this.registerWorkspaceSource(file);
+          await this.runExtractionPipeline();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
   }
 
   async loadSamplePreset(sampleId, autoExtract = true, pageOverride = null) {
@@ -630,7 +914,7 @@ class SitestryStudioApp {
     return true;
   }
 
-  async loadUploadedPdfPage(file, pageNumber) {
+  async loadUploadedPdfPage(file, pageNumber, { newSource = false } = {}) {
     const seq = ++this.sourceRequestSeq;
     this.showToast(`Merender PDF Halaman ${pageNumber}...`);
     const data = await api.renderPdfPage(file, pageNumber);
@@ -651,6 +935,7 @@ class SitestryStudioApp {
       },
     });
     document.getElementById("lblCurrentPage").textContent = `${data.page_number}/${data.total_pages}`;
+    if (newSource) await this.registerWorkspaceSource(file);
     return this.runExtractionPipeline();
   }
 

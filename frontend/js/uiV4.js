@@ -255,6 +255,13 @@ export const PALETTE_ACTIONS = [
     run: (app) => app.setViewMode(mode),
   })),
   {
+    id: "workspace",
+    label: "Buka Workspace",
+    keywords: "workspace home beranda project",
+    when: () => isV4(),
+    run: (app) => app.showHome(),
+  },
+  {
     id: "save",
     label: "Simpan project",
     keywords: "save simpan",

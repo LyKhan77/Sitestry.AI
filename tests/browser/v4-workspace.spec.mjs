@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { gotoAppV4, loadStage } from "./helpers.mjs";
+import fs from "node:fs";
+import { gotoAppV4, loadStage, resetWorkspace } from "./helpers.mjs";
 
 const VIEWPORT = { width: 1440, height: 960 };
 
@@ -222,5 +223,143 @@ test.describe("v4 build 3d", () => {
     });
     await expect.poll(() => sceneCount(page, "equipment")).toBe(1);
     expect(await sceneCount(page, "column")).toBe(columns);
+  });
+});
+
+const FIXTURE = new URL("../fixtures/upload-smoke.png", import.meta.url).pathname;
+const WORKSPACE_DIR = "/tmp/sitestry-workspace-test";
+
+const stepOf = (page) => page.evaluate(() => window.sitestryApp.canvas2d.store.ui.step);
+const viewOf = (page) => page.evaluate(() => document.body.dataset.view);
+
+async function openHome(page) {
+  await resetWorkspace(page);
+  await page.goto("/?ui=v4");
+  await page.waitForFunction(() => window.sitestryApp && document.body.dataset.view);
+  await expect(page.locator("#workspaceHome")).toBeVisible();
+}
+
+/** Upload the fixture from the home page, add one column, save, optionally go to a stage. */
+async function uploadAndSave(page, { stage = 1, build = false } = {}) {
+  await openHome(page);
+  await page.setInputFiles("#homeUploadInput", FIXTURE);
+  await expect.poll(() => viewOf(page)).toBe("stage");
+  await page.evaluate(() => {
+    const { store } = window.sitestryApp.canvas2d;
+    store.addColumn(40, 40);
+  });
+  await page.evaluate(() => window.sitestryApp.saveWorkspace());
+  if (stage > 1) await loadStage(page, stage);
+  if (build) {
+    await page.locator("#btnBuild3D").click();
+    await expect.poll(() => buildState(page)).toBe("fresh");
+  }
+}
+
+test.describe("v4 workspace home", () => {
+  test("empty workspace shows only an upload field", async ({ page }) => {
+    await openHome(page);
+    await expect(page.locator("#homeEmpty")).toBeVisible();
+    await expect(page.locator("#homeUploadInput")).toHaveCount(1);
+    await expect(page.locator("#homeCard")).toBeHidden();
+    await expect(page.locator("#workspaceHome .sample-select-card")).toHaveCount(0);
+  });
+
+  test("upload creates the workspace and opens stage 1", async ({ page }) => {
+    await openHome(page);
+    await page.setInputFiles("#homeUploadInput", FIXTURE);
+    await expect.poll(() => viewOf(page)).toBe("stage");
+    expect(await stepOf(page)).toBe(1);
+    const info = await (await page.request.get("/api/workspace")).json();
+    expect(info.exists).toBe(true);
+    expect(info.meta.source.kind).toBe("image");
+    expect(await page.evaluate(() => document.body.dataset.save)).toBe("dirty");
+  });
+
+  test("reload shows the project card", async ({ page }) => {
+    await uploadAndSave(page);
+    await page.reload();
+    await expect(page.locator("#homeCard")).toBeVisible();
+    await expect(page.locator("#homeTitle")).toContainText("upload-smoke");
+    await expect(page.locator("#homeCounts")).toContainText("1 pilar");
+    await expect(page.locator("#homeChips")).toContainText("Review tersimpan");
+    await expect(page.locator("#btnContinue")).toBeVisible();
+  });
+
+  test("Lanjutkan restores project and stage", async ({ page }) => {
+    await uploadAndSave(page, { stage: 3 });
+    const saved = (await (await page.request.get("/api/workspace")).json()).meta;
+    await page.reload();
+    await page.locator("#btnContinue").click();
+    await expect.poll(() => viewOf(page)).toBe("stage");
+    expect(await stepOf(page)).toBe(3);
+    const hash = await page.evaluate(async () => {
+      const { structureHash } = await import("/js/workspaceState.js");
+      return structureHash(window.sitestryApp.canvas2d.store.project);
+    });
+    expect(hash).toBe(saved.saved_hash);
+    expect(await page.evaluate(() => document.body.dataset.save)).toBe("clean");
+  });
+
+  test("restore auto-builds 3D only when the saved and built hashes match", async ({ page }) => {
+    await uploadAndSave(page, { stage: 4, build: true });
+    await page.reload();
+    await page.locator("#btnContinue").click();
+    await expect.poll(() => stepOf(page)).toBe(4);
+    expect(await buildState(page)).toBe("fresh");
+    expect(await sceneCount(page, "column")).toBe(1);
+
+    await loadStage(page, 3);
+    await edit(page);
+    await page.locator("#btnSave").click();
+    await expect.poll(() => saveState(page)).toBe("clean");
+    await page.reload();
+    await page.locator("#btnContinue").click();
+    await expect.poll(() => stepOf(page)).toBe(4);
+    expect(await buildState(page)).toBe("stale");
+    expect(await sceneCount(page, "column")).toBe(0);
+  });
+
+  test("Ganti denah asks first and cancel changes nothing", async ({ page }) => {
+    await uploadAndSave(page);
+    await page.reload();
+    await page.locator("#btnReplace").click();
+    await expect(page.locator("#confirmModal")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#confirmModal")).toBeHidden();
+    expect((await (await page.request.get("/api/workspace")).json()).exists).toBe(true);
+
+    await page.locator("#btnReplace").click();
+    await page.locator("#confirmOk").click();
+    await expect(page.locator("#homeEmpty")).toBeVisible();
+    expect((await (await page.request.get("/api/workspace")).json()).exists).toBe(false);
+  });
+
+  test("corrupt workspace shows an error card with only Ganti denah", async ({ page }) => {
+    await uploadAndSave(page);
+    fs.writeFileSync(`${WORKSPACE_DIR}/project.json`, "{not json");
+    await page.reload();
+    await expect(page.locator("#homeError")).toBeVisible();
+    await expect(page.locator("#btnContinue")).toBeHidden();
+    await expect(page.locator("#btnReplace")).toBeVisible();
+  });
+
+  test("header Workspace link returns to home and Lanjutkan resumes in place", async ({ page }) => {
+    await startAtStage3(page);
+    await edit(page);
+    await expect.poll(() => saveState(page)).toBe("dirty");
+    await page.locator("#btnWorkspace").click();
+    await expect.poll(() => viewOf(page)).toBe("home");
+    await expect(page.locator("#homeChips")).toContainText("belum disimpan");
+    await page.locator("#btnContinue").click();
+    await expect.poll(() => viewOf(page)).toBe("stage");
+    expect(await stepOf(page)).toBe(3);
+    expect(await page.evaluate(() => window.sitestryApp.hasUnsavedChanges())).toBe(true);
+  });
+
+  test("sample boot still skips home", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    expect(await viewOf(page)).toBe("stage");
+    await expect(page.locator("#workspaceHome")).toBeHidden();
   });
 });
