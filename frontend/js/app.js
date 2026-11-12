@@ -1246,7 +1246,7 @@ class SitestryStudioApp {
       if (store.redo()) this.showToast("Redo diterapkan.");
     });
     document.getElementById("btnDeleteSelected")?.addEventListener("click", () => {
-      if (store.deleteSelected()) this.showToast("Elemen terpilih dihapus.");
+      if (this.deleteSelectedIfEditable()) this.showToast("Elemen terpilih dihapus.");
     });
 
     const bindLayerCheck = (id, key) => {
@@ -1731,7 +1731,7 @@ class SitestryStudioApp {
         return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
-        if (store.deleteSelected()) {
+        if (this.deleteSelectedIfEditable()) {
           this.showToast("Elemen terpilih dihapus.");
         }
         return;
@@ -1811,6 +1811,21 @@ class SitestryStudioApp {
   }
 
   // ==================== CONTEXTUAL PROPERTY INSPECTOR ====================
+  /** Delete the selection only when the current stage may edit its kind (see store.canEdit). */
+  deleteSelectedIfEditable() {
+    const sel = store.ui.selected;
+    if (!sel || !store.canEdit(sel.kind)) return false;
+    return store.deleteSelected();
+  }
+
+  /** Make the inspector view-only: disable every control when the stage may not edit this kind. */
+  applyInspectorLock(container, kind) {
+    if (store.canEdit(kind)) return;
+    container.querySelectorAll("input, select, textarea, button").forEach((el) => {
+      el.disabled = true;
+    });
+  }
+
   renderInspector() {
     const container = document.getElementById("inspectorContent");
     const badge = document.getElementById("lblSelectedBadge");
@@ -2482,6 +2497,7 @@ class SitestryStudioApp {
       document.getElementById("inpNodeZm").onchange = applyNodeMeters;
       document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
     }
+    this.applyInspectorLock(container, sel.kind);
   }
 }
 

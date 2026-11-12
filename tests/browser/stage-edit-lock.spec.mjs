@@ -171,3 +171,53 @@ test.describe("edit lock per stage", () => {
     expect(await draggableCount(page, "cmeLayer")).toBe(await store(page, (s) => s.project.stairs.length));
   });
 });
+
+test.describe("delete and inspector follow the stage rule", () => {
+  const wallCount = (page) => store(page, (s) => s.project.walls.length);
+  const enabledFields = (page) =>
+    page.evaluate(
+      () => document.querySelectorAll("#inspectorContent input:not([disabled]), #inspectorContent select:not([disabled]), #inspectorContent button:not([disabled])").length
+    );
+
+  test("stage 4: Delete key, Hapus button and inspector are inert for a selected wall", async ({ page }) => {
+    await bootWithZoneAndEquipment(page);
+    await loadStage(page, 4);
+    await setTool(page, "select");
+    await store(page, (s) => s.selectObject("wall", s.project.walls[0].id));
+    const before = await wallCount(page);
+    await page.keyboard.press("Delete");
+    await page.evaluate(() => document.getElementById("btnDeleteSelected").click());
+    expect(await wallCount(page)).toBe(before);
+    expect(await enabledFields(page)).toBe(0);
+  });
+
+  test("stage 4: equipment is read-only too", async ({ page }) => {
+    await bootWithZoneAndEquipment(page);
+    await loadStage(page, 4);
+    await setTool(page, "select");
+    await store(page, (s) => s.selectObject("equipment", s.project.equipments[0].id));
+    await page.keyboard.press("Backspace");
+    expect(await store(page, (s) => s.project.equipments.length)).toBe(1);
+    expect(await enabledFields(page)).toBe(0);
+  });
+
+  test("stage 3: Delete still removes a selected wall and inspector is editable", async ({ page }) => {
+    await bootWithZoneAndEquipment(page);
+    await setTool(page, "select");
+    await store(page, (s) => s.selectObject("wall", s.project.walls[0].id));
+    expect(await enabledFields(page)).toBeGreaterThan(0);
+    const before = await wallCount(page);
+    await page.keyboard.press("Delete");
+    expect(await wallCount(page)).toBe(before - 1);
+  });
+
+  test("stage 5: equipment inspector is editable and Delete removes it", async ({ page }) => {
+    await bootWithZoneAndEquipment(page);
+    await loadStage(page, 5);
+    await setTool(page, "select");
+    await store(page, (s) => s.selectObject("equipment", s.project.equipments[0].id));
+    expect(await enabledFields(page)).toBeGreaterThan(0);
+    await page.keyboard.press("Delete");
+    expect(await store(page, (s) => s.project.equipments.length)).toBe(0);
+  });
+});
