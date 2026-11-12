@@ -84,7 +84,6 @@ class SitestryStudioApp {
     this.lastExtractionFallback = false;
     this.extractionDone = false;
     this.workspace = { exists: false, id: null, savedHash: null, builtHash: null, savedProject: null, meta: null };
-    this.homeProjectId = null;
     this.saveChain = Promise.resolve();
     this.saving = false;
     this.saveError = false;
@@ -611,8 +610,20 @@ class SitestryStudioApp {
       const file = e.target.files?.[0];
       if (file) this.handleUploadFile(file);
     });
-    document.getElementById("btnContinue")?.addEventListener("click", () => this.continueFromHome());
-    document.getElementById("btnReplace")?.addEventListener("click", () => this.replaceWorkspace());
+    const grid = document.getElementById("homeGrid");
+    grid?.addEventListener("change", (e) => {
+      if (e.target.id !== "homeNewInput") return;
+      const file = e.target.files?.[0];
+      if (file) this.handleUploadFile(file);
+    });
+    grid?.addEventListener("click", (e) => {
+      const button = e.target.closest("button[data-action]");
+      const card = button?.closest(".project-card");
+      if (!button || !card) return;
+      const id = card.dataset.projectId;
+      if (button.dataset.action === "open") this.openProject(id);
+      else this.deleteProjectFromHome(id, card.querySelector(".pc-title")?.textContent || "Project");
+    });
     document.getElementById("btnWorkspace")?.addEventListener("click", () => this.showHome());
   }
 
@@ -622,54 +633,26 @@ class SitestryStudioApp {
   }
 
   async renderHome() {
-    let info;
+    let projects = [];
     try {
-      const { projects } = await api.listProjects();
-      info = projects[0] || { exists: false };
+      projects = (await api.listProjects()).projects;
     } catch (err) {
-      info = { exists: false };
       this.showToast("Server tidak terjangkau.");
     }
-    this.homeProjectId = info.id || null;
     const el = (id) => document.getElementById(id);
-    const empty = !info.exists;
+    const empty = projects.length === 0;
     el("homeEmpty").hidden = !empty;
-    el("homeCard").hidden = empty;
+    el("homeList").hidden = empty;
     if (empty) return;
+    el("homeSummary").textContent = `${projects.length} project`;
+    el("homeGrid").replaceChildren(...projects.map((p) => this.buildProjectCard(p)), this.buildNewProjectCard());
+  }
 
-    const failed = Boolean(info.error);
-    el("homeError").hidden = !failed;
-    el("btnContinue").hidden = failed;
-    for (const id of ["homeTitle", "homeSaved", "homeCounts", "homeChips", "homeThumb"]) el(id).hidden = failed;
-    if (failed) {
-      el("homeError").textContent = `Workspace rusak: ${info.error}. Pilih Ganti denah untuk memulai ulang.`;
-      return;
-    }
-
-    const meta = info.meta;
-    const counts = meta.counts || {};
-    el("homeTitle").textContent = meta.title || meta.source?.filename || "Project";
-    el("homeSaved").textContent = meta.saved_at
-      ? `Tersimpan ${new Date(meta.saved_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}`
-      : "Belum pernah disimpan";
-    el("homeCounts").textContent =
-      `${counts.walls ?? 0} dinding \u00b7 ${counts.openings ?? 0} bukaan \u00b7 ${counts.columns ?? 0} pilar \u00b7 ` +
-      `${counts.stairs ?? 0} tangga \u00b7 ${counts.rooms ?? 0} ruangan`;
-    const thumb = el("homeThumb");
-    thumb.hidden = !meta.thumbnail;
-    if (meta.thumbnail) {
-      const img = new Image();
-      img.alt = "Pratinjau denah";
-      img.src = meta.thumbnail;
-      thumb.replaceChildren(img);
-    } else {
-      thumb.replaceChildren();
-    }
-
-    const live = this.sessionLoaded && this.workspaceActive();
+  projectChips(meta, current) {
+    const live = current && this.workspaceActive();
     const savedHash = live ? this.workspace.savedHash : meta.saved_hash;
     const builtHash = live ? this.workspace.builtHash : meta.built_hash;
-    const chips = [
+    return [
       ["1 Input \u2713", "done"],
       meta.extracted ? ["2 Ekstraksi \u2713", "done"] : ["2 Ekstraksi \u2014", "muted"],
       live && this.hasUnsavedChanges()
@@ -683,41 +666,131 @@ class SitestryStudioApp {
         ? ["4 3D \u2713", "done"]
         : ["4 3D usang", "warn"],
     ];
-    const list = el("homeChips");
-    list.replaceChildren(
-      ...chips.map(([label, tone]) => {
-        const li = document.createElement("li");
-        li.className = `chip-${tone}`;
-        li.textContent = label;
-        return li;
-      })
-    );
   }
 
-  async continueFromHome() {
-    if (this.sessionLoaded && this.workspace.exists && this.workspace.id === this.homeProjectId) {
+  buildProjectCard(project) {
+    const failed = Boolean(project.error);
+    const meta = project.meta || {};
+    const current = this.sessionLoaded && this.workspace.exists && this.workspace.id === project.id;
+    const title = failed ? "Project rusak" : meta.title || meta.source?.filename || "Project";
+    const make = (tag, className, text) => {
+      const node = document.createElement(tag);
+      node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+
+    const card = make("li", "project-card");
+    card.dataset.projectId = project.id;
+    card.dataset.current = String(current);
+
+    const thumb = make("div", "pc-thumb");
+    thumb.hidden = failed || !meta.thumbnail;
+    if (!thumb.hidden) {
+      const img = new Image();
+      img.alt = `Pratinjau ${title}`;
+      img.src = meta.thumbnail;
+      thumb.append(img);
+    }
+
+    const counts = meta.counts || {};
+    const saved = make(
+      "p",
+      "home-sub pc-saved",
+      meta.saved_at
+        ? `Tersimpan ${new Date(meta.saved_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}`
+        : "Belum pernah disimpan"
+    );
+    const countsLine = make(
+      "p",
+      "home-sub pc-counts",
+      `${counts.walls ?? 0} dinding \u00b7 ${counts.openings ?? 0} bukaan \u00b7 ${counts.columns ?? 0} pilar \u00b7 ` +
+        `${counts.stairs ?? 0} tangga \u00b7 ${counts.rooms ?? 0} ruangan`
+    );
+    const chips = make("ul", "home-chips pc-chips");
+    if (!failed) {
+      for (const [label, tone] of this.projectChips(meta, current)) chips.append(make("li", `chip-${tone}`, label));
+    }
+    const error = make("p", "home-err pc-error", `Project rusak: ${project.error}. Hapus untuk membersihkannya.`);
+    error.setAttribute("role", "alert");
+    error.hidden = !failed;
+    for (const node of [saved, countsLine, chips]) node.hidden = failed;
+
+    const open = make("button", "btn-save pc-open", current ? "Kembali" : "Buka");
+    open.type = "button";
+    open.dataset.action = "open";
+    open.hidden = failed;
+    open.setAttribute("aria-label", `${current ? "Kembali ke" : "Buka"} ${title}`);
+    const del = make("button", "btn-outline-pill pc-delete", "Hapus");
+    del.type = "button";
+    del.dataset.action = "delete";
+    del.setAttribute("aria-label", `Hapus ${title}`);
+    const actions = make("div", "home-actions");
+    actions.append(open, del);
+
+    card.append(thumb, make("h2", "pc-title", title), saved, countsLine, chips, error, actions);
+    return card;
+  }
+
+  buildNewProjectCard() {
+    const item = document.createElement("li");
+    item.className = "project-new";
+    const label = document.createElement("label");
+    label.className = "home-drop";
+    const input = document.createElement("input");
+    input.type = "file";
+    input.id = "homeNewInput";
+    input.className = "home-file";
+    input.accept = ".pdf,.png,.jpg,.jpeg,.webp";
+    const strong = document.createElement("strong");
+    strong.textContent = "Project baru";
+    const button = document.createElement("span");
+    button.className = "home-drop-btn";
+    button.textContent = "Unggah denah";
+    label.append(input, strong, button);
+    item.append(label);
+    return item;
+  }
+
+  /** Open a project; a loaded session of the same project just returns to its stage. */
+  async openProject(id) {
+    if (this.sessionLoaded && this.workspace.exists && this.workspace.id === id) {
       document.body.dataset.view = "stage";
       this.canvas2d.resize();
       return;
     }
-    await this.restoreWorkspace(this.homeProjectId);
+    if (this.hasUnsavedChanges()) {
+      const ok = await this.confirmDialog({
+        title: "Pindah project?",
+        body: "Editan yang belum disimpan di project yang sedang dibuka akan hilang.",
+        confirmLabel: "Pindah project",
+      });
+      if (!ok) return;
+    }
+    await this.restoreWorkspace(id);
   }
 
-  async replaceWorkspace() {
+  async deleteProjectFromHome(id, title) {
     const ok = await this.confirmDialog({
-      title: "Ganti denah?",
-      body: "Project tersimpan dan 3D akan dihapus permanen. Tindakan ini tidak bisa dibatalkan.",
-      confirmLabel: "Hapus dan ganti",
+      title: "Hapus project?",
+      body: `"${title}" beserta editan dan 3D-nya dihapus permanen. Tindakan ini tidak bisa dibatalkan.`,
+      confirmLabel: "Hapus project",
     });
     if (!ok) return;
     try {
-      await api.deleteProject(this.homeProjectId);
+      await api.deleteProject(id);
     } catch (err) {
       this.showToast(`Gagal menghapus project: ${err.message}`);
       return;
     }
-    this.workspace.exists = false;
-    window.location.reload();
+    if (this.workspace.id === id) {
+      this.workspace = { exists: false, id: null, savedHash: null, builtHash: null, savedProject: null, meta: null };
+      this.sessionLoaded = false;
+      store.builtProject = null;
+      window.location.reload();
+      return;
+    }
+    await this.renderHome();
   }
 
   confirmDialog({ title, body, confirmLabel = "Ya", cancelLabel = "Batal" }) {

@@ -63,14 +63,14 @@ The system prioritizes **structural precision first** (Topological Walls, Small-
 │   └── superpowers/
 │       ├── plans/             # Local uncommitted implementation plans (DO NOT COMMIT)
 │       └── specs/             # Local uncommitted specifications (DO NOT COMMIT)
-├── workspace/                 # The single saved project: source file, project.json, meta.json (gitignored; override with SITESTRY_WORKSPACE_DIR)
+├── workspace/                 # Saved projects: workspace/projects/<id>/{source.*, project.json, meta.json} (gitignored; override with SITESTRY_WORKSPACE_DIR)
 ├── floorplan/                 # Built-in Telco APD PDF & Raster sample blueprints
 │   ├── WP-1-APD-IOH- GATSUBARAT-BALI-17DPS0040-MEP-R1-16.09.26_Full Signed.pdf
 │   ├── WP1 - APD - ANCOL, JAKARTA (12JKU0508)_R04_22-09-2026_Full signed.pdf
 │   └── plan.jpeg
 ├── backend/
 │   ├── main.py                # FastAPI server, sample catalog, PDF renderer & endpoints
-│   ├── workspace.py           # Single-workspace storage (atomic writes) behind /api/workspace/*
+│   ├── workspace.py           # Per-project storage (atomic writes) and ProjectsStore (many projects, legacy migration) behind /api/projects/*
 │   ├── cad_parser.py          # Procedural PDF Vector CAD Extractor (v3.0)
 │   ├── vectorizer.py          # ORB-RANSAC & Morphological Raster Vectorizer (v3.0)
 │   └── requirements.txt       # Python dependencies

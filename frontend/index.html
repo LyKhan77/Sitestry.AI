@@ -742,20 +742,13 @@
           <span class="home-drop-btn">Pilih file denah</span>
         </label>
       </div>
-      <article id="homeCard" class="home-card" hidden>
-        <div id="homeThumb" class="home-thumb" hidden></div>
-        <div class="home-card-body">
-          <h2 id="homeTitle"></h2>
-          <p id="homeSaved" class="home-sub"></p>
-          <p id="homeCounts" class="home-sub"></p>
-          <ul id="homeChips" class="home-chips" aria-label="Status tahap"></ul>
-          <p id="homeError" class="home-err" role="alert" hidden></p>
-          <div class="home-actions">
-            <button id="btnContinue" type="button" class="btn-save">Lanjutkan</button>
-            <button id="btnReplace" type="button" class="btn-outline-pill">Ganti denah</button>
-          </div>
-        </div>
-      </article>
+      <div id="homeList" class="home-list" hidden>
+        <header class="home-list-head">
+          <h1>Workspace</h1>
+          <p id="homeSummary" class="home-sub"></p>
+        </header>
+        <ul id="homeGrid" class="home-grid"></ul>
+      </div>
     </div>
   </section>
 

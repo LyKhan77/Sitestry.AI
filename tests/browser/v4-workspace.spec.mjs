@@ -264,55 +264,220 @@ async function uploadAndSave(page, { stage = 1, build = false } = {}) {
   }
 }
 
-test.describe("v4 workspace home", () => {
-  test("empty workspace shows only an upload field", async ({ page }) => {
+const cards = (page) => page.locator("#homeGrid .project-card");
+const cardOf = (page, title) => page.locator("#homeGrid .project-card", { hasText: title });
+const workspaceId = (page) => page.evaluate(() => window.sitestryApp.workspace.id);
+const storeColumns = (page) => page.evaluate(() => window.sitestryApp.canvas2d.store.project.columns.length);
+
+async function goHome(page) {
+  await page.locator("#btnWorkspace").click();
+  await expect.poll(() => viewOf(page)).toBe("home");
+  await expect(page.locator("#homeGrid")).toBeVisible();
+}
+
+/** Create a project from the visible home upload field, optionally edit/save/advance. */
+async function createViaHome(page, name, { edit: doEdit = false, save = true, stage = 1 } = {}) {
+  const input = (await page.locator("#homeEmpty").isVisible()) ? "#homeUploadInput" : "#homeNewInput";
+  await page.setInputFiles(input, { name, mimeType: "image/png", buffer: fs.readFileSync(FIXTURE) });
+  await expect.poll(() => viewOf(page)).toBe("stage");
+  const id = await workspaceId(page);
+  if (doEdit) await page.evaluate(() => window.sitestryApp.canvas2d.store.addColumn(40, 40));
+  if (save) await page.evaluate(() => window.sitestryApp.saveWorkspace());
+  if (stage > 1) await loadStage(page, stage);
+  return id;
+}
+
+const projectJson = async (page, id) => (await page.request.get(`/api/projects/${id}/project`)).json();
+const projectMeta = async (page, id) => (await (await page.request.get(`/api/projects/${id}`)).json()).meta;
+
+test.describe("v4 project list", () => {
+  test("empty workspace shows only the upload field", async ({ page }) => {
     await openHome(page);
     await expect(page.locator("#homeEmpty")).toBeVisible();
     await expect(page.locator("#homeUploadInput")).toHaveCount(1);
-    await expect(page.locator("#homeCard")).toBeHidden();
+    await expect(page.locator("#homeList")).toBeHidden();
     await expect(page.locator("#workspaceHome .sample-select-card")).toHaveCount(0);
   });
 
-  test("upload creates the workspace and opens stage 1", async ({ page }) => {
+  test("upload from the empty home creates the first project and opens stage 1", async ({ page }) => {
     await openHome(page);
-    await page.setInputFiles("#homeUploadInput", FIXTURE);
-    await expect.poll(() => viewOf(page)).toBe("stage");
+    const id = await createViaHome(page, "alpha.png", { save: false });
+    expect(id).toMatch(/^[0-9a-f]{8}$/);
     expect(await stepOf(page)).toBe(1);
-    const info = await currentProject(page);
-    expect(info.exists).toBe(true);
-    expect(info.meta.source.kind).toBe("image");
+    expect(await listProjects(page)).toHaveLength(1);
     expect(await page.evaluate(() => document.body.dataset.save)).toBe("dirty");
   });
 
-  test("reload shows the project card", async ({ page }) => {
-    await uploadAndSave(page);
-    await page.reload();
-    await expect(page.locator("#homeCard")).toBeVisible();
-    await expect(page.locator("#homeTitle")).toContainText("upload-smoke");
-    await expect(page.locator("#homeCounts")).toContainText("1 pilar");
-    await expect(page.locator("#homeChips")).toContainText("Review tersimpan");
-    await expect(page.locator("#btnContinue")).toBeVisible();
+  test("home lists both projects after a second upload and the first keeps its data", async ({ page }) => {
+    await openHome(page);
+    const alpha = await createViaHome(page, "alpha.png", { edit: true });
+    await goHome(page);
+    await expect(cards(page)).toHaveCount(1);
+    await createViaHome(page, "beta.png");
+    await goHome(page);
+    await expect(cards(page)).toHaveCount(2);
+    await expect(page.locator("#homeGrid .project-new")).toHaveCount(1);
+    expect((await projectJson(page, alpha)).columns.length).toBeGreaterThanOrEqual(1);
   });
 
-  test("Lanjutkan restores project and stage", async ({ page }) => {
-    await uploadAndSave(page, { stage: 3 });
-    const saved = (await currentProject(page)).meta;
+  test("cards show title, counts and status chips per project", async ({ page }) => {
+    await openHome(page);
+    await createViaHome(page, "alpha.png", { edit: true });
+    await goHome(page);
+    await createViaHome(page, "beta.png", { save: false });
     await page.reload();
-    await page.locator("#btnContinue").click();
+    await expect(cards(page)).toHaveCount(2);
+    await expect(cardOf(page, "alpha.png").locator(".pc-counts")).toContainText("1 pilar");
+    await expect(cardOf(page, "alpha.png").locator(".pc-chips")).toContainText("Review tersimpan");
+    await expect(cardOf(page, "beta.png").locator(".pc-chips")).not.toContainText("Review tersimpan");
+  });
+
+  test("Buka restores that project and stage", async ({ page }) => {
+    await openHome(page);
+    const alpha = await createViaHome(page, "alpha.png", { edit: true, stage: 3 });
+    await goHome(page);
+    const beta = await createViaHome(page, "beta.png");
+    await page.reload();
+    await cardOf(page, "alpha.png").locator(".pc-open").click();
     await expect.poll(() => viewOf(page)).toBe("stage");
     expect(await stepOf(page)).toBe(3);
+    expect(await workspaceId(page)).toBe(alpha);
     const hash = await page.evaluate(async () => {
       const { structureHash } = await import("/js/workspaceState.js");
       return structureHash(window.sitestryApp.canvas2d.store.project);
     });
-    expect(hash).toBe(saved.saved_hash);
-    expect(await page.evaluate(() => document.body.dataset.save)).toBe("clean");
+    expect(hash).toBe((await projectMeta(page, alpha)).saved_hash);
+
+    await goHome(page);
+    await cardOf(page, "beta.png").locator(".pc-open").click();
+    await expect.poll(() => workspaceId(page)).toBe(beta);
+    expect(await stepOf(page)).toBe(1);
+  });
+
+  test("the open project's card is marked current and says Kembali", async ({ page }) => {
+    await openHome(page);
+    await createViaHome(page, "alpha.png");
+    await goHome(page);
+    await createViaHome(page, "beta.png");
+    await goHome(page);
+    await expect(cardOf(page, "beta.png")).toHaveAttribute("data-current", "true");
+    await expect(cardOf(page, "beta.png").locator(".pc-open")).toHaveText("Kembali");
+    await expect(cardOf(page, "alpha.png")).toHaveAttribute("data-current", "false");
+    await expect(cardOf(page, "alpha.png").locator(".pc-open")).toHaveText("Buka");
+  });
+
+  test("Kembali resumes in place with unsaved edits", async ({ page }) => {
+    await startAtStage3(page);
+    await edit(page);
+    await expect.poll(() => saveState(page)).toBe("dirty");
+    await page.locator("#btnWorkspace").click();
+    await expect.poll(() => viewOf(page)).toBe("home");
+    await expect(cards(page).first().locator(".pc-chips")).toContainText("belum disimpan");
+    await cards(page).first().locator(".pc-open").click();
+    await expect.poll(() => viewOf(page)).toBe("stage");
+    expect(await stepOf(page)).toBe(3);
+    expect(await page.evaluate(() => window.sitestryApp.hasUnsavedChanges())).toBe(true);
+  });
+
+  test("Hapus asks first and cancel changes nothing", async ({ page }) => {
+    await openHome(page);
+    await createViaHome(page, "alpha.png");
+    await goHome(page);
+    await createViaHome(page, "beta.png");
+    await page.reload();
+    await cardOf(page, "alpha.png").locator(".pc-delete").click();
+    await expect(page.locator("#confirmModal")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#confirmModal")).toBeHidden();
+    expect(await listProjects(page)).toHaveLength(2);
+    await expect(cards(page)).toHaveCount(2);
+  });
+
+  test("Hapus removes only that project", async ({ page }) => {
+    await openHome(page);
+    await createViaHome(page, "alpha.png");
+    await goHome(page);
+    const beta = await createViaHome(page, "beta.png");
+    await page.reload();
+    await cardOf(page, "alpha.png").locator(".pc-delete").click();
+    await page.locator("#confirmOk").click();
+    await expect(cards(page)).toHaveCount(1);
+    await expect(cards(page).first()).toContainText("beta.png");
+    expect((await listProjects(page)).map((p) => p.id)).toEqual([beta]);
+  });
+
+  test("deleting the open project resets the session and a later save is a no-op", async ({ page }) => {
+    await openHome(page);
+    const alpha = await createViaHome(page, "alpha.png");
+    await goHome(page);
+    await cardOf(page, "alpha.png").locator(".pc-delete").click();
+    await page.locator("#confirmOk").click();
+    await expect(page.locator("#homeEmpty")).toBeVisible();
+    expect((await listProjects(page)).map((p) => p.id)).not.toContain(alpha);
+    expect(await page.evaluate(() => window.sitestryApp.workspaceActive())).toBe(false);
+    expect(await page.evaluate(() => window.sitestryApp.saveWorkspace())).toBe(false);
+  });
+
+  test("opening another project with unsaved edits asks first and cancel keeps the edits", async ({ page }) => {
+    await openHome(page);
+    const alpha = await createViaHome(page, "alpha.png");
+    await goHome(page);
+    const beta = await createViaHome(page, "beta.png");
+    await page.reload();
+    await cardOf(page, "alpha.png").locator(".pc-open").click();
+    await expect.poll(() => workspaceId(page)).toBe(alpha);
+    await edit(page);
+    await expect.poll(() => saveState(page)).toBe("dirty");
+    const edited = await storeColumns(page);
+    await goHome(page);
+
+    await cardOf(page, "beta.png").locator(".pc-open").click();
+    await expect(page.locator("#confirmModal")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#confirmModal")).toBeHidden();
+    expect(await workspaceId(page)).toBe(alpha);
+    expect(await page.evaluate(() => window.sitestryApp.hasUnsavedChanges())).toBe(true);
+
+    await cardOf(page, "beta.png").locator(".pc-open").click();
+    await page.locator("#confirmOk").click();
+    await expect.poll(() => workspaceId(page)).toBe(beta);
+    expect(await viewOf(page)).toBe("stage");
+    expect(await storeColumns(page)).toBe((await projectJson(page, beta)).columns.length);
+    expect(edited).toBeGreaterThan(await storeColumns(page));
+  });
+
+  test("a broken project card shows only Hapus", async ({ page }) => {
+    await openHome(page);
+    await createViaHome(page, "alpha.png");
+    await goHome(page);
+    const beta = await createViaHome(page, "beta.png");
+    fs.writeFileSync(`${WORKSPACE_DIR}/projects/${beta}/project.json`, "{not json");
+    await page.reload();
+    await expect(cards(page)).toHaveCount(2);
+    const broken = page.locator(`#homeGrid .project-card[data-project-id="${beta}"]`);
+    await expect(broken.locator(".pc-error")).toBeVisible();
+    await expect(broken.locator(".pc-open")).toBeHidden();
+    await expect(broken.locator(".pc-delete")).toBeVisible();
+    await expect(cardOf(page, "alpha.png").locator(".pc-open")).toBeVisible();
+  });
+
+  test("restore works with a non-ASCII file name", async ({ page }) => {
+    await openHome(page);
+    await createViaHome(page, "Denah Lantai 1 \u2013 Gatsu.png");
+    await page.reload();
+    await expect(cards(page).first().locator(".pc-title")).toContainText("Gatsu");
+    await cards(page).first().locator(".pc-open").click();
+    await expect.poll(() => viewOf(page)).toBe("stage");
+    expect(await stepOf(page)).toBe(1);
   });
 
   test("restore auto-builds 3D only when the saved and built hashes match", async ({ page }) => {
-    await uploadAndSave(page, { stage: 4, build: true });
+    await openHome(page);
+    await createViaHome(page, "alpha.png", { edit: true, stage: 4 });
+    await page.locator("#btnBuild3D").click();
+    await expect.poll(() => buildState(page)).toBe("fresh");
     await page.reload();
-    await page.locator("#btnContinue").click();
+    await cards(page).first().locator(".pc-open").click();
     await expect.poll(() => stepOf(page)).toBe(4);
     expect(await buildState(page)).toBe("fresh");
     expect(await sceneCount(page, "column")).toBe(1);
@@ -322,85 +487,48 @@ test.describe("v4 workspace home", () => {
     await page.locator("#btnSave").click();
     await expect.poll(() => saveState(page)).toBe("clean");
     await page.reload();
-    await page.locator("#btnContinue").click();
+    await cards(page).first().locator(".pc-open").click();
     await expect.poll(() => stepOf(page)).toBe(4);
     expect(await buildState(page)).toBe("stale");
     expect(await sceneCount(page, "column")).toBe(0);
   });
 
-  test("restore works with a non-ASCII file name", async ({ page }) => {
+  test("save and build in one project leave the other untouched", async ({ page }) => {
     await openHome(page);
-    await page.setInputFiles("#homeUploadInput", {
-      name: "Denah Lantai 1 \u2013 Gatsu.png",
-      mimeType: "image/png",
-      buffer: fs.readFileSync(FIXTURE),
-    });
-    await expect.poll(() => viewOf(page)).toBe("stage");
-    await page.evaluate(() => window.sitestryApp.saveWorkspace());
-    await page.reload();
-    await expect(page.locator("#homeTitle")).toContainText("Gatsu");
-    await page.locator("#btnContinue").click();
-    await expect.poll(() => viewOf(page)).toBe("stage");
-    expect(await stepOf(page)).toBe(1);
-  });
-
-  test("Ganti denah asks first and cancel changes nothing", async ({ page }) => {
-    await uploadAndSave(page);
-    await page.reload();
-    await page.locator("#btnReplace").click();
-    await expect(page.locator("#confirmModal")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.locator("#confirmModal")).toBeHidden();
-    expect(await listProjects(page)).toHaveLength(1);
-
-    await page.locator("#btnReplace").click();
-    await page.locator("#confirmOk").click();
-    await expect(page.locator("#homeEmpty")).toBeVisible();
-    expect(await listProjects(page)).toHaveLength(0);
-  });
-
-  test("corrupt workspace shows an error card with only Ganti denah", async ({ page }) => {
-    await uploadAndSave(page);
-    const id = await page.evaluate(() => window.sitestryApp.workspace.id);
-    fs.writeFileSync(`${WORKSPACE_DIR}/projects/${id}/project.json`, "{not json");
-    await page.reload();
-    await expect(page.locator("#homeError")).toBeVisible();
-    await expect(page.locator("#btnContinue")).toBeHidden();
-    await expect(page.locator("#btnReplace")).toBeVisible();
-  });
-
-  test("header Workspace link returns to home and Lanjutkan resumes in place", async ({ page }) => {
-    await startAtStage3(page);
+    const alpha = await createViaHome(page, "alpha.png", { edit: true });
+    await goHome(page);
+    const beta = await createViaHome(page, "beta.png", { edit: true });
+    const before = await projectMeta(page, beta);
+    await goHome(page);
+    await cardOf(page, "alpha.png").locator(".pc-open").click();
+    await expect.poll(() => workspaceId(page)).toBe(alpha);
     await edit(page);
-    await expect.poll(() => saveState(page)).toBe("dirty");
-    await page.locator("#btnWorkspace").click();
-    await expect.poll(() => viewOf(page)).toBe("home");
-    await expect(page.locator("#homeChips")).toContainText("belum disimpan");
-    await page.locator("#btnContinue").click();
-    await expect.poll(() => viewOf(page)).toBe("stage");
-    expect(await stepOf(page)).toBe(3);
-    expect(await page.evaluate(() => window.sitestryApp.hasUnsavedChanges())).toBe(true);
+    await page.locator("#btnSave").click();
+    await expect.poll(() => saveState(page)).toBe("clean");
+    await loadStage(page, 4);
+    await page.locator("#btnBuild3D").click();
+    await expect.poll(() => buildState(page)).toBe("fresh");
+    const after = await projectMeta(page, beta);
+    expect(after.saved_hash).toBe(before.saved_hash);
+    expect(after.built_hash).toBe(before.built_hash);
+    expect(after.saved_at).toBe(before.saved_at);
   });
 
   test("project id is set after sample boot and after upload", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    const id = () => page.evaluate(() => window.sitestryApp.workspace.id);
-    expect(await id()).toMatch(/^[0-9a-f]{8}$/);
+    expect(await workspaceId(page)).toMatch(/^[0-9a-f]{8}$/);
     await openHome(page);
-    await page.setInputFiles("#homeUploadInput", FIXTURE);
-    await expect.poll(() => viewOf(page)).toBe("stage");
-    expect(await id()).toMatch(/^[0-9a-f]{8}$/);
+    await createViaHome(page, "alpha.png", { save: false });
+    expect(await workspaceId(page)).toMatch(/^[0-9a-f]{8}$/);
   });
 
   test("uploading from stage 1 creates a second project and keeps the first", async ({ page }) => {
     await startAtStage3(page);
-    const id = () => page.evaluate(() => window.sitestryApp.workspace.id);
-    const first = await id();
+    const first = await workspaceId(page);
     await page.setInputFiles("#fileUploadInput", FIXTURE);
     await expect.poll(async () => (await listProjects(page)).length).toBe(2);
-    await expect.poll(id).not.toBe(first);
-    const kept = await (await page.request.get(`/api/projects/${first}`)).json();
-    expect(kept.has_project).toBe(true);
+    await expect.poll(() => workspaceId(page)).not.toBe(first);
+    expect((await (await page.request.get(`/api/projects/${first}`)).json()).has_project).toBe(true);
     await expect(page.locator("#confirmModal")).toBeHidden();
   });
 
@@ -491,7 +619,7 @@ test.describe("v4 stage 1 upload-only and locked calibration", () => {
   test("extraction state survives reload", async ({ page }) => {
     await uploadAndSave(page, { stage: 3 });
     await page.reload();
-    await page.locator("#btnContinue").click();
+    await cards(page).first().locator(".pc-open").click();
     await expect.poll(() => stepOf(page)).toBe(3);
     await loadStage(page, 1);
     expect(await page.evaluate(() => document.body.dataset.calib)).toBe("locked");
