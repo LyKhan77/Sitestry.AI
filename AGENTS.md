@@ -70,6 +70,7 @@ The system prioritizes **structural precision first** (Topological Walls, Small-
 │   └── plan.jpeg
 ├── backend/
 │   ├── main.py                # FastAPI server, sample catalog, PDF renderer & endpoints
+│   ├── blueprint_text.py      # OCR (RapidOCR) text boxes of the blueprint, cached; POST /api/blueprint-text
 │   ├── workspace.py           # Per-project storage (atomic writes) and ProjectsStore (many projects, legacy migration) behind /api/projects/*
 │   ├── cad_parser.py          # Procedural PDF Vector CAD Extractor (v3.0)
 │   ├── vectorizer.py          # ORB-RANSAC & Morphological Raster Vectorizer (v3.0)
@@ -85,6 +86,8 @@ The system prioritizes **structural precision first** (Topological Walls, Small-
         ├── viewer3d.js        # Three.js + three-bvh-csg 3D Digital Twin & GLB exporter
         ├── api.js             # FastAPI client & offline fallback generator
         ├── workspaceState.js  # Pure structure hash and dirty/stale flags (Save and Build 3D)
+        ├── roomFaces.js       # Closed-room detection and free wall ends from the wall graph (pure)
+        ├── roomNames.js       # Room name from OCR text boxes (pure)
         └── uiV4.js            # v4 Dock + Wizard UI: flag, timeline, dock/flyout, palette, Stage 2 reveal (default; `?ui=v3` = legacy)
 ```
 

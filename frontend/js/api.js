@@ -90,6 +90,21 @@ export class SitestryAPI {
     return (await this._projectFetch(`/${id}`, { method: "DELETE" })).json();
   }
 
+  /** OCR text boxes of the blueprint; `data` is null when OCR is unavailable (503) or failed. */
+  async fetchBlueprintText({ file = null, sampleId = null, pageNumber = 1 } = {}) {
+    try {
+      const fd = new FormData();
+      if (file) fd.append("file", file);
+      else if (sampleId) fd.append("sample_id", sampleId);
+      fd.append("page_number", String(pageNumber || 1));
+      const res = await fetch(`${this.baseUrl}/api/blueprint-text`, { method: "POST", body: fd });
+      if (!res.ok) return { data: null, status: res.status };
+      return { data: await res.json(), status: res.status };
+    } catch (_err) {
+      return { data: null, status: 0 };
+    }
+  }
+
   async inspectPdf(file) {
     const fd = new FormData();
     fd.append("file", file);

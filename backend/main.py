@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, Response
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from workspace import ProjectsStore, WorkspaceError
+import blueprint_text
 
 from cad_parser import extract_from_pdf_vector
 from vectorizer import extract_from_raster_image, detect_grid_scale_from_image
@@ -400,6 +401,42 @@ async def blueprint_guides(
         )
     except GuideError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail())
+
+
+@app.post("/api/blueprint-text")
+async def blueprint_text_boxes(
+    file: Optional[UploadFile] = File(None),
+    sample_id: Optional[str] = Form(None),
+    page_number: Optional[int] = Form(None),
+):
+    """Text boxes read from the blueprint (OCR), in blueprint pixels. Used to name new room zones."""
+    if bool(file) == bool(sample_id):
+        raise HTTPException(status_code=400, detail="Provide exactly one of sample_id or file.")
+    if sample_id:
+        sample = SAMPLES_CATALOG.get(sample_id)
+        if not sample:
+            raise HTTPException(status_code=404, detail=f"Unknown sample_id: {sample_id}")
+        fpath = FLOORPLAN_DIR / sample["filename"]
+        if not fpath.exists():
+            raise HTTPException(status_code=404, detail="Sample file missing on disk.")
+        source_bytes = fpath.read_bytes()
+        kind = "pdf_vector" if sample["source_type"] == "pdf_vector" else "raster"
+        page = page_number or sample["default_page"]
+    else:
+        source_bytes = await file.read(MAX_FILE_BYTES + 1)
+        if len(source_bytes) > MAX_FILE_BYTES:
+            raise HTTPException(status_code=413, detail="Source exceeds the 25 MiB limit.")
+        is_pdf = (file.filename or "").lower().endswith(".pdf") or source_bytes[:5] == b"%PDF-"
+        kind = "pdf_vector" if is_pdf else "raster"
+        page = page_number or 1
+    if page < 1:
+        raise HTTPException(status_code=422, detail="page_number must be 1-based.")
+    try:
+        return await run_in_threadpool(blueprint_text.extract_text_boxes, source_bytes, kind, page)
+    except blueprint_text.OcrUnavailable:
+        raise HTTPException(status_code=503, detail="OCR tidak tersedia")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 # ==================== PROJECTS (one folder each under workspace/projects/) ====================

@@ -14,6 +14,13 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 - **Stage 1 upload-only**: samples hidden in v4, ROI and scale read-only after extraction with a confirmed re-extract.
 - Dev/test: `?sample=<id>` boot (skips the home page, creates a workspace from the sample).
 
+### Added — Polish: docked inspector, wall connection, OCR names, base floor
+- **Inspector docked** at the top right under `2D Fit`/camera buttons; it no longer follows the selection (Stage 5 BoQ moves left of it).
+- **Delete cleanup**: deleting a wall or vertex removes vertices nothing else uses. **Endpoint snap is on by default** with a ring/dot marker at the cursor and on both ends while dragging. **Free-end markers** (red rings, Stage 3, layer toggle) show wall ends that stay open after a 0.3 m bridge: 36 on the Gatsu sample and 16 on Ancol.
+- **OCR room names** (`backend/blueprint_text.py`, `POST /api/blueprint-text`, `frontend/js/roomNames.js`): the sample PDFs have no text layer, so RapidOCR reads the rendered page once per source and the name is taken from the label inside the new zone. On the real projects 8/10 (Gatsu, 7 correct) and 15/24 (Ancol) zones got a name; the rest keep `Ruangan N`. `rapidocr-onnxruntime` is now a backend dependency; without it the endpoint answers 503 and everything falls back to generic names.
+- **Automatic base floor** in 3D: a 0.02 m slab under every closed room.
+- Changed: the legacy guided-wall test turns snap off explicitly because the guide ends coincide with extracted walls.
+
 ### Added — Room zones (v4 and legacy UI)
 - **Click inside a room** (`frontend/js/roomFaces.js`): closed rooms are found from the wall graph (planarized with a 0.6 m gap tolerance, dangling walls pruned, outer faces dropped). Hover highlights the room, one click creates a zone of the exact shape; clicking an existing zone selects it. On the real Ancol and Gatsu projects 16 of 19 saved rooms are detected in 5-9 ms.
 - **Manual polygon fallback** with node snapping, close by first point / `Enter` / double click on the last point, `Backspace`, `Esc`, and validation messages.

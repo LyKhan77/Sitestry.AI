@@ -9,6 +9,8 @@
 import { computeWallPreview, resolveConnection, WALL_SNAP_CSS_PX } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { ISOLATING_TOOLS } from "./store.js";
+import { api } from "./api.js";
+import { suggestRoomName } from "./roomNames.js";
 import { buildRoomFaces, faceAt, findFreeEnds, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
 
 const NODE_HIT_DIAMETER_PX = 11;
@@ -53,6 +55,8 @@ export class Canvas2DEngine {
     this.roomFacesCache = null;
     this.freeEndsCache = null;
     this.freeEndMarks = [];
+    this.blueprintTexts = null;
+    this.blueprintTextRevision = -1;
     this.roomHandles = [];
     this.isDraggingRoomVertex = false;
     this.roomDragTransaction = null;
@@ -108,6 +112,9 @@ export class Canvas2DEngine {
       this.clearTempDrawing();
     });
     this.store.addEventListener("sourceChanged", () => {
+      this.blueprintTexts = null;
+      this.blueprintTextRevision = -1;
+      this.store.emit("ocrStatus", { state: "idle" });
       this.roomFacesCache = null;
       this.freeEndsCache = null;
       this.cancelRoomVertexDrag();
@@ -122,6 +129,7 @@ export class Canvas2DEngine {
       }
     });
     this.store.addEventListener("toolChanged", () => {
+      if (this.store.ui.activeTool === "room") this.ensureBlueprintText();
       this.cancelRoomVertexDrag();
       this.cancelNodeDrag();
       this.cancelStairDrag();
@@ -763,6 +771,38 @@ export class Canvas2DEngine {
     this.cadLayer.batchDraw();
   }
 
+  // ==================== ROOM NAMES FROM OCR ====================
+  /** Read the blueprint labels once per source; a late answer for an older source is dropped. */
+  ensureBlueprintText() {
+    const store = this.store;
+    const revision = store.currentSource.revision;
+    if (this.blueprintTextRevision === revision) return;
+    if (!store.uploadedFile && !store.activeSampleId) return;
+    this.blueprintTextRevision = revision;
+    this.blueprintTexts = null;
+    store.emit("ocrStatus", { state: "loading" });
+    api
+      .fetchBlueprintText({
+        file: store.uploadedFile,
+        sampleId: store.activeSampleId,
+        pageNumber: store.project.metadata.page_number,
+      })
+      .then(({ data, status }) => {
+        if (store.currentSource.revision !== revision) return;
+        if (data) {
+          this.blueprintTexts = data.texts || [];
+          store.emit("ocrStatus", { state: "ready", count: this.blueprintTexts.length });
+        } else {
+          store.emit("ocrStatus", { state: status === 503 ? "unavailable" : "failed" });
+        }
+      });
+  }
+
+  /** Name for a new zone: the label OCR found inside the polygon, or null for the generic name. */
+  roomNameFor(polygon) {
+    return this.blueprintTexts ? suggestRoomName(polygon, this.blueprintTexts) : null;
+  }
+
   // ==================== ROOM ZONES ====================
   roomFaces() {
     if (!this.roomFacesCache) this.roomFacesCache = buildRoomFaces(this.store.project);
@@ -797,7 +837,7 @@ export class Canvas2DEngine {
     }
     const face = this.roomFaceAt(pt.x, pt.y);
     if (face) {
-      this.store.addRoomPolygon(face.polygon);
+      this.store.addRoomPolygon(face.polygon, { name: this.roomNameFor(face.polygon) });
       return;
     }
     this.store.emit("toast", { message: "Ruangan tidak tertutup dinding. Beralih ke mode Poligon." });
@@ -851,7 +891,7 @@ export class Canvas2DEngine {
       toast("Zona terlalu kecil.");
       return false;
     }
-    const room = this.store.addRoomPolygon(points);
+    const room = this.store.addRoomPolygon(points, { name: this.roomNameFor(points) });
     if (!room) return false;
     this.clearTempDrawing();
     return true;

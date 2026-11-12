@@ -124,6 +124,7 @@ class SitestryStudioApp {
       }
     });
     store.addEventListener("roomModeChanged", () => this.syncRoomModeUI());
+    store.addEventListener("ocrStatus", (e) => this.syncOcrStatus(e.detail));
     store.addEventListener("selectionChanged", () => {
       this.renderInspector();
     });
@@ -1348,6 +1349,19 @@ class SitestryStudioApp {
       const el = document.getElementById(id);
       if (el) el.checked = Boolean(store.ui.layers[key]);
     });
+  }
+
+  syncOcrStatus({ state, count }) {
+    const el = document.getElementById("lblRoomOcrStatus");
+    if (!el) return;
+    const text = {
+      loading: "Membaca label ruangan...",
+      ready: `Label terbaca (${count ?? 0})`,
+      unavailable: "OCR tidak tersedia, nama generik dipakai.",
+      failed: "Label tidak terbaca, nama generik dipakai.",
+    }[state];
+    el.hidden = !text;
+    el.textContent = text || "";
   }
 
   syncRoomModeUI() {
