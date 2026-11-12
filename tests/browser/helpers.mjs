@@ -1,11 +1,24 @@
 import { expect } from "@playwright/test";
 
 export async function gotoAppV4(page, viewport) {
-  return gotoApp(page, viewport, "/?ui=v4");
+  return gotoApp(page, viewport, "/?ui=v4&sample=gatsu_p4");
 }
 
-export async function gotoApp(page, viewport, path = "/?ui=v3") {
+/** Wipe the single workspace, but only on a server started with SITESTRY_WORKSPACE_DIR. */
+export async function resetWorkspace(page) {
+  const res = await page.request.get("/api/workspace");
+  const body = await res.json();
+  if (!body.test_dir) {
+    throw new Error(
+      "Refusing to wipe a real workspace: restart the server through Playwright (SITESTRY_WORKSPACE_DIR must be set)."
+    );
+  }
+  await page.request.delete("/api/workspace");
+}
+
+export async function gotoApp(page, viewport, path = "/?ui=v3&sample=gatsu_p4") {
   if (viewport) await page.setViewportSize(viewport);
+  await resetWorkspace(page);
   await page.goto(path);
   await page.waitForFunction(() => window.sitestryApp && window.sitestryApp.canvas2d);
   await page.waitForFunction(

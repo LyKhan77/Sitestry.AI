@@ -25,6 +25,66 @@ export class SitestryAPI {
     }
   }
 
+  // ==================== SINGLE WORKSPACE ====================
+  async _workspaceFetch(path, options = {}) {
+    const res = await fetch(`${this.baseUrl}/api/workspace${path}`, options);
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        detail = (await res.json()).detail || detail;
+      } catch (_err) {
+        /* body was not JSON */
+      }
+      throw new Error(detail);
+    }
+    return res;
+  }
+
+  async getWorkspace() {
+    return (await this._workspaceFetch("")).json();
+  }
+
+  async createWorkspaceSource({ file = null, sampleId = null, meta = {} } = {}) {
+    const fd = new FormData();
+    if (file) fd.append("file", file);
+    if (sampleId) fd.append("sample_id", sampleId);
+    fd.append("meta_json", JSON.stringify(meta));
+    return (await this._workspaceFetch("/source", { method: "POST", body: fd })).json();
+  }
+
+  async getWorkspaceSource() {
+    const res = await this._workspaceFetch("/source");
+    return { blob: await res.blob(), filename: res.headers.get("X-Source-Filename") || "source" };
+  }
+
+  async getWorkspaceProject() {
+    return (await this._workspaceFetch("/project")).json();
+  }
+
+  async saveWorkspaceProject({ project, meta }) {
+    return (
+      await this._workspaceFetch("/project", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project, meta }),
+      })
+    ).json();
+  }
+
+  async patchWorkspaceMeta(meta) {
+    return (
+      await this._workspaceFetch("/meta", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meta),
+      })
+    ).json();
+  }
+
+  async deleteWorkspace() {
+    return (await this._workspaceFetch("", { method: "DELETE" })).json();
+  }
+
   async inspectPdf(file) {
     const fd = new FormData();
     fd.append("file", file);
