@@ -58,6 +58,7 @@ flowchart LR
 
 ### Stage 4: Build 3D (`data-stage="4"`)
 - **Goal**: Procedurally extrude the verified 2D structural graph into an interactive 3D WebGL Digital Twin (`Viewer3DEngine`).
+- **2D is view-only here** (`store.canEdit(kind)` is false for every kind): pan, zoom and select to read properties; no drag, no Delete, inspector controls disabled. Annotation is edited only in Stage 3.
 - **3D CSG & Architectural Geometry**:
   - **Base floor**: every room closed by walls (0.6 m gap tolerance) gets a thin automatic concrete slab, so corridors and unnamed rooms are not holes; zones sit on top with their raised floor. Rooms that are not closed get no base floor (layer `Lantai dasar otomatis`).
   - Real boolean subtraction (`three-bvh-csg`) cuts door openings (`0.0m` to `2.15m`) and elevated window openings (`0.95m` sill to `2.20m` lintel, preserving bottom sill and top lintel walls).
@@ -68,6 +69,7 @@ flowchart LR
 
 ### Stage 5: Installation Equipment (`data-stage="5"`)
 - **Goal**: Manual installation of Telecommunication CME / Data Center MEP hardware inside the verified 3D building structure (`Split 2D | 3D Sync` view).
+- **Edit rule**: only `equipment` and `tray` can be drawn, selected, dragged, deleted or edited. Walls, doors, windows, columns, stairs and room zones are locked and click-through (`cadLayer`/`roomsLayer` do not listen), so installation tools work inside zoned rooms.
 - **Capabilities**:
   - Select from the CME Catalog (`42U Server Rack`, `UPS 250kVA Frame`, `Lithium Battery Bank`, `DC Rectifier`, `ACPDB/SDP Panel`, `PAC Precision Cooling`) and click on the floorplan to place, drag to reposition, or rotate `90°`.
   - Draw 3D overhead or underfloor **Cable Ladders (`[T]`)**.

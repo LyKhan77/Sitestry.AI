@@ -6,6 +6,10 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ## [v3.3.0] — Unreleased
 
+### Fixed / Changed — Per-stage edit rules
+- **Drawing over zoned rooms**: zone polygons only take clicks with the select tool in Stage 3-4, so cable trays, equipment, columns, doors and windows can be placed inside a room that already has a zone (before, the click selected the zone).
+- **Edit lock** (`store.canEdit(kind)`): annotation (node, wall, opening, column, stair, room) is editable only in Stage 3; `equipment` and `tray` only in Stage 5; Stage 4 is view-only (select to inspect). The 2D canvas gates `draggable` per kind, Stage 5 makes annotation layers click-through, and Delete/`Hapus` plus every inspector control are disabled when the stage may not edit the selected kind.
+
 ### Added — Workspace, Save and Build 3D (v4 UI)
 - **Project storage (`backend/workspace.py`, `/api/projects/*`)**: one folder per project under `workspace/projects/<id>/` (gitignored) with the original source, `project.json` and `meta.json`; ids are 8 lowercase hex characters, anything else is 404; an old single-project `workspace/` is migrated automatically at server start (verified copy, then the legacy files are removed); atomic writes, whitelisted meta keys, 25 MiB source and 300 KB thumbnail limits, corrupt folders reported instead of crashing. `SITESTRY_WORKSPACE_DIR` overrides the folder (the Playwright server uses a temp dir).
 - **Workspace with many projects**: card grid with `Buka` / `Hapus` (confirmed) and a `Project baru` upload card; every upload creates a new project; switching with unsaved edits asks first; header `Workspace` link. Replaces the earlier single-project card.
