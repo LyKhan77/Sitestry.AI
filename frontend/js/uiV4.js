@@ -182,6 +182,9 @@ export function renderBoqPanel(boq, equipments) {
     Number(boq.unifiedTrayMeters) > 0
       ? `<div class="boq-eq-row"><span>Tray Unified</span><strong>${boq.unifiedTrayMeters} m</strong></div>`
       : "",
+    Number(boq.pipeLengthMeters) > 0
+      ? `<div class="boq-eq-row"><span>Cooling Pipe</span><strong>${boq.pipeLengthMeters} m</strong></div>`
+      : "",
   ].join("");
   const rows = totals.length
     ? totals
@@ -506,7 +509,15 @@ export function initV4Dock(app) {
   decorateToolButtons();
   buildDockFlyout(3, [".wall-assist-bar", "#stairSettingsCard", "#roomSettingsCard", ".layer-card"]);
   buildDockFlyout(4, [".cam-toggles-row", ".surface-card:has(#stage4SummaryGrid)"]);
-  buildDockFlyout(5, ["#traySettingsCard", ".eq-catalog-grid", ".eq-subtype-row", ".preset-cme-row", "label.layer-check-row"]);
+  buildDockFlyout(5, [
+    "#traySettingsCard",
+    "#pipeSettingsCard",
+    ".eq-catalog-grid",
+    ".eq-subtype-row",
+    ".preset-cme-row",
+    "label.layer-check-row",
+    "#rowTransparentFloor",
+  ]);
   initExportMenu();
   initPalette(app);
   document.getElementById("btnRetryExtract")?.addEventListener("click", () => app.startExtractionV4());

@@ -541,6 +541,14 @@
           </div>
         </div>
 
+        <div class="surface-card" id="pipeSettingsCard">
+          <div class="card-header-label">POSISI COOLING PIPE</div>
+          <div class="mode-group" role="group" aria-label="Posisi cooling pipe">
+            <button type="button" class="mode-btn active" data-pipe-mounting="underfloor" aria-pressed="true">Underfloor</button>
+            <button type="button" class="mode-btn" data-pipe-mounting="overhead" aria-pressed="false">Overhead</button>
+          </div>
+        </div>
+
         <div class="surface-card">
           <div class="card-header-label">KATALOG PERANGKAT (5 KATEGORI)</div>
           <div class="eq-catalog-grid eq-generic-grid">
@@ -583,6 +591,10 @@
               <span class="kbd">T</span>
               <span>Gambar Cable Tray</span>
             </button>
+            <button class="tool-btn" data-tool="pipe" id="btnToolDrawPipe">
+              <span class="kbd">P</span>
+              <span>Gambar Cooling Pipe</span>
+            </button>
           </div>
 
           <div class="preset-cme-row">
@@ -593,6 +605,10 @@
           <label class="layer-check-row" style="margin-top:8px;">
             <input type="checkbox" id="chkLayerEquipments" checked />
             <span>Tampilkan Perangkat CME di 2D/3D</span>
+          </label>
+          <label class="layer-check-row" id="rowTransparentFloor" style="margin-top:4px;">
+            <input type="checkbox" id="chkTransparentFloor" />
+            <span>Transparan Lantai 3D (X-Ray)</span>
           </label>
         </div>
 

@@ -29,6 +29,11 @@ import {
   normalizeTrayService,
   trayColorForService,
 } from "./trayNetwork.js";
+import {
+  PIPE_MOUNTINGS,
+  defaultPipeElevation,
+  normalizePipeMounting,
+} from "./pipeNetwork.js";
 import { countsOf, structureHash, workspaceFlags } from "./workspaceState.js";
 import {
   hideExtractionLayers,
@@ -72,7 +77,9 @@ const TOOL_HINTS = {
   room_polygon:
     "Mode: <strong>Room Zone [Z] · Poligon</strong> — Klik titik sudut (menempel ke sudut dinding). Klik titik awal atau Enter untuk menutup, Esc membatalkan.",
   equipment:
-    "Mode: <strong>Place CME Equipment [E]</strong> — Klik pada denah untuk memasang Rak Server 42U, UPS, Battery, Rectifier, Panel, atau PAC.",
+    "Mode: <strong>Place CME Equipment [E]</strong> — Pilih kategori &amp; sub-tipe, lalu klik pada denah untuk memasang (item dinding otomatis snap ke dinding).",
+  pipe:
+    "Mode: <strong>Draw Cooling Pipe [P]</strong> — Klik titik-titik jalur pipa cooling (Underfloor / Overhead). Tahan Shift untuk lurus, klik dua kali / klik kanan / Enter untuk selesai.",
   tray: "Mode: <strong>Draw Cable Tray [T]</strong> — Klik titik-titik jalur tray (menempel ke ujung tray lain, Shift = lurus 90°); tekan Enter, klik dua kali di titik terakhir, atau klik kanan untuk menyelesaikan.",
 };
 
@@ -1325,6 +1332,19 @@ class SitestryStudioApp {
         });
       });
     });
+    document.querySelectorAll("[data-pipe-mounting]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        store.ui.pipeMounting = btn.dataset.pipeMounting;
+        document.querySelectorAll("[data-pipe-mounting]").forEach((b) => {
+          b.classList.toggle("active", b.dataset.pipeMounting === store.ui.pipeMounting);
+          b.setAttribute("aria-pressed", String(b.dataset.pipeMounting === store.ui.pipeMounting));
+        });
+      });
+    });
+    document.getElementById("chkTransparentFloor")?.addEventListener("change", (e) => {
+      store.ui.transparentFloor = Boolean(e.target.checked);
+      this.viewer3d.rebuildScene();
+    });
     document.querySelectorAll("[data-wall-mode]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.disabled) return;
@@ -1824,8 +1844,10 @@ class SitestryStudioApp {
         room: [3],
         equipment: [5],
         tray: [5],
+        pipe: [5],
       };
-      const nextTool = map[key];
+      const stage5Override = store.ui.step === 5 ? { p: "pipe" } : null;
+      const nextTool = (stage5Override && stage5Override[key]) || map[key];
       if (nextTool && toolStages[nextTool]?.includes(store.ui.step)) {
         store.setActiveTool(nextTool);
       }
@@ -2584,6 +2606,48 @@ class SitestryStudioApp {
         store.updateSelectedProperty({ width_m: parseFloat(e.target.value) || 0.45 });
       document.getElementById("inpTrayElev").onchange = (e) =>
         store.updateSelectedProperty({ elevation_m: parseFloat(e.target.value) || 2.65 });
+      document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
+    } else if (sel.kind === "pipe") {
+      const mnt = normalizePipeMounting(obj.mounting);
+      container.innerHTML = `
+        <div class="insp-card">
+          <div class="insp-title">Jalur Cooling Pipe</div>
+          <div class="insp-field">
+            <label>Nama Jalur</label>
+            <input type="text" id="inpPipeName" value="${obj.name}" />
+          </div>
+          <div class="insp-row-2">
+            <div class="insp-field">
+              <label>Posisi</label>
+              <select id="inpPipeMounting">
+                ${PIPE_MOUNTINGS.map((m) => `<option value="${m}"${mnt === m ? " selected" : ""}>${m}</option>`).join("")}
+              </select>
+            </div>
+            <div class="insp-field">
+              <label>Diameter (m)</label>
+              <input type="number" id="inpPipeDiam" step="0.02" value="${obj.diameter_m ?? 0.1}" />
+            </div>
+          </div>
+          <div class="insp-field">
+            <label>Elevasi pipa (m)</label>
+            <input type="number" id="inpPipeElev" step="0.05" value="${obj.elevation_m}" />
+          </div>
+          <button id="btnDelObj" class="insp-action-btn danger">Hapus Cooling Pipe</button>
+        </div>
+      `;
+      document.getElementById("inpPipeName").onchange = (e) => store.updateSelectedProperty({ name: e.target.value });
+      document.getElementById("inpPipeMounting").onchange = (e) => {
+        const nextMnt = normalizePipeMounting(e.target.value);
+        store.updateSelectedProperty({
+          mounting: nextMnt,
+          elevation_m: defaultPipeElevation(store.project, nextMnt),
+        });
+        this.renderInspector();
+      };
+      document.getElementById("inpPipeDiam").onchange = (e) =>
+        store.updateSelectedProperty({ diameter_m: parseFloat(e.target.value) || 0.1 });
+      document.getElementById("inpPipeElev").onchange = (e) =>
+        store.updateSelectedProperty({ elevation_m: parseFloat(e.target.value) || 0.15 });
       document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
     } else {
       const scale = store.project.metadata.scale_px_per_meter || 30.68;

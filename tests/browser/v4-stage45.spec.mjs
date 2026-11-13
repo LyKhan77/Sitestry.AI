@@ -76,7 +76,7 @@ test.describe("v4 stage 4-5 dock", () => {
         .map((el) => el.dataset.tool)
         .sort()
     );
-    expect(tools).toEqual(["equipment", "select", "tray"]);
+    expect(tools).toEqual(["equipment", "pipe", "select", "tray"]);
     await expect(page.locator("#btnDockPanel")).toHaveAttribute("aria-expanded", "true");
     const card = page.locator('.eq-catalog-card[data-eq-group="power"]');
     await expect(card).toBeVisible();

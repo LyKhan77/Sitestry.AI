@@ -20,6 +20,7 @@ import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { buildFitting, buildTrayProfile, fittingCutM, FITTING_KINDS } from "./trayProfiles.js";
 import { getEquipmentPreset } from "./equipmentCatalog.js";
 import { trayColorForService, trayPoints } from "./trayNetwork.js";
+import { PIPE_DEFAULT_COLOR, pipePoints } from "./pipeNetwork.js";
 import { deriveFittings } from "./trayFittings.js";
 
 export class Viewer3DEngine {
@@ -324,10 +325,13 @@ export class Viewer3DEngine {
       this.buildEquipments3D(scale, sel);
     }
 
-    // 5. Build 3D Overhead/Underfloor Cable Trays & Stepped Staircases
+    // 5. Build 3D Overhead/Underfloor Cable Trays, Cooling Pipes & Stepped Staircases
     if (layers.trays) {
       this.buildCableTrays3D(scale, sel);
       if (hasStructure) this.buildStairs3D(scale, sel);
+    }
+    if (layers.pipes !== false) {
+      this.buildPipes3D(scale, sel);
     }
 
     this.update3DLabelsOverlay();
@@ -405,6 +409,7 @@ export class Viewer3DEngine {
 
       const isSelected = sel?.kind === "room" && sel?.id === room.id;
       const isRaised = room.floor_type === "raised_floor_60cm";
+      const floorXray = isRaised && Boolean(this.store.ui.transparentFloor);
 
       let mat;
       if (isRaised && this.store.ui.layers.grid) {
@@ -416,12 +421,18 @@ export class Viewer3DEngine {
           color: isSelected ? 0xd4e9e2 : 0xf2f0eb,
           roughness: 0.65,
           metalness: 0.1,
+          transparent: floorXray,
+          opacity: floorXray ? 0.25 : 1.0,
+          depthWrite: !floorXray,
         });
       } else {
         mat = new THREE.MeshStandardMaterial({
           color: isSelected ? 0x00754a : 0xd8d4cc,
           roughness: 0.8,
           metalness: 0.08,
+          transparent: floorXray,
+          opacity: floorXray ? 0.25 : 1.0,
+          depthWrite: !floorXray,
         });
       }
 
@@ -848,6 +859,51 @@ export class Viewer3DEngine {
       };
       this.rootGroup.add(group);
       this.selectableMeshes.push(group);
+    }
+  }
+
+  buildPipes3D(scale, sel) {
+    void scale;
+    const project = this.store.project;
+    for (const pipe of project.pipe_runs || []) {
+      const pts = pipePoints(project, pipe);
+      if (pts.length < 2) continue;
+      const isSelected = sel?.kind === "pipe" && sel?.id === pipe.id;
+      const elev = Number(pipe.elevation_m ?? 0.15);
+      const radius = Math.max(0.025, (Number(pipe.diameter_m) || 0.1) / 2);
+      const mat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0x00754a : new THREE.Color(pipe.color || PIPE_DEFAULT_COLOR),
+        metalness: 0.55,
+        roughness: 0.35,
+      });
+
+      const pipeGroup = new THREE.Group();
+      pipeGroup.userData = { sitestryKind: "pipe", sitestryId: pipe.id, mounting: pipe.mounting };
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = this.pxToMeter3D(pts[i][0], pts[i][1]);
+        const p2 = this.pxToMeter3D(pts[i + 1][0], pts[i + 1][1]);
+        const dx = p2.x - p1.x;
+        const dz = p2.z - p1.z;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.05) continue;
+
+        const segMesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, 12), mat);
+        segMesh.position.set((p1.x + p2.x) / 2, elev, (p1.z + p2.z) / 2);
+        segMesh.rotation.z = Math.PI / 2;
+        segMesh.rotation.y = -Math.atan2(dz, dx);
+        pipeGroup.add(segMesh);
+      }
+
+      for (const [px, py] of pts) {
+        const p = this.pxToMeter3D(px, py);
+        const joint = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.25, 10, 10), mat);
+        joint.position.set(p.x, elev, p.z);
+        pipeGroup.add(joint);
+      }
+
+      this.rootGroup.add(pipeGroup);
+      this.selectableMeshes.push(pipeGroup);
     }
   }
 
