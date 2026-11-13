@@ -6,6 +6,10 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ## [v3.3.0] — Unreleased
 
+### Added — Stage 5 Select tool
+- A visible `Select (V)` tool is the default in Stage 5 (it was Equipment, so a click on empty canvas placed a rack by accident). `Esc` returns Equipment and Tray to Select once the tray draft is empty.
+- Fixed: a click on the exact axis of a tray selected nothing, because the dashed centerline sat above the strip and had no handler.
+
 ### Added — Cable tray network (Stage 5)
 - **Reliable drawing**: the dashed preview and existing tray/equipment shapes no longer swallow the click; quick clicks no longer finish the run early (only a repeated click on the same spot does); vertex and mid-segment snap with a ring marker, `Shift` ortho, right click to finish.
 - **Tray types**: `perforated` (default), `ladder`, `duct`, `wiremesh`, each with its own 3D profile; new `height_m`; default elevation = wall height - 0.45 m (tray top). Cable Ladder is renamed Cable Tray.

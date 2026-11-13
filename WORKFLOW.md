@@ -69,6 +69,7 @@ flowchart LR
 
 ### Stage 5: Installation Equipment (`data-stage="5"`)
 - **Goal**: Manual installation of Telecommunication CME / Data Center MEP hardware inside the verified 3D building structure (`Split 2D | 3D Sync` view).
+- **Select tool**: Stage 5 starts in `Select (V)`, the first tool of the rail. It picks equipment and trays, drags equipment, and clears the selection on an empty click without placing anything. `Equipment` and `Tray` place new items; `Esc` clears a tray draft first, then returns to Select.
 - **Edit rule**: only `equipment` and `tray` can be drawn, selected, dragged, deleted or edited. Walls, doors, windows, columns, stairs and room zones are locked and click-through (`cadLayer`/`roomsLayer` do not listen), so installation tools work inside zoned rooms.
 - **Capabilities**:
   - Select from the CME Catalog (`42U Server Rack`, `UPS 250kVA Frame`, `Lithium Battery Bank`, `DC Rectifier`, `ACPDB/SDP Panel`, `PAC Precision Cooling`) and click on the floorplan to place, drag to reposition, or rotate `90°`.
