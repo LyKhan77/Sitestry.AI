@@ -6,6 +6,12 @@
  */
 
 import { planWallInsertion, planWallSplit } from "./annotationGeometry.js";
+import {
+  EQUIPMENT_GROUPS,
+  getEquipmentPreset,
+  resolveEquipmentGroup,
+  snapWallMountPosition,
+} from "./equipmentCatalog.js";
 import { isSimplePolygon, polygonArea } from "./roomFaces.js";
 import {
   defaultTrayElevation,
@@ -67,6 +73,7 @@ export class SitestryStore extends EventTarget {
       step: 1,
       viewMode: "2d", // "2d" | "split" | "3d"
       activeTool: "roi", // "select" | "roi" | "ruler" | "wall" | "column" | "door" | "double_door" | "window" | "room" | "stair" | "equipment" | "tray"
+      pendingEquipmentGroup: "rack",
       pendingEquipmentCategory: "rack",
       trayType: "perforated", // "perforated" | "ladder" | "duct" | "wiremesh"
       selected: null, // { kind: "wall"|"node"|"column"|"opening"|"room"|"equipment"|"tray"|"stair", id: string }
@@ -759,27 +766,45 @@ export class SitestryStore extends EventTarget {
 
   addEquipment(x_px, y_px, category = null) {
     this.pushHistorySnapshot();
-    const cat = category || this.ui.pendingEquipmentCategory || "rack";
-    const presets = {
-      rack: { name: `Server Rack 42U #${this.project.equipments.length + 1}`, w: 0.6, d: 1.1, h: 2.1, elev: 0.45 },
-      ups: { name: `UPS Frame 250kVA #${this.project.equipments.length + 1}`, w: 1.6, d: 0.95, h: 2.0, elev: 0.0 },
-      battery: { name: `Lithium Battery Bank #${this.project.equipments.length + 1}`, w: 2.2, d: 0.9, h: 2.0, elev: 0.0 },
-      rectifier: { name: `DC Rectifier Cabinet #${this.project.equipments.length + 1}`, w: 1.2, d: 0.8, h: 2.0, elev: 0.0 },
-      panel: { name: `ACPDB / SDP Panel #${this.project.equipments.length + 1}`, w: 1.4, d: 0.65, h: 2.0, elev: 0.0 },
-      pac: { name: `PAC Downflow Cooling #${this.project.equipments.length + 1}`, w: 1.9, d: 0.95, h: 2.15, elev: 0.45 },
-    };
-    const p = presets[cat] || presets.rack;
+    const subtype = category || this.ui.pendingEquipmentCategory || "rack";
+    const preset = getEquipmentPreset(subtype);
+    const scale = this.project.metadata.scale_px_per_meter || 30.68;
+    const wallHeight = Number(this.project.metadata.default_wall_height_m) || 3.8;
+    let px = Math.round(x_px * 10) / 10;
+    let py = Math.round(y_px * 10) / 10;
+    let rot = 0;
+    let wallId = null;
+
+    if (preset.mount === "wall") {
+      const snapped = snapWallMountPosition(px, py, this.project.walls, this.project.nodes, 1.2 * scale);
+      if (snapped) {
+        px = snapped.x_px;
+        py = snapped.y_px;
+        rot = snapped.rotation_deg;
+        wallId = snapped.wall_id;
+      }
+    }
+
+    const elev =
+      preset.mount === "ceiling"
+        ? Math.max(0.2, Math.round((wallHeight - preset.h - 0.05) * 100) / 100)
+        : preset.elev;
+
     const eq = {
       id: `eq_${this.project.equipments.length + 1}_${Date.now().toString(36).slice(-3)}`,
-      name: p.name,
-      category: cat,
-      x_px: Math.round(x_px * 10) / 10,
-      y_px: Math.round(y_px * 10) / 10,
-      width_m: p.w,
-      depth_m: p.d,
-      height_m: p.h,
-      elevation_m: p.elev,
-      rotation_deg: 0,
+      name: `${preset.label} #${this.project.equipments.length + 1}`,
+      category: subtype,
+      domain_group: preset.group,
+      subtype,
+      mount: preset.mount,
+      wall_id: wallId,
+      x_px: px,
+      y_px: py,
+      width_m: preset.w,
+      depth_m: preset.d,
+      height_m: preset.h,
+      elevation_m: elev,
+      rotation_deg: rot,
     };
     this.project.equipments.push(eq);
     this.selectObject("equipment", eq.id);
@@ -1194,6 +1219,12 @@ export class SitestryStore extends EventTarget {
     ).length;
     const windowsCount = this.project.openings.filter((o) => o.type === "window").length;
 
+    const equipmentsByGroup = Object.fromEntries(EQUIPMENT_GROUPS.map((g) => [g, 0]));
+    for (const eq of this.project.equipments) {
+      const grp = resolveEquipmentGroup(eq);
+      equipmentsByGroup[grp] = (equipmentsByGroup[grp] || 0) + 1;
+    }
+
     return {
       solidWallMeters: solidWallMeters.toFixed(1),
       cageWallMeters: cageWallMeters.toFixed(1),
@@ -1207,6 +1238,7 @@ export class SitestryStore extends EventTarget {
       stairsCount: this.project.stairs.length,
       roomsCount: this.project.rooms.length,
       equipmentsCount: this.project.equipments.length,
+      equipmentsByGroup,
     };
   }
 }
