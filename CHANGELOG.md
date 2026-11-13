@@ -4,7 +4,7 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ---
 
-## [v3.4.0] — Unreleased
+## [v3.4.0] — 2026-11-13
 
 ### Added — Stage 5 Cabling, Generic Equipment, Tray Services & Cooling Pipes
 - **5 Generic Equipment Categories (`frontend/js/equipmentCatalog.js`)**: Simplified Stage 5 catalog into `Rack`, `Power`, `Data`, `Cooling`, and `Security` (Style A category cards + `#selEqSubtype` subtype selector). Added wall-mounted `outlet`, `grounding_bar`, `power_riser`, `data_outlet`, `data_riser`, `access_control`, `fire_sensor` and ceiling/floor `fan`, `cctv`, `chiller`, `in_row`, `data_cabinet` with automatic wall snapping (`snapWallMountPosition`) while preserving legacy `rack`, `ups`, `battery`, `rectifier`, `panel`, `pac` subtypes.

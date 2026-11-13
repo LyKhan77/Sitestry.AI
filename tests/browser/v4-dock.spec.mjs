@@ -59,7 +59,7 @@ test.describe("v4 stage 3 dock", () => {
         .map((el) => ({ tool: el.dataset.tool, label: el.getAttribute("aria-label") }))
     );
     expect(tools.map((t) => t.tool).sort()).toEqual(
-      ["select", "wall", "door", "double_door", "window", "column", "stair", "room"].sort()
+      ["select", "pan", "wall", "door", "double_door", "window", "column", "stair", "room"].sort()
     );
     for (const t of tools) expect(t.label && t.label.trim().length).toBeGreaterThan(0);
   });
