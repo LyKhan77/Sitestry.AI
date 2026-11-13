@@ -17,7 +17,9 @@ import {
   defaultTrayElevation,
   insertTrayRun,
   migrateTrayNetwork,
+  normalizeTrayService,
   pruneTrayNodes,
+  trayColorForService,
   trayLengthM,
 } from "./trayNetwork.js";
 import {
@@ -76,6 +78,7 @@ export class SitestryStore extends EventTarget {
       pendingEquipmentGroup: "rack",
       pendingEquipmentCategory: "rack",
       trayType: "perforated", // "perforated" | "ladder" | "duct" | "wiremesh"
+      trayService: "unified", // "power" | "data" | "unified"
       selected: null, // { kind: "wall"|"node"|"column"|"opening"|"room"|"equipment"|"tray"|"stair", id: string }
       wallMode: "manual", // "manual" | "guided"
       endpointSnap: true,
@@ -815,6 +818,7 @@ export class SitestryStore extends EventTarget {
   addCableTray(points_px, opts = {}) {
     if (!points_px || points_px.length < 2) return null;
     this.pushHistorySnapshot();
+    const service = normalizeTrayService(opts.service || this.ui.trayService);
     const tray = insertTrayRun(
       this.project,
       points_px,
@@ -822,10 +826,11 @@ export class SitestryStore extends EventTarget {
         id: `tray_${this.project.cable_trays.length + 1}_${Date.now().toString(36).slice(-3)}`,
         name: `Cable Tray Route #${this.project.cable_trays.length + 1}`,
         type: opts.type || this.ui.trayType || "perforated",
+        service,
         width_m: opts.width_m ?? 0.5,
         height_m: 0.1,
-        elevation_m: defaultTrayElevation(this.project),
-        color: "#cba258",
+        elevation_m: opts.elevation_m ?? defaultTrayElevation(this.project, service),
+        color: opts.color || trayColorForService(service),
       },
       1.5
     );
@@ -1210,8 +1215,16 @@ export class SitestryStore extends EventTarget {
     const raisedFloorTiles = Math.ceil(raisedFloorAreaM2 / 0.36);
 
     let trayLengthMeters = 0;
+    let powerTrayMeters = 0;
+    let dataTrayMeters = 0;
+    let unifiedTrayMeters = 0;
     for (const t of this.project.cable_trays) {
-      trayLengthMeters += trayLengthM(this.project, t, scale);
+      const len = trayLengthM(this.project, t, scale);
+      trayLengthMeters += len;
+      const svc = normalizeTrayService(t.service);
+      if (svc === "power") powerTrayMeters += len;
+      else if (svc === "data") dataTrayMeters += len;
+      else unifiedTrayMeters += len;
     }
 
     const doorsCount = this.project.openings.filter(
@@ -1232,6 +1245,9 @@ export class SitestryStore extends EventTarget {
       raisedFloorAreaM2: raisedFloorAreaM2.toFixed(1),
       raisedFloorTiles,
       trayLengthMeters: trayLengthMeters.toFixed(1),
+      powerTrayMeters: powerTrayMeters.toFixed(1),
+      dataTrayMeters: dataTrayMeters.toFixed(1),
+      unifiedTrayMeters: unifiedTrayMeters.toFixed(1),
       columnsCount: this.project.columns.length,
       doorsCount,
       windowsCount,

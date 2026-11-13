@@ -89,3 +89,23 @@ test("deleting a tray keeps nodes another tray uses and undo restores everything
   assert.equal(store.project.cable_trays.length, 2);
   assert.equal(store.project.tray_nodes.length, 3);
 });
+
+test("tray service splits BoQ lengths across power, data, and unified", () => {
+  const store = new SitestryStore();
+  store.project.metadata.scale_px_per_meter = 10;
+  store.ui.trayService = "power";
+  const p = store.addCableTray([[0, 0], [30, 0]]);
+  assert.equal(p.service, "power");
+  assert.equal(p.elevation_m, 3.25);
+
+  store.ui.trayService = "data";
+  const d = store.addCableTray([[0, 20], [50, 20]]);
+  assert.equal(d.service, "data");
+  assert.equal(d.elevation_m, 3.45);
+
+  const boq = store.computeBoQSummary();
+  assert.equal(boq.powerTrayMeters, "3.0");
+  assert.equal(boq.dataTrayMeters, "5.0");
+  assert.equal(boq.unifiedTrayMeters, "0.0");
+  assert.equal(boq.trayLengthMeters, "8.0");
+});

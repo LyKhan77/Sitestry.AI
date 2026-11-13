@@ -6,12 +6,33 @@
 
 export const TRAY_TYPES = ["perforated", "ladder", "duct", "wiremesh"];
 
-/** Trays hang 0.45 m below the ceiling; `elevation_m` is the tray top. */
-export const TRAY_CEILING_GAP_M = 0.45;
+export const TRAY_SERVICES = ["power", "data", "unified"];
 
-export function defaultTrayElevation(project) {
+/** Ceiling gaps per service: Data sits highest (0.35 m), Unified middle (0.45 m), Power lowest (0.55 m). */
+export const TRAY_CEILING_GAP_M = 0.45;
+const SERVICE_CEILING_GAPS = {
+  power: 0.55,
+  data: 0.35,
+  unified: TRAY_CEILING_GAP_M,
+};
+const SERVICE_COLORS = {
+  power: "#cba258",
+  data: "#0284c7",
+  unified: "#65a30d",
+};
+
+export function normalizeTrayService(service) {
+  return TRAY_SERVICES.includes(service) ? service : "unified";
+}
+
+export function trayColorForService(service) {
+  return SERVICE_COLORS[normalizeTrayService(service)];
+}
+
+export function defaultTrayElevation(project, service = "unified") {
   const wallHeight = Number(project?.metadata?.default_wall_height_m) || 3.8;
-  return Math.round((wallHeight - TRAY_CEILING_GAP_M) * 100) / 100;
+  const gap = SERVICE_CEILING_GAPS[normalizeTrayService(service)] ?? TRAY_CEILING_GAP_M;
+  return Math.round((wallHeight - gap) * 100) / 100;
 }
 
 /**
@@ -59,10 +80,23 @@ function addNode(project, x, y) {
   return node;
 }
 
-function nearestNode(project, x, y, radius) {
+function eligibleNodeIds(project, service, extraIds = null) {
+  if (!service) return null;
+  const target = normalizeTrayService(service);
+  const allowed = new Set(extraIds || []);
+  for (const tray of project.cable_trays || []) {
+    if (normalizeTrayService(tray.service) !== target) continue;
+    for (const id of tray.node_ids || []) allowed.add(id);
+  }
+  return allowed;
+}
+
+function nearestNode(project, x, y, radius, service = null, extraIds = null) {
+  const allowed = eligibleNodeIds(project, service, extraIds);
   let best = null;
   let bestDist = radius;
   for (const n of project.tray_nodes) {
+    if (allowed && !allowed.has(n.id)) continue;
     const d = Math.hypot(n.x_px - x, n.y_px - y);
     if (d <= bestDist) {
       best = n;
@@ -72,11 +106,13 @@ function nearestNode(project, x, y, radius) {
   return best;
 }
 
-/** Closest interior point of any tray segment: {tray, index, x, y, dist} or null. */
-function nearestSegment(project, x, y, radius) {
+/** Closest interior point of any matching-service tray segment: {tray, index, x, y, dist} or null. */
+function nearestSegment(project, x, y, radius, service = null) {
+  const target = service ? normalizeTrayService(service) : null;
   const byId = new Map(project.tray_nodes.map((n) => [n.id, n]));
   let best = null;
   for (const tray of project.cable_trays) {
+    if (target && normalizeTrayService(tray.service) !== target) continue;
     const ids = tray.node_ids || [];
     for (let i = 0; i < ids.length - 1; i++) {
       const a = byId.get(ids[i]);
@@ -101,6 +137,7 @@ function nearestSegment(project, x, y, radius) {
 export function migrateTrayNetwork(project) {
   if (!Array.isArray(project.tray_nodes)) project.tray_nodes = [];
   for (const tray of project.cable_trays || []) {
+    if (!tray.service) tray.service = "unified";
     if (!Array.isArray(tray.points_px) || tray.node_ids) continue;
     tray.node_ids = tray.points_px.map(([x, y]) => (nearestNode(project, x, y, MERGE_PX) || addNode(project, x, y)).id);
     delete tray.points_px;
@@ -120,11 +157,12 @@ export function trayPoints(project, tray) {
  */
 export function insertTrayRun(project, pointsPx, props, snapPx) {
   if (!Array.isArray(project.tray_nodes)) project.tray_nodes = [];
+  const service = normalizeTrayService(props?.service);
   const ids = [];
   for (const [x, y] of pointsPx) {
-    let node = nearestNode(project, x, y, snapPx);
+    let node = nearestNode(project, x, y, snapPx, service, ids);
     if (!node) {
-      const seg = nearestSegment(project, x, y, snapPx);
+      const seg = nearestSegment(project, x, y, snapPx, service);
       if (seg) {
         node = addNode(project, seg.x, seg.y);
         seg.tray.node_ids.splice(seg.index + 1, 0, node.id);
@@ -138,7 +176,7 @@ export function insertTrayRun(project, pointsPx, props, snapPx) {
     pruneTrayNodes(project);
     return null;
   }
-  const tray = { ...props, node_ids: ids };
+  const tray = { ...props, service, node_ids: ids };
   project.cable_trays.push(tray);
   return tray;
 }
@@ -158,9 +196,9 @@ export function trayLengthM(project, tray, scalePxPerMeter) {
 }
 
 /** Closest snap target for drawing: an existing node first, else a point on a segment. */
-export function nearestTrayAnchor(project, pt, radiusPx) {
-  const node = nearestNode(project, pt.x, pt.y, radiusPx);
+export function nearestTrayAnchor(project, pt, radiusPx, service = null) {
+  const node = nearestNode(project, pt.x, pt.y, radiusPx, service);
   if (node) return { x: node.x_px, y: node.y_px, kind: "node" };
-  const seg = nearestSegment(project, pt.x, pt.y, radiusPx);
+  const seg = nearestSegment(project, pt.x, pt.y, radiusPx, service);
   return seg ? { x: seg.x, y: seg.y, kind: "segment" } : null;
 }

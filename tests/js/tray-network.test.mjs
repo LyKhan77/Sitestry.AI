@@ -26,10 +26,26 @@ test("an anchor beats ortho when both apply", () => {
   assert.deepEqual(r, { x: 100, y: 8, snapped: "node" });
 });
 
-import { TRAY_TYPES, defaultTrayElevation } from "../../frontend/js/trayNetwork.js";
+import {
+  TRAY_SERVICES,
+  TRAY_TYPES,
+  defaultTrayElevation,
+  trayColorForService,
+} from "../../frontend/js/trayNetwork.js";
 
 test("tray types list the four supported types", () => {
   assert.deepEqual(TRAY_TYPES, ["perforated", "ladder", "duct", "wiremesh"]);
+});
+
+test("tray services list power, data, unified and compute layered elevations", () => {
+  assert.deepEqual(TRAY_SERVICES, ["power", "data", "unified"]);
+  const proj = { metadata: { default_wall_height_m: 3.8 } };
+  assert.equal(defaultTrayElevation(proj, "power"), 3.25);
+  assert.equal(defaultTrayElevation(proj, "data"), 3.45);
+  assert.equal(defaultTrayElevation(proj, "unified"), 3.35);
+  assert.equal(trayColorForService("power"), "#cba258");
+  assert.equal(trayColorForService("data"), "#0284c7");
+  assert.equal(trayColorForService("unified"), "#65a30d");
 });
 
 test("default elevation sits 0.45 m below the ceiling", () => {
@@ -123,4 +139,13 @@ test("nearest anchor prefers a node and falls back to a segment point", () => {
   assert.deepEqual(nearestTrayAnchor(project, { x: 3, y: 2 }, 8), { x: 0, y: 0, kind: "node" });
   assert.deepEqual(nearestTrayAnchor(project, { x: 50, y: 4 }, 8), { x: 50, y: 0, kind: "segment" });
   assert.equal(nearestTrayAnchor(project, { x: 50, y: 40 }, 8), null);
+});
+
+test("crossing power and data trays do not merge or split nodes", () => {
+  const project = emptyProject();
+  const p = insertTrayRun(project, [[0, 50], [100, 50]], { ...PROPS, id: "p1", service: "power" }, 2);
+  const d = insertTrayRun(project, [[50, 0], [50, 50]], { ...PROPS, id: "d1", service: "data" }, 2);
+  assert.equal(p.node_ids.length, 2);
+  assert.equal(d.node_ids.length, 2);
+  assert.equal(project.tray_nodes.length, 4);
 });
