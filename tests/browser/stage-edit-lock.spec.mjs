@@ -220,4 +220,14 @@ test.describe("delete and inspector follow the stage rule", () => {
     await page.keyboard.press("Delete");
     expect(await store(page, (s) => s.project.equipments.length)).toBe(0);
   });
+
+  test("a stage change locks the inspector even while one of its inputs has focus", async ({ page }) => {
+    await bootWithZoneAndEquipment(page);
+    await setTool(page, "select");
+    await store(page, (s) => s.selectObject("wall", s.project.walls[0].id));
+    expect(await enabledFields(page)).toBeGreaterThan(0);
+    await page.evaluate(() => document.querySelector("#inspectorContent input").focus());
+    await loadStage(page, 4);
+    expect(await enabledFields(page)).toBe(0);
+  });
 });

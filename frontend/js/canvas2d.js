@@ -3,7 +3,7 @@
  * Renders the Blueprint Raster/PDF Layer, 60x60cm Raised Floor Grid, Draggable ROI Box,
  * 2-Point Calibration Ruler, Room Polygons, Architectural Stepped Stairs, H-Beam Columns,
  * Topological Walls with CAD Door Swing Arcs + Door Tags (DD-xx / D-xx / TD-xx),
- * Multi-Line Window Glazing Symbols (W-xx), and Stage 5 CME Equipments / Cable Ladders.
+ * Multi-Line Window Glazing Symbols (W-xx), and Stage 5 CME Equipments / Cable Trays.
  */
 
 import { computeWallPreview, resolveConnection, WALL_SNAP_CSS_PX } from "./annotationGeometry.js";
@@ -1700,7 +1700,7 @@ export class Canvas2DEngine {
     const sel = this.store.ui.selected;
     const scale = this.store.project.metadata.scale_px_per_meter || 30.68;
 
-    // 1. Render 3D Cable Ladders / Trays
+    // 1. Render Cable Trays
     if (layers.trays) {
       for (const tray of this.store.project.cable_trays) {
         const trayPts = trayPoints(this.store.project, tray);

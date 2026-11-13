@@ -7,7 +7,7 @@
  * - 60x60cm Anti-Static Raised Floor Plenums + Pedestal Grid
  * - Steel H-Beam Structural Columns
  * - 3D Stepped Staircases with Safety Handrails
- * - Stage 5 Telco CME / MEP Assets (42U Racks, UPS, Battery Banks, Rectifiers, Panels, PAC, 3D Cable Ladders)
+ * - Stage 5 Telco CME / MEP Assets (42U Racks, UPS, Battery Banks, Rectifiers, Panels, PAC, 3D Cable Trays)
  */
 
 import * as THREE from "three";
@@ -323,7 +323,7 @@ export class Viewer3DEngine {
       this.buildEquipments3D(scale, sel);
     }
 
-    // 5. Build 3D Overhead/Underfloor Cable Ladders & Stepped Staircases
+    // 5. Build 3D Overhead/Underfloor Cable Trays & Stepped Staircases
     if (layers.trays) {
       this.buildCableTrays3D(scale, sel);
       if (hasStructure) this.buildStairs3D(scale, sel);

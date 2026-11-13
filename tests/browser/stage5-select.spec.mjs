@@ -88,4 +88,21 @@ test.describe("stage 5 select tool", () => {
     await page.keyboard.press("Escape");
     expect(await tool(page)).toBe("select");
   });
+
+  test("Select drags equipment with the mouse and keeps it selected", async ({ page }) => {
+    await bootStage5(page);
+    await store(page, (s, p) => s.addEquipment(p.x, p.y), EQ);
+    await store(page, (s) => s.selectObject(null, null));
+    await setTool(page, "select");
+    const [p] = await worldPointsToScreen(page, [EQ], 0.9);
+    await page.mouse.move(p.x, p.y);
+    await page.mouse.down();
+    await page.mouse.move(p.x + 60, p.y + 40, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    const eq = await store(page, (s) => ({ ...s.project.equipments[0], count: s.project.equipments.length }));
+    expect(eq.count).toBe(1);
+    expect(eq.x_px).toBeGreaterThan(EQ.x + 40);
+    expect(eq.y_px).toBeGreaterThan(EQ.y + 25);
+  });
 });

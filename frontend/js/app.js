@@ -1847,7 +1847,8 @@ class SitestryStudioApp {
 
     const sel = store.ui.selected;
     const obj = store.getSelectedObject();
-    const selectionKey = sel && obj ? `${sel.kind}:${sel.id}` : null;
+    // Editability is part of the key so a stage change re-renders (and re-locks) a focused inspector.
+    const selectionKey = sel && obj ? `${sel.kind}:${sel.id}:${store.canEdit(sel.kind)}` : null;
 
     // Do not destroy a focused input on unrelated geometry/selection refreshes.
     if (
