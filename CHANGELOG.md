@@ -4,6 +4,16 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ---
 
+## [v3.4.0] — Unreleased
+
+### Added — Stage 5 Cabling, Generic Equipment, Tray Services & Cooling Pipes
+- **5 Generic Equipment Categories (`frontend/js/equipmentCatalog.js`)**: Simplified Stage 5 catalog into `Rack`, `Power`, `Data`, `Cooling`, and `Security` (Style A category cards + `#selEqSubtype` subtype selector). Added wall-mounted `outlet`, `grounding_bar`, `power_riser`, `data_outlet`, `data_riser`, `access_control`, `fire_sensor` and ceiling/floor `fan`, `cctv`, `chiller`, `in_row`, `data_cabinet` with automatic wall snapping (`snapWallMountPosition`) while preserving legacy `rack`, `ups`, `battery`, `rectifier`, `panel`, `pac` subtypes.
+- **Tray Service Categories (`power` / `data` / `unified`)**: Added `service` classification on `cable_trays` (`trayNetwork.js`, `store.js`, `viewer3d.js`, `canvas2d.js`) with layered elevations (`-0.55 m` power, `-0.45 m` unified default, `-0.35 m` data), isolated `tray_nodes` snapping across crossing services, inspector service editor, and per-service BoQ totals.
+- **Cooling Pipe Network & `Transparan Lantai` (`frontend/js/sharedGraph.js`, `frontend/js/pipeNetwork.js`)**: Extracted shared polyline topology helper (`sharedGraph.js`), added `Pipe (P)` tool for `underfloor` (`0.15 m`) and `overhead` (`wall_height - 0.70 m`) cooling pipes, 3D cylindrical pipes & spherical joints, and `#chkTransparentFloor` in Stage 5 to inspect underfloor piping beneath semi-transparent 3D raised floor tiles.
+- **Automatic Source-to-Target Cabling & 3D Waterfalls (`frontend/js/cableRouter.js`)**: Added `Cabling (C)` tool supporting `power` (Path A Red / Path B Blue), `grounding` (Green), `link` (Inter-floor Orange), `cooling` (Cyan via `pipe_runs`), and `security` (Purple). Computes Dijkstra routes over eligible tray/pipe graphs, applies parallel lane offsets on shared runs, builds curved 3D waterfall drops (`CatmullRomCurve3` + drop-out collars), falls back orthogonally (`90°`) toward the nearest wall when outside snap radius, cascades delete on endpoint removal, and reports live per-system cable meters & Waterfall Drop counts in BoQ and `.GLB` export.
+
+---
+
 ## [v3.3.0] — Unreleased
 
 ### Added — Stage 5 Select tool
