@@ -29,11 +29,15 @@ Specs: `docs/superpowers/specs/2026-11-12-stage-edit-lock-design.md`, `docs/supe
 - [x] `Select (V)` button in the rail, default tool in Stage 5, Select picks equipment and tray, empty click clears, `Esc` returns Equipment/Tray to Select, tray selectable on its axis (plan: `docs/superpowers/plans/2026-11-13-stage5-select-tool.md`)
 - [x] Full Playwright suite: 271 passed, 1 stale expectation in `workspace.spec.mjs` (stage 5 rail now includes `select`) fixed; that spec 47/47
 
+### Pre-merge polish (`fix/pre-merge-polish`)
+- [x] Inspector re-locks on a stage change even when one of its inputs has focus; real-mouse drag test for Stage 5 Select; "Cable Ladder" comments renamed
+- [ ] Full Playwright suite on the final branch state (running), then local fast-forward merge into `main`
+
 ### Open
 - [ ] Merge `fix/stage-edit-lock`, `feat/tray-network` and `feat/stage5-select-tool` to `main` (or open PRs); user decides
 - [ ] Independent code review of both branches (the review subagent could not run in the first session)
 - [ ] Guided tray draw: deferred. The rung-strip detector found only fragments (Gatsu Battery-AHU run, Ancol Rectifier and Battery rooms) and flagged stairs, a toilet partition and rack rows, so it was not committed. Revisit only if Manual drawing proves insufficient.
-- [ ] Minor: inspector keeps a focused input unlocked when the stage changes with the same selection; non-90 degree elbows may leave small gaps; perforation holes are visual only (not in GLB); a few code comments still say "Cable Ladders"; `.gitignore` still lists the unused `tests/browser/pw8031.config.mjs`
+- [ ] Known limits (accepted): non-90 degree elbows may leave small gaps; perforation holes are visual only (not in GLB). `tests/browser/pw8031.config.mjs` stays git-ignored: it is the throwaway config used to run Playwright on a private port (8031) so the dev server on :8030 is never touched.
 
 ## Backlog (carried over from the old Phase 4 handover)
 
