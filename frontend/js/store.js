@@ -23,6 +23,14 @@ import {
   trayLengthM,
 } from "./trayNetwork.js";
 import {
+  PIPE_DEFAULT_COLOR,
+  defaultPipeElevation,
+  insertPipeRun,
+  normalizePipeMounting,
+  pipeLengthM,
+  prunePipeNodes,
+} from "./pipeNetwork.js";
+import {
   resolveStairGeometry,
   computeDefaultHeading,
   isParametricStair,
@@ -38,7 +46,7 @@ export const ISOLATING_TOOLS = new Set(["wall", "stair", "door", "double_door", 
 
 // Annotation is edited only in Stage 3; equipment and cable trays only in Stage 5.
 const STRUCTURAL_KINDS = new Set(["node", "wall", "opening", "column", "stair", "room"]);
-const INSTALL_KINDS = new Set(["equipment", "tray"]);
+const INSTALL_KINDS = new Set(["equipment", "tray", "pipe"]);
 
 export class SitestryStore extends EventTarget {
   constructor() {
@@ -67,6 +75,8 @@ export class SitestryStore extends EventTarget {
       equipments: [],
       cable_trays: [],
       tray_nodes: [],
+      pipe_runs: [],
+      pipe_nodes: [],
     };
 
     // UI & Editor state across the 5 Segmented Stages:
@@ -79,6 +89,8 @@ export class SitestryStore extends EventTarget {
       pendingEquipmentCategory: "rack",
       trayType: "perforated", // "perforated" | "ladder" | "duct" | "wiremesh"
       trayService: "unified", // "power" | "data" | "unified"
+      pipeMounting: "underfloor", // "underfloor" | "overhead"
+      transparentFloor: false,
       selected: null, // { kind: "wall"|"node"|"column"|"opening"|"room"|"equipment"|"tray"|"stair", id: string }
       wallMode: "manual", // "manual" | "guided"
       endpointSnap: true,
@@ -108,6 +120,7 @@ export class SitestryStore extends EventTarget {
         rooms: true,
         equipments: true,
         trays: true,
+        pipes: true,
         grid: true,
         freeEnds: true,
         baseFloor: true,
@@ -387,6 +400,8 @@ export class SitestryStore extends EventTarget {
       equipments: data.equipments || [],
       cable_trays: data.cable_trays || [],
       tray_nodes: data.tray_nodes || [],
+      pipe_runs: data.pipe_runs || [],
+      pipe_nodes: data.pipe_nodes || [],
     };
     migrateTrayNetwork(this.project);
     this.ui.selected = null;
@@ -429,6 +444,7 @@ export class SitestryStore extends EventTarget {
       room: this.project.rooms,
       equipment: this.project.equipments,
       tray: this.project.cable_trays,
+      pipe: this.project.pipe_runs,
       stair: this.project.stairs,
     };
     const arr = map[sel.kind];
@@ -840,6 +856,29 @@ export class SitestryStore extends EventTarget {
     return tray;
   }
 
+  addPipeRun(points_px, opts = {}) {
+    if (!points_px || points_px.length < 2) return null;
+    this.pushHistorySnapshot();
+    const mounting = normalizePipeMounting(opts.mounting || this.ui.pipeMounting);
+    const pipe = insertPipeRun(
+      this.project,
+      points_px,
+      {
+        id: `pipe_${(this.project.pipe_runs?.length || 0) + 1}_${Date.now().toString(36).slice(-3)}`,
+        name: `Cooling Pipe #${(this.project.pipe_runs?.length || 0) + 1}`,
+        mounting,
+        diameter_m: opts.diameter_m ?? 0.1,
+        elevation_m: opts.elevation_m ?? defaultPipeElevation(this.project, mounting),
+        color: opts.color || PIPE_DEFAULT_COLOR,
+      },
+      1.5
+    );
+    if (!pipe) return null;
+    this.selectObject("pipe", pipe.id);
+    this.emit("geometryChanged", { source: "addPipe" });
+    return pipe;
+  }
+
   buildStairParameters(parameters = {}) {
     const meta = this.project.metadata;
     const defaults = this.ui.stairDefaults || {};
@@ -1169,6 +1208,9 @@ export class SitestryStore extends EventTarget {
     } else if (sel.kind === "tray") {
       this.project.cable_trays = this.project.cable_trays.filter((t) => t.id !== sel.id);
       pruneTrayNodes(this.project);
+    } else if (sel.kind === "pipe") {
+      this.project.pipe_runs = (this.project.pipe_runs || []).filter((p) => p.id !== sel.id);
+      prunePipeNodes(this.project);
     } else if (sel.kind === "stair") {
       this.project.stairs = this.project.stairs.filter((s) => s.id !== sel.id);
     }
@@ -1227,6 +1269,11 @@ export class SitestryStore extends EventTarget {
       else unifiedTrayMeters += len;
     }
 
+    let pipeLengthMeters = 0;
+    for (const p of this.project.pipe_runs || []) {
+      pipeLengthMeters += pipeLengthM(this.project, p, scale);
+    }
+
     const doorsCount = this.project.openings.filter(
       (o) => o.type === "single_door" || o.type === "double_door"
     ).length;
@@ -1248,6 +1295,7 @@ export class SitestryStore extends EventTarget {
       powerTrayMeters: powerTrayMeters.toFixed(1),
       dataTrayMeters: dataTrayMeters.toFixed(1),
       unifiedTrayMeters: unifiedTrayMeters.toFixed(1),
+      pipeLengthMeters: pipeLengthMeters.toFixed(1),
       columnsCount: this.project.columns.length,
       doorsCount,
       windowsCount,
