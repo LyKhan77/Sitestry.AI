@@ -38,6 +38,8 @@ import {
 const TOOL_HINTS = {
   select:
     "Mode: <strong>Select / Move Vertex [V]</strong> — Geser titik sudut dinding, geser pintu di sepanjang dinding, atau klik elemen untuk edit properti.",
+  select_install:
+    "Mode: <strong>Select [V]</strong> — Klik perangkat atau tray untuk memilih dan mengedit properti, geser perangkat untuk memindahkan, klik area kosong untuk batal pilih. Pilih Equipment atau Tray untuk memasang yang baru.",
   roi: "Mode: <strong>ROI Crop Box [C]</strong> — Geser sudut kanan-bawah kotak hijau untuk mengecualikan Kop Surat / Title Block.",
   ruler:
     "Mode: <strong>2-Point Ruler [R]</strong> — Klik Titik A dan Titik B pada jarak yang diketahui (misal Grid Kolom 6000mm atau Tile 600mm).",
@@ -345,7 +347,7 @@ class SitestryStudioApp {
       store.ui.layers.equipments = true;
       if (badge2D) badge2D.textContent = "STAGE 5: MANUAL CME & CABLE LADDER INSTALLATION";
       this.setViewMode("split");
-      store.setActiveTool("equipment");
+      store.setActiveTool("select");
       this.viewer3d.rebuildScene();
     }
 
@@ -1390,7 +1392,8 @@ class SitestryStudioApp {
       btn.classList.toggle("active", btn.dataset.tool === tool);
     });
     const hintEl = document.getElementById("lblActiveToolHint");
-    const hintKey = tool === "room" && store.ui.roomMode === "polygon" ? "room_polygon" : tool;
+    let hintKey = tool === "room" && store.ui.roomMode === "polygon" ? "room_polygon" : tool;
+    if (tool === "select" && store.ui.step >= 4) hintKey = "select_install";
     if (hintEl && TOOL_HINTS[hintKey]) {
       hintEl.innerHTML = TOOL_HINTS[hintKey];
     }

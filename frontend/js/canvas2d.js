@@ -642,7 +642,7 @@ export class Canvas2DEngine {
           !hadDraft &&
           !typing &&
           document.body.dataset.ui === "v4" &&
-          this.isDrawingTool()
+          (this.isDrawingTool() || ["equipment", "tray"].includes(this.store.ui.activeTool))
         ) {
           this.store.setActiveTool("select");
         }
@@ -1723,6 +1723,7 @@ export class Canvas2DEngine {
           stroke: isSelected ? "#006241" : "#92400e",
           strokeWidth: 2,
           dash: [5, 5],
+          listening: false, // otherwise it hides the strip below and a click on the axis selects nothing
         });
 
         railLine.on("click", (ev) => {

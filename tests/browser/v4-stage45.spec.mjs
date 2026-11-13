@@ -67,7 +67,7 @@ test.describe("v4 stage 4-5 dock", () => {
     await expect(page.locator("#stage4SummaryGrid")).toBeVisible();
   });
 
-  test("stage 5 rail keeps equipment and tray tools, catalog is in the flyout", async ({ page }) => {
+  test("stage 5 rail offers select, equipment and tray tools, catalog is in the flyout", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
     await loadStage(page, 5);
     const tools = await page.evaluate(() =>
@@ -76,7 +76,7 @@ test.describe("v4 stage 4-5 dock", () => {
         .map((el) => el.dataset.tool)
         .sort()
     );
-    expect(tools).toEqual(["equipment", "tray"]);
+    expect(tools).toEqual(["equipment", "select", "tray"]);
     await expect(page.locator("#btnDockPanel")).toHaveAttribute("aria-expanded", "true");
     const card = page.locator('.eq-catalog-card[data-eq-cat="ups"]');
     await expect(card).toBeVisible();
