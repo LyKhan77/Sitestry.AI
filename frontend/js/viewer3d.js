@@ -18,6 +18,7 @@ import { SceneSync } from "./sceneSync.js";
 import { buildRoomFaces } from "./roomFaces.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { buildTrayProfile } from "./trayProfiles.js";
+import { trayPoints } from "./trayNetwork.js";
 
 export class Viewer3DEngine {
   constructor(containerId, labelsOverlayId, store) {
@@ -774,7 +775,7 @@ export class Viewer3DEngine {
 
   buildCableTrays3D(scale, sel) {
     for (const tray of this.store.project.cable_trays) {
-      const pts = tray.points_px || [];
+      const pts = trayPoints(this.store.project, tray);
       if (pts.length < 2) continue;
 
       const isSelected = sel?.kind === "tray" && sel?.id === tray.id;

@@ -7,7 +7,13 @@
 
 import { planWallInsertion, planWallSplit } from "./annotationGeometry.js";
 import { isSimplePolygon, polygonArea } from "./roomFaces.js";
-import { defaultTrayElevation } from "./trayNetwork.js";
+import {
+  defaultTrayElevation,
+  insertTrayRun,
+  migrateTrayNetwork,
+  pruneTrayNodes,
+  trayLengthM,
+} from "./trayNetwork.js";
 import {
   resolveStairGeometry,
   computeDefaultHeading,
@@ -52,6 +58,7 @@ export class SitestryStore extends EventTarget {
       stairs: [],
       equipments: [],
       cable_trays: [],
+      tray_nodes: [],
     };
 
     // UI & Editor state across the 5 Segmented Stages:
@@ -369,7 +376,9 @@ export class SitestryStore extends EventTarget {
       stairs: data.stairs || [],
       equipments: data.equipments || [],
       cable_trays: data.cable_trays || [],
+      tray_nodes: data.tray_nodes || [],
     };
+    migrateTrayNetwork(this.project);
     this.ui.selected = null;
     this.emit("geometryChanged", { source: "extract" });
     this.emit("selectionChanged", { selected: null });
@@ -781,17 +790,21 @@ export class SitestryStore extends EventTarget {
   addCableTray(points_px, opts = {}) {
     if (!points_px || points_px.length < 2) return null;
     this.pushHistorySnapshot();
-    const tray = {
-      id: `tray_${this.project.cable_trays.length + 1}_${Date.now().toString(36).slice(-3)}`,
-      name: `Cable Tray Route #${this.project.cable_trays.length + 1}`,
-      type: opts.type || this.ui.trayType || "perforated",
-      width_m: opts.width_m ?? 0.5,
-      height_m: 0.1,
-      elevation_m: defaultTrayElevation(this.project),
-      color: "#cba258",
-      points_px: points_px.map((pt) => [Math.round(pt[0] * 10) / 10, Math.round(pt[1] * 10) / 10]),
-    };
-    this.project.cable_trays.push(tray);
+    const tray = insertTrayRun(
+      this.project,
+      points_px,
+      {
+        id: `tray_${this.project.cable_trays.length + 1}_${Date.now().toString(36).slice(-3)}`,
+        name: `Cable Tray Route #${this.project.cable_trays.length + 1}`,
+        type: opts.type || this.ui.trayType || "perforated",
+        width_m: opts.width_m ?? 0.5,
+        height_m: 0.1,
+        elevation_m: defaultTrayElevation(this.project),
+        color: "#cba258",
+      },
+      1.5
+    );
+    if (!tray) return null;
     this.selectObject("tray", tray.id);
     this.emit("geometryChanged", { source: "addTray" });
     return tray;
@@ -1055,20 +1068,24 @@ export class SitestryStore extends EventTarget {
       });
     });
 
-    this.project.cable_trays.push({
-      id: `tray_preset_1_${Date.now().toString(36).slice(-2)}`,
-      name: "Main Overhead Power & Fiber Tray",
-      type: "perforated",
-      width_m: 0.5,
-      height_m: 0.1,
-      elevation_m: defaultTrayElevation(this.project),
-      color: "#cba258",
-      points_px: [
+    insertTrayRun(
+      this.project,
+      [
         [Math.round(cx - 115), Math.round(cy - 10)],
         [Math.round(cx + 135), Math.round(cy - 10)],
         [Math.round(cx + 135), Math.round(cy + 45)],
       ],
-    });
+      {
+        id: `tray_preset_1_${Date.now().toString(36).slice(-2)}`,
+        name: "Main Overhead Power & Fiber Tray",
+        type: "perforated",
+        width_m: 0.5,
+        height_m: 0.1,
+        elevation_m: defaultTrayElevation(this.project),
+        color: "#cba258",
+      },
+      1.5
+    );
 
     this.emit("geometryChanged", { source: "presetEquipment" });
   }
@@ -1121,6 +1138,7 @@ export class SitestryStore extends EventTarget {
       this.project.equipments = this.project.equipments.filter((e) => e.id !== sel.id);
     } else if (sel.kind === "tray") {
       this.project.cable_trays = this.project.cable_trays.filter((t) => t.id !== sel.id);
+      pruneTrayNodes(this.project);
     } else if (sel.kind === "stair") {
       this.project.stairs = this.project.stairs.filter((s) => s.id !== sel.id);
     }
@@ -1168,11 +1186,7 @@ export class SitestryStore extends EventTarget {
 
     let trayLengthMeters = 0;
     for (const t of this.project.cable_trays) {
-      const pts = t.points_px || [];
-      for (let i = 0; i < pts.length - 1; i++) {
-        trayLengthMeters +=
-          Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) / scale;
-      }
+      trayLengthMeters += trayLengthM(this.project, t, scale);
     }
 
     const doorsCount = this.project.openings.filter(

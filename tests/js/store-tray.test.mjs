@@ -48,3 +48,44 @@ test("the preset tray uses the new defaults", () => {
   assert.equal(tray.height_m, 0.1);
   assert.equal(tray.elevation_m, 3.35);
 });
+
+test("loading a legacy project migrates trays to shared nodes", () => {
+  const store = new SitestryStore();
+  store.loadProjectData({
+    cable_trays: [{ id: "t1", type: "ladder", width_m: 0.5, elevation_m: 2.75, points_px: [[0, 0], [50, 0], [50, 50]] }],
+  });
+  const tray = store.project.cable_trays[0];
+  assert.equal(tray.node_ids.length, 3);
+  assert.equal(store.project.tray_nodes.length, 3);
+  assert.equal("points_px" in tray, false);
+});
+
+test("BoQ tray length is unchanged by migration", () => {
+  const store = new SitestryStore();
+  store.project.metadata.scale_px_per_meter = 10;
+  store.loadProjectData({ cable_trays: [{ id: "t1", points_px: [[0, 0], [30, 0], [30, 40]] }] });
+  assert.equal(Number(store.computeBoQSummary().trayLengthMeters), 7);
+});
+
+test("addCableTray shares nodes: ending mid-segment splits the first tray", () => {
+  const store = new SitestryStore();
+  const a = store.addCableTray([[0, 0], [200, 0]]);
+  const b = store.addCableTray([[100, 80], [100, 0]]);
+  assert.equal(store.project.cable_trays.find((t) => t.id === a.id).node_ids.length, 3);
+  assert.equal(b.node_ids[1], store.project.cable_trays.find((t) => t.id === a.id).node_ids[1]);
+});
+
+test("deleting a tray keeps nodes another tray uses and undo restores everything", () => {
+  const store = new SitestryStore();
+  const a = store.addCableTray([[0, 0], [200, 0]]);
+  const b = store.addCableTray([[200, 0], [200, 90]]);
+  assert.equal(store.project.tray_nodes.length, 3);
+  store.selectObject("tray", b.id);
+  store.deleteSelected();
+  assert.equal(store.project.cable_trays.length, 1);
+  assert.equal(store.project.tray_nodes.length, 2);
+  assert.deepEqual(store.project.cable_trays[0].node_ids, a.node_ids);
+  store.undo();
+  assert.equal(store.project.cable_trays.length, 2);
+  assert.equal(store.project.tray_nodes.length, 3);
+});

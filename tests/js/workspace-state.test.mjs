@@ -52,3 +52,10 @@ test("countsOf counts each array", () => {
   project.openings = [{ id: "o1" }, { id: "o2" }];
   assert.deepEqual(countsOf(project), { walls: 1, openings: 2, columns: 1, stairs: 0, rooms: 0 });
 });
+
+test("structureHash ignores tray nodes", () => {
+  const a = base();
+  const b = base();
+  b.tray_nodes = [{ id: "tn_1", x_px: 3, y_px: 4 }];
+  assert.equal(structureHash(a), structureHash(b));
+});

@@ -477,6 +477,7 @@ class SitestryStudioApp {
         stairs: [],
         equipments: [],
         cable_trays: [],
+        tray_nodes: [],
       },
       true
     );

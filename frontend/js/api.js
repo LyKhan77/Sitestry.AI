@@ -303,6 +303,7 @@ export class SitestryAPI {
       rooms: [],
       equipments: [],
       cable_trays: [],
+      tray_nodes: [],
       stairs: [],
     };
   }

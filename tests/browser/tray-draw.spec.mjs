@@ -40,7 +40,7 @@ test.describe("tray drawing reliability", () => {
     await click(page, m);
     expect(await draftLength(page)).toBe(3);
     await page.keyboard.press("Enter");
-    expect((await trays(page))[0].points_px).toHaveLength(3);
+    expect((await trays(page))[0].node_ids).toHaveLength(3);
   });
 
   test("a click on an existing tray strip still adds a point", async ({ page }) => {
@@ -61,7 +61,7 @@ test.describe("tray drawing reliability", () => {
     await page.waitForTimeout(200);
     const list = await trays(page);
     expect(list).toHaveLength(1);
-    expect(list[0].points_px).toHaveLength(2);
+    expect(list[0].node_ids).toHaveLength(2);
   });
 
   test("right click finishes a run with two points and Escape clears the draft", async ({ page }) => {
@@ -76,5 +76,21 @@ test.describe("tray drawing reliability", () => {
     await page.keyboard.press("Escape");
     expect(await draftLength(page)).toBe(0);
     expect(await trays(page)).toHaveLength(1);
+  });
+
+  test("a run started near the middle of a tray splits it and joins at that vertex", async ({ page }) => {
+    await bootStage5(page);
+    const [a, b, nearMid, far] = await screen(page, [A, B, { x: MID.x, y: MID.y + 3 }, { x: MID.x, y: MID.y + 120 }]);
+    await click(page, a);
+    await click(page, b);
+    await page.keyboard.press("Enter");
+    await setTool(page, "tray");
+    await click(page, nearMid);
+    await click(page, far);
+    await page.keyboard.press("Enter");
+    const list = await trays(page);
+    expect(list).toHaveLength(2);
+    expect(list[0].node_ids).toHaveLength(3);
+    expect(list[1].node_ids[0]).toBe(list[0].node_ids[1]);
   });
 });

@@ -9,7 +9,7 @@
 import { computeWallPreview, resolveConnection, WALL_SNAP_CSS_PX } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { ISOLATING_TOOLS } from "./store.js";
-import { snapDrawPoint } from "./trayNetwork.js";
+import { nearestTrayAnchor, snapDrawPoint, trayPoints } from "./trayNetwork.js";
 import { api } from "./api.js";
 import { suggestRoomName } from "./roomNames.js";
 import { buildRoomFaces, faceAt, findFreeEnds, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
@@ -984,9 +984,10 @@ export class Canvas2DEngine {
 
   /** Cursor point for the tray tool: snaps to existing tray vertices (8 screen px), Shift = ortho. */
   traySnap(pt, ortho = false) {
-    const anchors = this.store.project.cable_trays.flatMap((t) => t.points_px || []);
+    const radiusPx = 8 / this.stageScale();
+    const anchor = nearestTrayAnchor(this.store.project, pt, radiusPx);
     const last = this.trayDraftPoints[this.trayDraftPoints.length - 1] || null;
-    return snapDrawPoint(pt, anchors, { radiusPx: 8 / this.stageScale(), from: last, ortho });
+    return snapDrawPoint(pt, anchor ? [[anchor.x, anchor.y]] : [], { radiusPx, from: last, ortho });
   }
 
   handleTrayToolClick(pt, ortho = false) {
@@ -1702,9 +1703,10 @@ export class Canvas2DEngine {
     // 1. Render 3D Cable Ladders / Trays
     if (layers.trays) {
       for (const tray of this.store.project.cable_trays) {
-        if (!tray.points_px || tray.points_px.length < 2) continue;
+        const trayPts = trayPoints(this.store.project, tray);
+        if (trayPts.length < 2) continue;
         const isSelected = sel?.kind === "tray" && sel?.id === tray.id;
-        const flatPts = tray.points_px.flat();
+        const flatPts = trayPts.flat();
         const widthPx = Math.max(8, (tray.width_m || 0.45) * scale);
 
         const railLine = new Konva.Line({
