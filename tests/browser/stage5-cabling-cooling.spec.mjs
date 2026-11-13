@@ -202,4 +202,71 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
     expect(res.cables[0].system).toBe("grounding");
     expect(res.draft).toBeNull();
   });
+
+  test("Tray Waterfall adapts geometry to tray type and blends with host tray color", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    await loadStage(page, 5);
+
+    const report = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const app = window.sitestryApp;
+      const results = [];
+      for (const [trayType, service] of [
+        ["perforated", "data"],
+        ["ladder", "power"],
+        ["wiremesh", "unified"],
+        ["duct", "power"],
+      ]) {
+        store.project.cable_trays = [];
+        store.project.tray_nodes = [];
+        store.project.equipments = [];
+        store.project.cables = [];
+
+        store.ui.trayType = trayType;
+        store.ui.trayService = service;
+        const tray = store.addCableTray([[1400, 960], [1800, 960]]);
+        const pdu = store.addEquipment(1420, 1020, "panel");
+        const rack = store.addEquipment(1780, 1020, "rack");
+        store.ui.cableSystem = service === "data" ? "security" : "power";
+        store.addCable(pdu.id, rack.id);
+
+        app.setViewMode("3d");
+        app.viewer3d.rebuildScene();
+
+        const trayGroup = app.viewer3d.selectableMeshes.find(
+          (m) => m.userData?.sitestryKind === "tray" && !m.userData?.role && !m.userData?.fittingKind
+        );
+        const wfGroup = app.viewer3d.selectableMeshes.find((m) => m.userData?.role === "tray_waterfall");
+        const trayColorHex = trayGroup?.children?.[0]?.children?.[0]?.material?.color?.getHex();
+        const wfMeshes = [];
+        wfGroup?.traverse((o) => {
+          if (o.isMesh) wfMeshes.push(o);
+        });
+        const wfColorHex = wfMeshes[0]?.material?.color?.getHex();
+        const hasAlphaSlot = wfMeshes.some((m) => Boolean(m.material?.alphaMap));
+        results.push({
+          trayType,
+          service,
+          expectedColor: tray.color,
+          variant: wfGroup?.userData?.waterfallVariant,
+          trayColorHex,
+          wfColorHex,
+          hasAlphaSlot,
+          meshCount: wfMeshes.length,
+        });
+      }
+      return results;
+    });
+
+    for (const r of report) {
+      expect(r.variant).toBe(r.trayType);
+      expect(r.wfColorHex).toBe(r.trayColorHex);
+      expect(r.meshCount).toBeGreaterThanOrEqual(1);
+      if (r.trayType === "perforated" || r.trayType === "ladder") {
+        expect(r.hasAlphaSlot).toBe(true);
+      } else {
+        expect(r.hasAlphaSlot).toBe(false);
+      }
+    }
+  });
 });

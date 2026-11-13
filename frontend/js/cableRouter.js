@@ -334,6 +334,8 @@ function trayHitEdgeAnchor(hit, nodeById, eq, scale) {
   const halfWpx = (widthM / 2) * scale;
   return {
     trayId: hit.run.id,
+    trayType: hit.run.type || "perforated",
+    trayService: normalizeTrayService(hit.run.service),
     trayElev: Number(hit.run.elevation_m ?? 3.35),
     sideH: Number(hit.run.height_m ?? 0.1),
     widthM,
@@ -402,6 +404,8 @@ export function resolveWaterfallGroups(project) {
       targetGroup = {
         id: `wfgrp_${groups.length + 1}`,
         trayId: ev.trayId,
+        trayType: ev.trayType,
+        trayService: ev.trayService,
         sideSign: ev.sideSign,
         tangent_x: ev.tangent.x,
         tangent_y: ev.tangent.y,

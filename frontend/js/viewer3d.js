@@ -17,7 +17,7 @@ import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
 import { SceneSync } from "./sceneSync.js";
 import { buildRoomFaces } from "./roomFaces.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
-import { buildFitting, buildTrayProfile, fittingCutM, FITTING_KINDS } from "./trayProfiles.js";
+import { buildFitting, buildTrayProfile, buildTrayWaterfall, fittingCutM, FITTING_KINDS } from "./trayProfiles.js";
 import { getEquipmentPreset } from "./equipmentCatalog.js";
 import { trayColorForService, trayPoints } from "./trayNetwork.js";
 import { PIPE_DEFAULT_COLOR, pipePoints } from "./pipeNetwork.js";
@@ -806,16 +806,18 @@ export class Viewer3DEngine {
     }
   }
 
+  trayMaterialFor(tray, isSelected = false) {
+    return new THREE.MeshStandardMaterial({
+      color: isSelected ? 0x00754a : new THREE.Color(tray?.color || trayColorForService(tray?.service)),
+      metalness: 0.7,
+      roughness: 0.3,
+    });
+  }
+
   buildCableTrays3D(scale, sel) {
     const project = this.store.project;
     const fittings = deriveFittings(project, scale);
     const trayById = new Map(project.cable_trays.map((t) => [t.id, t]));
-    const materialFor = (tray, isSelected) =>
-      new THREE.MeshStandardMaterial({
-        color: isSelected ? 0x00754a : new THREE.Color(tray.color || trayColorForService(tray.service)),
-        metalness: 0.7,
-        roughness: 0.3,
-      });
 
     for (const tray of project.cable_trays) {
       const pts = trayPoints(project, tray);
@@ -828,7 +830,7 @@ export class Viewer3DEngine {
 
       const trayGroup = new THREE.Group();
       trayGroup.userData = { sitestryKind: "tray", sitestryId: tray.id, trayType: tray.type };
-      const railMat = materialFor(tray, isSelected);
+      const railMat = this.trayMaterialFor(tray, isSelected);
 
       for (let i = 0; i < pts.length - 1; i++) {
         const p1 = this.pxToMeter3D(pts[i][0], pts[i][1]);
@@ -866,7 +868,7 @@ export class Viewer3DEngine {
       if (!first) continue;
       const isSelected =
         sel?.kind === "tray" && fitting.arms.some((a) => a.trayId === sel.id);
-      const group = buildFitting(fitting, first.type, Number(first.height_m) || 0.1, materialFor(first, isSelected));
+      const group = buildFitting(fitting, first.type, Number(first.height_m) || 0.1, this.trayMaterialFor(first, isSelected));
       const c = this.pxToMeter3D(fitting.x_px, fitting.y_px);
       group.position.set(c.x, Number(first.elevation_m) || 2.65, c.z);
       group.userData = {
@@ -983,50 +985,9 @@ export class Viewer3DEngine {
     }
   }
 
-  buildTrayWaterfallChute3D(widthM = 0.22, isSelected = false) {
-    const chuteGroup = new THREE.Group();
-    const chuteMat = new THREE.MeshStandardMaterial({
-      color: isSelected ? 0x00754a : 0xf59e0b,
-      roughness: 0.4,
-      metalness: 0.35,
-      side: THREE.DoubleSide,
-    });
-    const railMat = new THREE.MeshStandardMaterial({
-      color: isSelected ? 0x00754a : 0xb45309,
-      roughness: 0.45,
-      metalness: 0.4,
-    });
-
-    // Side-rail clip/hook (-0.045..0 in Z) that straddles the tray edge, curving smoothly out +Z and down -Y
-    const arcShape = new THREE.Shape();
-    arcShape.moveTo(-0.045, -0.025);
-    arcShape.lineTo(-0.045, 0.015);
-    arcShape.lineTo(0.01, 0.015);
-    arcShape.quadraticCurveTo(0.13, 0.015, 0.145, -0.15);
-    arcShape.lineTo(0.128, -0.15);
-    arcShape.quadraticCurveTo(0.112, -0.002, 0.005, -0.002);
-    arcShape.lineTo(-0.028, -0.002);
-    arcShape.lineTo(-0.028, -0.025);
-    arcShape.closePath();
-
-    const width = Math.max(0.16, Number(widthM) || 0.22);
-    const rampGeo = new THREE.ExtrudeGeometry(arcShape, { depth: width, bevelEnabled: false, curveSegments: 12 });
-    rampGeo.translate(0, 0, -width / 2);
-    // Rotate so ramp clips on tray edge (Z <= 0) and spills outward along +Z
-    rampGeo.rotateY(-Math.PI / 2);
-    chuteGroup.add(new THREE.Mesh(rampGeo, chuteMat));
-
-    // Side guide cheek plates
-    for (const sx of [-width / 2 - 0.005, width / 2 + 0.005]) {
-      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.048, 0.14), railMat);
-      rib.position.set(sx, 0.012, 0.055);
-      chuteGroup.add(rib);
-    }
-    return chuteGroup;
-  }
-
   buildCables3D(sel) {
     const project = this.store.project;
+    const trayById = new Map((project.cable_trays || []).map((t) => [t.id, t]));
     const wfGroups = resolveWaterfallGroups(project);
     for (const cab of project.cables || []) {
       const route = resolveCableRoute(project, cab, wfGroups);
@@ -1076,14 +1037,24 @@ export class Viewer3DEngine {
       this.selectableMeshes.push(cableGroup);
     }
 
-    // One grouped edge-mounted Tray Waterfall Chute per drop cluster on the tray side rail
+    // One grouped edge-mounted Tray Waterfall Chute per drop cluster, blending with its host tray's color & type
     for (const grp of wfGroups) {
       const gm = this.pxToMeter3D(grp.x_px, grp.y_px);
+      const hostTray = trayById.get(grp.trayId);
+      const trayType = hostTray?.type || grp.trayType || "perforated";
+      const trayHeightM = Number(hostTray?.height_m) || 0.1;
       const isSelected = sel?.kind === "tray" && sel?.id === grp.trayId;
-      const chute = this.buildTrayWaterfallChute3D(grp.chute_width_m, isSelected);
+      const chuteMat = this.trayMaterialFor(hostTray || { service: grp.trayService }, isSelected);
+      const chute = buildTrayWaterfall(trayType, grp.chute_width_m, trayHeightM, chuteMat);
       chute.position.set(gm.x, grp.z_top_m, gm.z);
       chute.rotation.y = Math.atan2(grp.out_x || 0, grp.out_y ?? 1);
-      chute.userData = { sitestryKind: "tray", sitestryId: grp.trayId, role: "tray_waterfall" };
+      chute.userData = {
+        sitestryKind: "tray",
+        sitestryId: grp.trayId,
+        trayType,
+        waterfallVariant: chute.userData.waterfallVariant,
+        role: "tray_waterfall",
+      };
       this.rootGroup.add(chute);
       this.selectableMeshes.push(chute);
     }

@@ -100,7 +100,7 @@ test("power and grounding sharing the same tray receive distinct lateral lane of
 
 test("multiple cables of the same system bundle side-by-side neatly and share edge-mounted Tray Waterfall groups", () => {
   const proj = baseProject();
-  insertTrayRun(proj, [[40, 60], [300, 60]], { id: "t1", service: "power", width_m: 0.5, elevation_m: 3.25 }, 1);
+  insertTrayRun(proj, [[40, 60], [300, 60]], { id: "t1", type: "ladder", service: "power", width_m: 0.5, elevation_m: 3.25 }, 1);
   const c1 = { id: "cp1", system: "power", path_label: "A", source_id: "panel1", target_id: "rack1" };
   const c2 = { id: "cp2", system: "power", path_label: "A", source_id: "panel1", target_id: "rack1" };
   const c3 = { id: "cp3", system: "power", path_label: "A", source_id: "panel1", target_id: "rack1", waterfall_style: "direct" };
@@ -110,6 +110,8 @@ test("multiple cables of the same system bundle side-by-side neatly and share ed
   // c1 and c2 share 1 entry group at x≈40 and 1 exit group at x≈300 (c3 is direct)
   assert.equal(groups.length, 2);
   assert.equal(groups[0].cableCount, 2);
+  assert.equal(groups[0].trayType, "ladder");
+  assert.equal(groups[0].trayService, "power");
   // Edge-mounted at tray center (y=60) + halfWidth (0.25m * 20px/m = 5px) -> y=65
   assert.ok(Math.abs(groups[0].y_px - 65) < 0.5);
 
