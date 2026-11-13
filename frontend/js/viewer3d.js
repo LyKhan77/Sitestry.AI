@@ -163,7 +163,7 @@ export class Viewer3DEngine {
   syncToolInteraction() {
     const isPan = this.store.ui.activeTool === "pan";
     if (this.controls) {
-      this.controls.mouseButtons.LEFT = isPan ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+      this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
       this.controls.update();
     }
     if (this.renderer?.domElement) {

@@ -113,7 +113,7 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
     await page.mouse.move(pt.x + 80, pt.y + 40);
     await page.mouse.up();
 
-    // Also verify 3D canvas ignores pointer selection and switches OrbitControls to PAN
+    // Also verify 3D canvas ignores pointer selection while keeping OrbitControls rotate on left-drag
     const res3d = await page.evaluate(async () => {
       const THREE = await import("three");
       const app = window.sitestryApp;
@@ -130,12 +130,12 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
         })
       );
       return {
-        isLeftPan: app.viewer3d.controls.mouseButtons.LEFT === THREE.MOUSE.PAN,
+        isLeftRotate: app.viewer3d.controls.mouseButtons.LEFT === THREE.MOUSE.ROTATE,
         selected: app.canvas2d.store.ui.selected,
         pos: app.canvas2d.stage.position(),
       };
     });
-    expect(res3d.isLeftPan).toBe(true);
+    expect(res3d.isLeftRotate).toBe(true);
     expect(res3d.selected).toBeNull();
     expect(Math.round(res3d.pos.x - before.x)).toBeGreaterThanOrEqual(70);
   });
