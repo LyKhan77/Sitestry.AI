@@ -89,7 +89,7 @@ test.describe("focused workspace", () => {
       ["select", "wall", "door", "double_door", "window", "column", "stair", "room"].sort()
     );
     await loadStage(page, 5);
-    expect((await visibleTools(page)).sort()).toEqual(["equipment", "tray"]);
+    expect((await visibleTools(page)).sort()).toEqual(["equipment", "select", "tray"]);
   });
 
   test("closed narrow sidebar is inert and cannot receive keyboard focus", async ({ page }) => {
