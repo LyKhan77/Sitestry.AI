@@ -6,14 +6,37 @@
  */
 
 import { planWallInsertion, planWallSplit } from "./annotationGeometry.js";
+import {
+  EQUIPMENT_GROUPS,
+  getEquipmentPreset,
+  resolveEquipmentGroup,
+  snapWallMountPosition,
+} from "./equipmentCatalog.js";
 import { isSimplePolygon, polygonArea } from "./roomFaces.js";
 import {
   defaultTrayElevation,
   insertTrayRun,
   migrateTrayNetwork,
+  normalizeTrayService,
   pruneTrayNodes,
+  trayColorForService,
   trayLengthM,
 } from "./trayNetwork.js";
+import {
+  PIPE_DEFAULT_COLOR,
+  defaultPipeElevation,
+  insertPipeRun,
+  normalizePipeMounting,
+  pipeLengthM,
+  prunePipeNodes,
+} from "./pipeNetwork.js";
+import {
+  CABLE_SYSTEMS,
+  cableColorFor,
+  normalizeWaterfallStyle,
+  resolveCableRoute,
+  resolveWaterfallGroups,
+} from "./cableRouter.js";
 import {
   resolveStairGeometry,
   computeDefaultHeading,
@@ -26,11 +49,11 @@ import {
 } from "./stairGeometry.js";
 
 /** Tools whose gesture owns the canvas: other elements are neither selectable nor draggable while one is active. */
-export const ISOLATING_TOOLS = new Set(["wall", "stair", "door", "double_door", "window", "column", "room"]);
+export const ISOLATING_TOOLS = new Set(["wall", "stair", "door", "double_door", "window", "column", "room", "pan"]);
 
 // Annotation is edited only in Stage 3; equipment and cable trays only in Stage 5.
 const STRUCTURAL_KINDS = new Set(["node", "wall", "opening", "column", "stair", "room"]);
-const INSTALL_KINDS = new Set(["equipment", "tray"]);
+const INSTALL_KINDS = new Set(["equipment", "tray", "pipe", "cable"]);
 
 export class SitestryStore extends EventTarget {
   constructor() {
@@ -59,6 +82,9 @@ export class SitestryStore extends EventTarget {
       equipments: [],
       cable_trays: [],
       tray_nodes: [],
+      pipe_runs: [],
+      pipe_nodes: [],
+      cables: [],
     };
 
     // UI & Editor state across the 5 Segmented Stages:
@@ -67,8 +93,16 @@ export class SitestryStore extends EventTarget {
       step: 1,
       viewMode: "2d", // "2d" | "split" | "3d"
       activeTool: "roi", // "select" | "roi" | "ruler" | "wall" | "column" | "door" | "double_door" | "window" | "room" | "stair" | "equipment" | "tray"
+      pendingEquipmentGroup: "rack",
       pendingEquipmentCategory: "rack",
       trayType: "perforated", // "perforated" | "ladder" | "duct" | "wiremesh"
+      trayService: "unified", // "power" | "data" | "unified"
+      pipeMounting: "underfloor", // "underfloor" | "overhead"
+      cableSystem: "power", // "power" | "grounding" | "link" | "cooling" | "security"
+      cablePathLabel: "A", // "A" | "B"
+      cableWaterfallStyle: "tray_waterfall", // "tray_waterfall" | "direct"
+      transparentFloor: false,
+      boqCollapsed: false,
       selected: null, // { kind: "wall"|"node"|"column"|"opening"|"room"|"equipment"|"tray"|"stair", id: string }
       wallMode: "manual", // "manual" | "guided"
       endpointSnap: true,
@@ -98,6 +132,8 @@ export class SitestryStore extends EventTarget {
         rooms: true,
         equipments: true,
         trays: true,
+        pipes: true,
+        cables: true,
         grid: true,
         freeEnds: true,
         baseFloor: true,
@@ -377,6 +413,9 @@ export class SitestryStore extends EventTarget {
       equipments: data.equipments || [],
       cable_trays: data.cable_trays || [],
       tray_nodes: data.tray_nodes || [],
+      pipe_runs: data.pipe_runs || [],
+      pipe_nodes: data.pipe_nodes || [],
+      cables: data.cables || [],
     };
     migrateTrayNetwork(this.project);
     this.ui.selected = null;
@@ -419,6 +458,8 @@ export class SitestryStore extends EventTarget {
       room: this.project.rooms,
       equipment: this.project.equipments,
       tray: this.project.cable_trays,
+      pipe: this.project.pipe_runs,
+      cable: this.project.cables,
       stair: this.project.stairs,
     };
     const arr = map[sel.kind];
@@ -759,27 +800,45 @@ export class SitestryStore extends EventTarget {
 
   addEquipment(x_px, y_px, category = null) {
     this.pushHistorySnapshot();
-    const cat = category || this.ui.pendingEquipmentCategory || "rack";
-    const presets = {
-      rack: { name: `Server Rack 42U #${this.project.equipments.length + 1}`, w: 0.6, d: 1.1, h: 2.1, elev: 0.45 },
-      ups: { name: `UPS Frame 250kVA #${this.project.equipments.length + 1}`, w: 1.6, d: 0.95, h: 2.0, elev: 0.0 },
-      battery: { name: `Lithium Battery Bank #${this.project.equipments.length + 1}`, w: 2.2, d: 0.9, h: 2.0, elev: 0.0 },
-      rectifier: { name: `DC Rectifier Cabinet #${this.project.equipments.length + 1}`, w: 1.2, d: 0.8, h: 2.0, elev: 0.0 },
-      panel: { name: `ACPDB / SDP Panel #${this.project.equipments.length + 1}`, w: 1.4, d: 0.65, h: 2.0, elev: 0.0 },
-      pac: { name: `PAC Downflow Cooling #${this.project.equipments.length + 1}`, w: 1.9, d: 0.95, h: 2.15, elev: 0.45 },
-    };
-    const p = presets[cat] || presets.rack;
+    const subtype = category || this.ui.pendingEquipmentCategory || "rack";
+    const preset = getEquipmentPreset(subtype);
+    const scale = this.project.metadata.scale_px_per_meter || 30.68;
+    const wallHeight = Number(this.project.metadata.default_wall_height_m) || 3.8;
+    let px = Math.round(x_px * 10) / 10;
+    let py = Math.round(y_px * 10) / 10;
+    let rot = 0;
+    let wallId = null;
+
+    if (preset.mount === "wall") {
+      const snapped = snapWallMountPosition(px, py, this.project.walls, this.project.nodes, 1.2 * scale);
+      if (snapped) {
+        px = snapped.x_px;
+        py = snapped.y_px;
+        rot = snapped.rotation_deg;
+        wallId = snapped.wall_id;
+      }
+    }
+
+    const elev =
+      preset.mount === "ceiling"
+        ? Math.max(0.2, Math.round((wallHeight - preset.h - 0.05) * 100) / 100)
+        : preset.elev;
+
     const eq = {
       id: `eq_${this.project.equipments.length + 1}_${Date.now().toString(36).slice(-3)}`,
-      name: p.name,
-      category: cat,
-      x_px: Math.round(x_px * 10) / 10,
-      y_px: Math.round(y_px * 10) / 10,
-      width_m: p.w,
-      depth_m: p.d,
-      height_m: p.h,
-      elevation_m: p.elev,
-      rotation_deg: 0,
+      name: `${preset.label} #${this.project.equipments.length + 1}`,
+      category: subtype,
+      domain_group: preset.group,
+      subtype,
+      mount: preset.mount,
+      wall_id: wallId,
+      x_px: px,
+      y_px: py,
+      width_m: preset.w,
+      depth_m: preset.d,
+      height_m: preset.h,
+      elevation_m: elev,
+      rotation_deg: rot,
     };
     this.project.equipments.push(eq);
     this.selectObject("equipment", eq.id);
@@ -790,6 +849,7 @@ export class SitestryStore extends EventTarget {
   addCableTray(points_px, opts = {}) {
     if (!points_px || points_px.length < 2) return null;
     this.pushHistorySnapshot();
+    const service = normalizeTrayService(opts.service || this.ui.trayService);
     const tray = insertTrayRun(
       this.project,
       points_px,
@@ -797,10 +857,11 @@ export class SitestryStore extends EventTarget {
         id: `tray_${this.project.cable_trays.length + 1}_${Date.now().toString(36).slice(-3)}`,
         name: `Cable Tray Route #${this.project.cable_trays.length + 1}`,
         type: opts.type || this.ui.trayType || "perforated",
+        service,
         width_m: opts.width_m ?? 0.5,
         height_m: 0.1,
-        elevation_m: defaultTrayElevation(this.project),
-        color: "#cba258",
+        elevation_m: opts.elevation_m ?? defaultTrayElevation(this.project, service),
+        color: opts.color || trayColorForService(service),
       },
       1.5
     );
@@ -808,6 +869,58 @@ export class SitestryStore extends EventTarget {
     this.selectObject("tray", tray.id);
     this.emit("geometryChanged", { source: "addTray" });
     return tray;
+  }
+
+  addPipeRun(points_px, opts = {}) {
+    if (!points_px || points_px.length < 2) return null;
+    this.pushHistorySnapshot();
+    const mounting = normalizePipeMounting(opts.mounting || this.ui.pipeMounting);
+    const pipe = insertPipeRun(
+      this.project,
+      points_px,
+      {
+        id: `pipe_${(this.project.pipe_runs?.length || 0) + 1}_${Date.now().toString(36).slice(-3)}`,
+        name: `Cooling Pipe #${(this.project.pipe_runs?.length || 0) + 1}`,
+        mounting,
+        diameter_m: opts.diameter_m ?? 0.1,
+        elevation_m: opts.elevation_m ?? defaultPipeElevation(this.project, mounting),
+        color: opts.color || PIPE_DEFAULT_COLOR,
+      },
+      1.5
+    );
+    if (!pipe) return null;
+    this.selectObject("pipe", pipe.id);
+    this.emit("geometryChanged", { source: "addPipe" });
+    return pipe;
+  }
+
+  addCable(sourceId, targetId, opts = {}) {
+    if (!sourceId || !targetId || sourceId === targetId) return null;
+    const source = this.project.equipments.find((e) => e.id === sourceId);
+    const target = this.project.equipments.find((e) => e.id === targetId);
+    if (!source || !target) return null;
+
+    this.pushHistorySnapshot();
+    const system = CABLE_SYSTEMS.includes(opts.system || this.ui.cableSystem)
+      ? opts.system || this.ui.cableSystem
+      : "power";
+    const pathLabel = system === "power" ? opts.path_label || this.ui.cablePathLabel || "A" : undefined;
+    if (!Array.isArray(this.project.cables)) this.project.cables = [];
+
+    const cable = {
+      id: `cab_${this.project.cables.length + 1}_${Date.now().toString(36).slice(-3)}`,
+      name: opts.name || `${system.toUpperCase()}: ${source.name} → ${target.name}`,
+      system,
+      ...(pathLabel ? { path_label: pathLabel } : {}),
+      waterfall_style: normalizeWaterfallStyle(opts.waterfall_style || this.ui.cableWaterfallStyle),
+      source_id: source.id,
+      target_id: target.id,
+      color: opts.color || cableColorFor({ system, path_label: pathLabel }, source, target),
+    };
+    this.project.cables.push(cable);
+    this.selectObject("cable", cable.id);
+    this.emit("geometryChanged", { source: "addCable" });
+    return cable;
   }
 
   buildStairParameters(parameters = {}) {
@@ -1136,9 +1249,17 @@ export class SitestryStore extends EventTarget {
       this.project.rooms = this.project.rooms.filter((r) => r.id !== sel.id);
     } else if (sel.kind === "equipment") {
       this.project.equipments = this.project.equipments.filter((e) => e.id !== sel.id);
+      this.project.cables = (this.project.cables || []).filter(
+        (c) => c.source_id !== sel.id && c.target_id !== sel.id
+      );
     } else if (sel.kind === "tray") {
       this.project.cable_trays = this.project.cable_trays.filter((t) => t.id !== sel.id);
       pruneTrayNodes(this.project);
+    } else if (sel.kind === "pipe") {
+      this.project.pipe_runs = (this.project.pipe_runs || []).filter((p) => p.id !== sel.id);
+      prunePipeNodes(this.project);
+    } else if (sel.kind === "cable") {
+      this.project.cables = (this.project.cables || []).filter((c) => c.id !== sel.id);
     } else if (sel.kind === "stair") {
       this.project.stairs = this.project.stairs.filter((s) => s.id !== sel.id);
     }
@@ -1185,14 +1306,44 @@ export class SitestryStore extends EventTarget {
     const raisedFloorTiles = Math.ceil(raisedFloorAreaM2 / 0.36);
 
     let trayLengthMeters = 0;
+    let powerTrayMeters = 0;
+    let dataTrayMeters = 0;
+    let unifiedTrayMeters = 0;
     for (const t of this.project.cable_trays) {
-      trayLengthMeters += trayLengthM(this.project, t, scale);
+      const len = trayLengthM(this.project, t, scale);
+      trayLengthMeters += len;
+      const svc = normalizeTrayService(t.service);
+      if (svc === "power") powerTrayMeters += len;
+      else if (svc === "data") dataTrayMeters += len;
+      else unifiedTrayMeters += len;
     }
+
+    let pipeLengthMeters = 0;
+    for (const p of this.project.pipe_runs || []) {
+      pipeLengthMeters += pipeLengthM(this.project, p, scale);
+    }
+
+    const cableMeters = Object.fromEntries(CABLE_SYSTEMS.map((s) => [s, 0]));
+    const waterfallGroups = resolveWaterfallGroups(this.project);
+    let directDrops = 0;
+    for (const cab of this.project.cables || []) {
+      const route = resolveCableRoute(this.project, cab, waterfallGroups);
+      cableMeters[cab.system] = (cableMeters[cab.system] || 0) + route.length_m;
+      directDrops += route.waterfalls.filter((wf) => wf.style !== "tray_waterfall").length;
+    }
+    const trayWaterfallCount = waterfallGroups.length;
+    const waterfallCount = trayWaterfallCount + directDrops;
 
     const doorsCount = this.project.openings.filter(
       (o) => o.type === "single_door" || o.type === "double_door"
     ).length;
     const windowsCount = this.project.openings.filter((o) => o.type === "window").length;
+
+    const equipmentsByGroup = Object.fromEntries(EQUIPMENT_GROUPS.map((g) => [g, 0]));
+    for (const eq of this.project.equipments) {
+      const grp = resolveEquipmentGroup(eq);
+      equipmentsByGroup[grp] = (equipmentsByGroup[grp] || 0) + 1;
+    }
 
     return {
       solidWallMeters: solidWallMeters.toFixed(1),
@@ -1201,12 +1352,24 @@ export class SitestryStore extends EventTarget {
       raisedFloorAreaM2: raisedFloorAreaM2.toFixed(1),
       raisedFloorTiles,
       trayLengthMeters: trayLengthMeters.toFixed(1),
+      powerTrayMeters: powerTrayMeters.toFixed(1),
+      dataTrayMeters: dataTrayMeters.toFixed(1),
+      unifiedTrayMeters: unifiedTrayMeters.toFixed(1),
+      pipeLengthMeters: pipeLengthMeters.toFixed(1),
+      powerCableMeters: cableMeters.power.toFixed(1),
+      groundingCableMeters: cableMeters.grounding.toFixed(1),
+      linkCableMeters: cableMeters.link.toFixed(1),
+      coolingRouteMeters: cableMeters.cooling.toFixed(1),
+      securityCableMeters: cableMeters.security.toFixed(1),
+      waterfallCount,
+      trayWaterfallCount,
       columnsCount: this.project.columns.length,
       doorsCount,
       windowsCount,
       stairsCount: this.project.stairs.length,
       roomsCount: this.project.rooms.length,
       equipmentsCount: this.project.equipments.length,
+      equipmentsByGroup,
     };
   }
 }

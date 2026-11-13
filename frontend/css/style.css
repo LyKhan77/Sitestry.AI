@@ -739,6 +739,29 @@ body[data-stage="5"] .studio-body {
   color: var(--text-warm-muted);
 }
 
+.eq-subtype-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.eq-subtype-row label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-warm-muted);
+}
+
+.eq-subtype-row select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border-warm, #d6d3cd);
+  background: var(--bg-warm-cream);
+  color: var(--green-house);
+  font-size: 12px;
+}
+
 .cme-tool-buttons {
   display: flex;
   flex-direction: column;
@@ -2333,6 +2356,46 @@ body[data-ui="v4"] .telemetry-bar .tele-item:last-child strong {
   /* keep the 3D legend clear of the bottom timeline */
   body[data-ui="v4"]:is([data-stage="4"], [data-stage="5"]) .legend-3d {
     bottom: 68px;
+  }
+
+  body[data-ui="v4"][data-stage="5"] .boq-panel.collapsed {
+    width: auto;
+    min-width: 170px;
+    padding: 8px 12px;
+  }
+
+  body[data-ui="v4"][data-stage="5"] .boq-panel.collapsed .boq-panel-body {
+    display: none;
+  }
+
+  body[data-ui="v4"] .boq-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  body[data-ui="v4"] .boq-toggle-btn {
+    border: 1px solid var(--border-hairline);
+    background: var(--bg-warm-cream);
+    color: var(--text-espresso);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  body[data-ui="v4"] .boq-toggle-btn:hover {
+    background: var(--green-light);
+    border-color: var(--green-accent);
+  }
+
+  body[data-ui="v4"] .boq-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   body[data-ui="v4"] .boq-panel-title {

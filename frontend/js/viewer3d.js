@@ -17,8 +17,11 @@ import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
 import { SceneSync } from "./sceneSync.js";
 import { buildRoomFaces } from "./roomFaces.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
-import { buildFitting, buildTrayProfile, fittingCutM, FITTING_KINDS } from "./trayProfiles.js";
-import { trayPoints } from "./trayNetwork.js";
+import { buildFitting, buildTrayProfile, buildTrayWaterfall, fittingCutM, FITTING_KINDS } from "./trayProfiles.js";
+import { getEquipmentPreset } from "./equipmentCatalog.js";
+import { trayColorForService, trayPoints } from "./trayNetwork.js";
+import { PIPE_DEFAULT_COLOR, pipePoints } from "./pipeNetwork.js";
+import { cableColorFor, resolveCableRoute, resolveWaterfallGroups } from "./cableRouter.js";
 import { deriveFittings } from "./trayFittings.js";
 
 export class Viewer3DEngine {
@@ -157,6 +160,17 @@ export class Viewer3DEngine {
     this.cageTex.wrapT = THREE.RepeatWrapping;
   }
 
+  syncToolInteraction() {
+    const isPan = this.store.ui.activeTool === "pan";
+    if (this.controls) {
+      this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+      this.controls.update();
+    }
+    if (this.renderer?.domElement) {
+      this.renderer.domElement.style.cursor = isPan ? "grab" : "";
+    }
+  }
+
   bindEvents() {
     this.store.addEventListener("geometryChanged", (event) => {
       // Stage 1-3 edits never touch 3D in the v4 workspace; Build 3D does.
@@ -166,9 +180,13 @@ export class Viewer3DEngine {
     this.store.addEventListener("selectionChanged", () => {
       this.updateSelectionHighlight();
     });
+    this.store.addEventListener("toolChanged", () => {
+      this.syncToolInteraction();
+    });
+    this.syncToolInteraction();
 
     this.renderer.domElement.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || this.store.ui.activeTool === "pan") return;
       const rect = this.renderer.domElement.getBoundingClientRect();
       this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -323,10 +341,16 @@ export class Viewer3DEngine {
       this.buildEquipments3D(scale, sel);
     }
 
-    // 5. Build 3D Overhead/Underfloor Cable Trays & Stepped Staircases
+    // 5. Build 3D Overhead/Underfloor Cable Trays, Cooling Pipes & Stepped Staircases
     if (layers.trays) {
       this.buildCableTrays3D(scale, sel);
       if (hasStructure) this.buildStairs3D(scale, sel);
+    }
+    if (layers.pipes !== false) {
+      this.buildPipes3D(scale, sel);
+    }
+    if (layers.cables !== false) {
+      this.buildCables3D(sel);
     }
 
     this.update3DLabelsOverlay();
@@ -404,6 +428,7 @@ export class Viewer3DEngine {
 
       const isSelected = sel?.kind === "room" && sel?.id === room.id;
       const isRaised = room.floor_type === "raised_floor_60cm";
+      const floorXray = isRaised && Boolean(this.store.ui.transparentFloor);
 
       let mat;
       if (isRaised && this.store.ui.layers.grid) {
@@ -415,12 +440,18 @@ export class Viewer3DEngine {
           color: isSelected ? 0xd4e9e2 : 0xf2f0eb,
           roughness: 0.65,
           metalness: 0.1,
+          transparent: floorXray,
+          opacity: floorXray ? 0.25 : 1.0,
+          depthWrite: !floorXray,
         });
       } else {
         mat = new THREE.MeshStandardMaterial({
           color: isSelected ? 0x00754a : 0xd8d4cc,
           roughness: 0.8,
           metalness: 0.08,
+          transparent: floorXray,
+          opacity: floorXray ? 0.25 : 1.0,
+          depthWrite: !floorXray,
         });
       }
 
@@ -739,7 +770,8 @@ export class Viewer3DEngine {
       const h = Number(eq.height_m) || 2.0;
       const elev = Number(eq.elevation_m) || 0.0;
       const isSelected = sel?.kind === "equipment" && sel?.id === eq.id;
-      const colors = palette[eq.category] || palette.rack;
+      const preset = getEquipmentPreset(eq.subtype || eq.category);
+      const colors = palette[eq.category] || { body: new THREE.Color(preset.color), accent: 0xf8fafc };
 
       const eqGroup = new THREE.Group();
       eqGroup.position.set(pos.x, elev, pos.z);
@@ -774,16 +806,18 @@ export class Viewer3DEngine {
     }
   }
 
+  trayMaterialFor(tray, isSelected = false) {
+    return new THREE.MeshStandardMaterial({
+      color: isSelected ? 0x00754a : new THREE.Color(tray?.color || trayColorForService(tray?.service)),
+      metalness: 0.7,
+      roughness: 0.3,
+    });
+  }
+
   buildCableTrays3D(scale, sel) {
     const project = this.store.project;
     const fittings = deriveFittings(project, scale);
     const trayById = new Map(project.cable_trays.map((t) => [t.id, t]));
-    const materialFor = (tray, isSelected) =>
-      new THREE.MeshStandardMaterial({
-        color: isSelected ? 0x00754a : 0xcba258,
-        metalness: 0.7,
-        roughness: 0.3,
-      });
 
     for (const tray of project.cable_trays) {
       const pts = trayPoints(project, tray);
@@ -796,7 +830,7 @@ export class Viewer3DEngine {
 
       const trayGroup = new THREE.Group();
       trayGroup.userData = { sitestryKind: "tray", sitestryId: tray.id, trayType: tray.type };
-      const railMat = materialFor(tray, isSelected);
+      const railMat = this.trayMaterialFor(tray, isSelected);
 
       for (let i = 0; i < pts.length - 1; i++) {
         const p1 = this.pxToMeter3D(pts[i][0], pts[i][1]);
@@ -834,7 +868,7 @@ export class Viewer3DEngine {
       if (!first) continue;
       const isSelected =
         sel?.kind === "tray" && fitting.arms.some((a) => a.trayId === sel.id);
-      const group = buildFitting(fitting, first.type, Number(first.height_m) || 0.1, materialFor(first, isSelected));
+      const group = buildFitting(fitting, first.type, Number(first.height_m) || 0.1, this.trayMaterialFor(first, isSelected));
       const c = this.pxToMeter3D(fitting.x_px, fitting.y_px);
       group.position.set(c.x, Number(first.elevation_m) || 2.65, c.z);
       group.userData = {
@@ -846,6 +880,183 @@ export class Viewer3DEngine {
       };
       this.rootGroup.add(group);
       this.selectableMeshes.push(group);
+    }
+  }
+
+  buildPipes3D(scale, sel) {
+    void scale;
+    const project = this.store.project;
+    const nodeDegree = new Map();
+    for (const pipe of project.pipe_runs || []) {
+      const ids = pipe.node_ids || [];
+      for (let i = 0; i < ids.length; i++) {
+        const inc = (i > 0 ? 1 : 0) + (i < ids.length - 1 ? 1 : 0);
+        nodeDegree.set(ids[i], (nodeDegree.get(ids[i]) || 0) + inc);
+      }
+    }
+
+    for (const pipe of project.pipe_runs || []) {
+      const pts = pipePoints(project, pipe);
+      if (pts.length < 2) continue;
+      const isSelected = sel?.kind === "pipe" && sel?.id === pipe.id;
+      const elev = Number(pipe.elevation_m ?? 0.15);
+      const radius = Math.max(0.03, (Number(pipe.diameter_m) || 0.1) / 2);
+      const innerR = radius * 0.72;
+      const outerMat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0x00754a : new THREE.Color(pipe.color || PIPE_DEFAULT_COLOR),
+        metalness: 0.55,
+        roughness: 0.35,
+      });
+      const boreMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        metalness: 0.2,
+        roughness: 0.85,
+        side: THREE.BackSide,
+      });
+      const flangeMat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0xcba258 : 0x334155,
+        metalness: 0.65,
+        roughness: 0.35,
+      });
+
+      // Hollow annular extrusion shape so pipe ends visibly show wall thickness and open bore
+      const wallShape = new THREE.Shape();
+      wallShape.absarc(0, 0, radius, 0, Math.PI * 2, false);
+      const holePath = new THREE.Path();
+      holePath.absarc(0, 0, innerR, 0, Math.PI * 2, true);
+      wallShape.holes.push(holePath);
+
+      const pipeGroup = new THREE.Group();
+      pipeGroup.userData = { sitestryKind: "pipe", sitestryId: pipe.id, mounting: pipe.mounting };
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = this.pxToMeter3D(pts[i][0], pts[i][1]);
+        const p2 = this.pxToMeter3D(pts[i + 1][0], pts[i + 1][1]);
+        const dx = p2.x - p1.x;
+        const dz = p2.z - p1.z;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.05) continue;
+
+        const segGroup = new THREE.Group();
+        segGroup.position.set(p1.x, elev, p1.z);
+        segGroup.rotation.y = -Math.atan2(dz, dx) + Math.PI / 2;
+
+        const shellGeo = new THREE.ExtrudeGeometry(wallShape, {
+          depth: len,
+          bevelEnabled: false,
+          curveSegments: 16,
+        });
+        const shellMesh = new THREE.Mesh(shellGeo, outerMat);
+        segGroup.add(shellMesh);
+
+        // Dark interior liner so the open pipe bore is deeply legible
+        const boreGeo = new THREE.CylinderGeometry(innerR, innerR, len, 16, 1, true);
+        boreGeo.rotateX(Math.PI / 2);
+        boreGeo.translate(0, 0, len / 2);
+        const boreMesh = new THREE.Mesh(boreGeo, boreMat);
+        segGroup.add(boreMesh);
+
+        pipeGroup.add(segGroup);
+      }
+
+      const ids = pipe.node_ids || [];
+      for (let i = 0; i < pts.length; i++) {
+        const [px, py] = pts[i];
+        const p = this.pxToMeter3D(px, py);
+        const deg = nodeDegree.get(ids[i]) || 1;
+        if (deg <= 1) {
+          // Open terminal flange rim (keeps bore open & hollow at pipe ends)
+          const nextPt = pts[i === 0 ? 1 : pts.length - 2];
+          const np = nextPt ? this.pxToMeter3D(nextPt[0], nextPt[1]) : p;
+          const rim = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.96, radius * 0.18, 8, 18), flangeMat);
+          rim.position.set(p.x, elev, p.z);
+          rim.rotation.y = -Math.atan2(np.z - p.z, np.x - p.x) + Math.PI / 2;
+          pipeGroup.add(rim);
+        } else {
+          // Compact elbow/tee coupling sleeve
+          const hub = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.18, 12, 12), flangeMat);
+          hub.position.set(p.x, elev, p.z);
+          pipeGroup.add(hub);
+        }
+      }
+
+      this.rootGroup.add(pipeGroup);
+      this.selectableMeshes.push(pipeGroup);
+    }
+  }
+
+  buildCables3D(sel) {
+    const project = this.store.project;
+    const trayById = new Map((project.cable_trays || []).map((t) => [t.id, t]));
+    const wfGroups = resolveWaterfallGroups(project);
+    for (const cab of project.cables || []) {
+      const route = resolveCableRoute(project, cab, wfGroups);
+      if (route.points3d.length < 2) continue;
+
+      const isSelected = sel?.kind === "cable" && sel?.id === cab.id;
+      const color = isSelected ? 0x00754a : new THREE.Color(cableColorFor(cab));
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.35,
+        metalness: 0.25,
+      });
+
+      const cableGroup = new THREE.Group();
+      cableGroup.userData = { sitestryKind: "cable", sitestryId: cab.id, system: cab.system };
+
+      const vectors = [];
+      for (const p of route.points3d) {
+        const m = this.pxToMeter3D(p.x_px, p.y_px);
+        const v = new THREE.Vector3(m.x, p.y_m, m.z);
+        if (!vectors.length || vectors[vectors.length - 1].distanceTo(v) > 0.02) {
+          vectors.push(v);
+        }
+      }
+      if (vectors.length < 2) continue;
+
+      const curve = new THREE.CatmullRomCurve3(vectors, false, "catmullrom", 0.12);
+      const radius = cab.system === "power" ? 0.02 : cab.system === "cooling" ? 0.02 : 0.015;
+      const tubularSegments = Math.max(16, vectors.length * 8);
+      const tubeMesh = new THREE.Mesh(new THREE.TubeGeometry(curve, tubularSegments, radius, 8, false), mat);
+      cableGroup.add(tubeMesh);
+
+      // Direct-drop grommet collars for non-waterfall drops
+      for (const wf of route.waterfalls) {
+        if (wf.style === "tray_waterfall") continue;
+        const wm = this.pxToMeter3D(wf.x_px, wf.y_px);
+        const collar = new THREE.Mesh(
+          new THREE.TorusGeometry(radius * 2.2, radius * 0.65, 8, 16),
+          new THREE.MeshStandardMaterial({ color: 0xcba258, metalness: 0.7, roughness: 0.3 })
+        );
+        collar.rotation.x = Math.PI / 2;
+        collar.position.set(wm.x, wf.z_top_m, wm.z);
+        cableGroup.add(collar);
+      }
+
+      this.rootGroup.add(cableGroup);
+      this.selectableMeshes.push(cableGroup);
+    }
+
+    // One grouped edge-mounted Tray Waterfall Chute per drop cluster, blending with its host tray's color & type
+    for (const grp of wfGroups) {
+      const gm = this.pxToMeter3D(grp.x_px, grp.y_px);
+      const hostTray = trayById.get(grp.trayId);
+      const trayType = hostTray?.type || grp.trayType || "perforated";
+      const trayHeightM = Number(hostTray?.height_m) || 0.1;
+      const isSelected = sel?.kind === "tray" && sel?.id === grp.trayId;
+      const chuteMat = this.trayMaterialFor(hostTray || { service: grp.trayService }, isSelected);
+      const chute = buildTrayWaterfall(trayType, grp.chute_width_m, trayHeightM, chuteMat);
+      chute.position.set(gm.x, grp.z_top_m, gm.z);
+      chute.rotation.y = Math.atan2(grp.out_x || 0, grp.out_y ?? 1);
+      chute.userData = {
+        sitestryKind: "tray",
+        sitestryId: grp.trayId,
+        trayType,
+        waterfallVariant: chute.userData.waterfallVariant,
+        role: "tray_waterfall",
+      };
+      this.rootGroup.add(chute);
+      this.selectableMeshes.push(chute);
     }
   }
 

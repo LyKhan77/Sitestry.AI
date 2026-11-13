@@ -76,12 +76,13 @@ test.describe("v4 stage 4-5 dock", () => {
         .map((el) => el.dataset.tool)
         .sort()
     );
-    expect(tools).toEqual(["equipment", "select", "tray"]);
+    expect(tools).toEqual(["cable", "equipment", "pan", "pipe", "select", "tray"]);
     await expect(page.locator("#btnDockPanel")).toHaveAttribute("aria-expanded", "true");
-    const card = page.locator('.eq-catalog-card[data-eq-cat="ups"]');
+    const card = page.locator('.eq-catalog-card[data-eq-group="power"]');
     await expect(card).toBeVisible();
     await card.click();
     await expect(card).toHaveClass(/active/);
+    await expect(page.locator("#selEqSubtype")).toBeVisible();
   });
 
   test("stage 5 shows BoQ and lists equipment after loading the preset", async ({ page }) => {

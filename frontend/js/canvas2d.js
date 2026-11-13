@@ -9,7 +9,10 @@
 import { computeWallPreview, resolveConnection, WALL_SNAP_CSS_PX } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { ISOLATING_TOOLS } from "./store.js";
-import { nearestTrayAnchor, snapDrawPoint, trayPoints } from "./trayNetwork.js";
+import { getEquipmentPreset } from "./equipmentCatalog.js";
+import { nearestTrayAnchor, snapDrawPoint, trayColorForService, trayPoints } from "./trayNetwork.js";
+import { PIPE_DEFAULT_COLOR, nearestPipeAnchor, pipePoints } from "./pipeNetwork.js";
+import { cableColorFor, resolveCableRoute, resolveWaterfallGroups } from "./cableRouter.js";
 import { api } from "./api.js";
 import { suggestRoomName } from "./roomNames.js";
 import { buildRoomFaces, faceAt, findFreeEnds, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
@@ -54,6 +57,7 @@ export class Canvas2DEngine {
     this.roomDraft = [];
     this.roomDraftRepeated = false;
     this.trayDraftRepeated = false;
+    this.pipeDraftRepeated = false;
     this.roomFacesCache = null;
     this.freeEndsCache = null;
     this.freeEndMarks = [];
@@ -63,6 +67,8 @@ export class Canvas2DEngine {
     this.isDraggingRoomVertex = false;
     this.roomDragTransaction = null;
     this.trayDraftPoints = [];
+    this.pipeDraftPoints = [];
+    this.cableDraftSourceId = null;
     this.cursorPosPx = { x: 0, y: 0 };
     this.isDraggingNode = false;
     this.dragTransaction = null;
@@ -308,16 +314,21 @@ export class Canvas2DEngine {
    */
   syncLayerListening() {
     const { step, activeTool } = this.store.ui;
-    this.roomsLayer.listening((step === 3 || step === 4) && activeTool === "select");
+    const isPan = activeTool === "pan";
+    this.roomsLayer.listening(!isPan && (step === 3 || step === 4) && activeTool === "select");
     // Stage 5 installs on top of the blueprint: annotation (rooms above too) must not take clicks.
-    this.cadLayer.listening(step !== 5);
-    // The tray tool must hit the stage, never an existing tray, equipment or stair shape.
-    this.cmeLayer.listening(activeTool !== "tray");
+    this.cadLayer.listening(!isPan && step !== 5);
+    // The tray and pipe tools must hit the stage, never an existing tray, pipe, equipment or stair shape.
+    this.cmeLayer.listening(!isPan && activeTool !== "tray" && activeTool !== "pipe");
+    const container = this.stage?.container?.();
+    if (container) {
+      container.style.cursor = this.panState ? "grabbing" : isPan ? "grab" : "";
+    }
   }
 
   /** A shape of this kind may be dragged: not while drawing, and only where the stage allows editing it. */
   canDrag(kind) {
-    return !this.isDrawingTool() && this.store.canEdit(kind);
+    return !this.isDrawingTool() && this.store.ui.activeTool !== "cable" && this.store.canEdit(kind);
   }
 
   isDrawingTool() {
@@ -331,7 +342,9 @@ export class Canvas2DEngine {
         this.wallChainNode ||
         this.rulerPoints.length ||
         this.roomDraft.length ||
-        this.trayDraftPoints.length
+        this.trayDraftPoints.length ||
+        this.pipeDraftPoints.length ||
+        this.cableDraftSourceId
     );
   }
 
@@ -461,7 +474,10 @@ export class Canvas2DEngine {
     this.roomDraft = [];
     this.roomDraftRepeated = false;
     this.trayDraftRepeated = false;
+    this.pipeDraftRepeated = false;
     this.trayDraftPoints = [];
+    this.pipeDraftPoints = [];
+    this.cableDraftSourceId = null;
     this.overlayLayer.destroyChildren();
     this.overlayLayer.batchDraw();
   }
@@ -511,7 +527,10 @@ export class Canvas2DEngine {
     });
 
     this.stage.on("mousedown", (e) => {
-      if (e.evt.button === 1 || (e.evt.button === 0 && this.spacePan)) {
+      if (
+        e.evt.button === 1 ||
+        (e.evt.button === 0 && (this.spacePan || this.store.ui.activeTool === "pan"))
+      ) {
         e.evt.preventDefault();
         const pos = this.stage.position();
         this.panState = {
@@ -520,6 +539,8 @@ export class Canvas2DEngine {
           stageX: pos.x,
           stageY: pos.y,
         };
+        const c = this.stage.container();
+        if (c) c.style.cursor = "grabbing";
         return;
       }
       if (e.evt.button !== 0) return;
@@ -538,8 +559,8 @@ export class Canvas2DEngine {
         this.handleRoomToolClick(pt);
         return;
       }
-      if (tool === "tray") {
-        this.handleTrayToolClick(pt, e.evt.shiftKey);
+      if (tool === "tray" || tool === "pipe") {
+        this.handleRunToolClick(tool, pt, e.evt.shiftKey);
         return;
       }
 
@@ -588,16 +609,18 @@ export class Canvas2DEngine {
       } else if (this.store.ui.activeTool === "wall") {
         this.clearTempDrawing();
       } else if (this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
-        // Same rule as the room polygon: only a second click on the same spot finishes the run,
-        // so quick clicks on different spots keep adding points.
         if (this.trayDraftRepeated) this.finishTrayDraft();
+      } else if (this.store.ui.activeTool === "pipe" && this.pipeDraftPoints.length >= 2) {
+        if (this.pipeDraftRepeated) this.finishPipeDraft();
       }
     });
 
     this.stage.on("contextmenu", (e) => {
-      if (this.store.ui.activeTool !== "tray") return;
+      const tool = this.store.ui.activeTool;
+      if (tool !== "tray" && tool !== "pipe") return;
       e.evt.preventDefault();
-      if (this.trayDraftPoints.length >= 2) this.finishTrayDraft();
+      if (tool === "tray" && this.trayDraftPoints.length >= 2) this.finishTrayDraft();
+      else if (tool === "pipe" && this.pipeDraftPoints.length >= 2) this.finishPipeDraft();
     });
 
     this.stage.on("mouseup", (e) => {
@@ -621,6 +644,8 @@ export class Canvas2DEngine {
 
     window.addEventListener("mouseup", () => {
       this.panState = null;
+      const c = this.stage?.container?.();
+      if (c) c.style.cursor = this.store.ui.activeTool === "pan" ? "grab" : "";
     });
 
     window.addEventListener("keydown", (e) => {
@@ -642,12 +667,14 @@ export class Canvas2DEngine {
           !hadDraft &&
           !typing &&
           document.body.dataset.ui === "v4" &&
-          (this.isDrawingTool() || ["equipment", "tray"].includes(this.store.ui.activeTool))
+          (this.isDrawingTool() || ["equipment", "tray", "pipe", "cable"].includes(this.store.ui.activeTool))
         ) {
           this.store.setActiveTool("select");
         }
       } else if (e.key === "Enter" && this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
         this.finishTrayDraft();
+      } else if (e.key === "Enter" && this.store.ui.activeTool === "pipe" && this.pipeDraftPoints.length >= 2) {
+        this.finishPipeDraft();
       } else if (
         e.key === "Enter" &&
         this.store.ui.activeTool === "room" &&
@@ -982,27 +1009,44 @@ export class Canvas2DEngine {
     this.cadLayer.batchDraw();
   }
 
-  /** Cursor point for the tray tool: snaps to existing tray vertices (8 screen px), Shift = ortho. */
-  traySnap(pt, ortho = false) {
+  /** Cursor point for tray/pipe tools: snaps to matching vertices (8 screen px), Shift = ortho. */
+  runSnap(kind, pt, ortho = false) {
     const radiusPx = 8 / this.stageScale();
-    const anchor = nearestTrayAnchor(this.store.project, pt, radiusPx);
-    const last = this.trayDraftPoints[this.trayDraftPoints.length - 1] || null;
+    const anchor =
+      kind === "pipe"
+        ? nearestPipeAnchor(this.store.project, pt, radiusPx)
+        : nearestTrayAnchor(this.store.project, pt, radiusPx, this.store.ui.trayService);
+    const pts = kind === "pipe" ? this.pipeDraftPoints : this.trayDraftPoints;
+    const last = pts[pts.length - 1] || null;
     return snapDrawPoint(pt, anchor ? [[anchor.x, anchor.y]] : [], { radiusPx, from: last, ortho });
   }
 
+  traySnap(pt, ortho = false) {
+    return this.runSnap("tray", pt, ortho);
+  }
+
+  handleRunToolClick(kind, pt, ortho = false) {
+    const snap = this.runSnap(kind, pt, ortho);
+    const pts = kind === "pipe" ? this.pipeDraftPoints : this.trayDraftPoints;
+    const last = pts[pts.length - 1];
+    const repeated = Boolean(last && Math.hypot(snap.x - last[0], snap.y - last[1]) < 2 / this.stageScale());
+    if (kind === "pipe") this.pipeDraftRepeated = repeated;
+    else this.trayDraftRepeated = repeated;
+    if (repeated) return;
+    pts.push([snap.x, snap.y]);
+  }
+
   handleTrayToolClick(pt, ortho = false) {
-    const snap = this.traySnap(pt, ortho);
-    const last = this.trayDraftPoints[this.trayDraftPoints.length - 1];
-    if (last && Math.hypot(snap.x - last[0], snap.y - last[1]) < 2 / this.stageScale()) {
-      this.trayDraftRepeated = true;
-      return;
-    }
-    this.trayDraftRepeated = false;
-    this.trayDraftPoints.push([snap.x, snap.y]);
+    this.handleRunToolClick("tray", pt, ortho);
   }
 
   finishTrayDraft() {
     this.store.addCableTray(this.trayDraftPoints);
+    this.clearTempDrawing();
+  }
+
+  finishPipeDraft() {
+    this.store.addPipeRun(this.pipeDraftPoints);
     this.clearTempDrawing();
   }
 
@@ -1709,9 +1753,10 @@ export class Canvas2DEngine {
         const flatPts = trayPts.flat();
         const widthPx = Math.max(8, (tray.width_m || 0.45) * scale);
 
+        const trayColor = tray.color || trayColorForService(tray.service);
         const railLine = new Konva.Line({
           points: flatPts,
-          stroke: isSelected ? "#00754A" : tray.color || "#cba258",
+          stroke: isSelected ? "#00754A" : trayColor,
           strokeWidth: widthPx,
           opacity: 0.42,
           lineCap: "round",
@@ -1720,7 +1765,7 @@ export class Canvas2DEngine {
 
         const centerLine = new Konva.Line({
           points: flatPts,
-          stroke: isSelected ? "#006241" : "#92400e",
+          stroke: isSelected ? "#006241" : tray.service === "data" ? "#0369a1" : tray.service === "unified" ? "#3f6212" : "#92400e",
           strokeWidth: 2,
           dash: [5, 5],
           listening: false, // otherwise it hides the strip below and a click on the axis selects nothing
@@ -1734,6 +1779,35 @@ export class Canvas2DEngine {
         this.cmeLayer.add(railLine);
         this.cmeLayer.add(centerLine);
       }
+    }
+
+    // 1b. Render Cooling Pipes
+    if (layers.pipes !== false) {
+      for (const pipe of this.store.project.pipe_runs || []) {
+        const pipePts = pipePoints(this.store.project, pipe);
+        if (pipePts.length < 2) continue;
+        const isSelected = sel?.kind === "pipe" && sel?.id === pipe.id;
+        const flatPts = pipePts.flat();
+        const diamPx = Math.max(5, (pipe.diameter_m || 0.1) * scale * 1.8);
+
+        const pipeLine = new Konva.Line({
+          points: flatPts,
+          stroke: isSelected ? "#00754A" : pipe.color || PIPE_DEFAULT_COLOR,
+          strokeWidth: diamPx,
+          opacity: 0.8,
+          lineCap: "round",
+          lineJoin: "round",
+          dash: pipe.mounting === "underfloor" ? [6, 3] : undefined,
+        });
+        pipeLine.on("click", (ev) => {
+          ev.cancelBubble = true;
+          this.store.selectObject("pipe", pipe.id);
+        });
+        this.cmeLayer.add(pipeLine);
+      }
+    }
+
+    if (layers.trays) {
 
       // 2. Render Architectural Stepped Stairs
       for (const st of this.store.project.stairs) {
@@ -1878,9 +1952,11 @@ export class Canvas2DEngine {
 
       for (const eq of this.store.project.equipments) {
         const isSelected = sel?.kind === "equipment" && sel?.id === eq.id;
-        const wPx = Math.max(14, (eq.width_m || 1.2) * scale);
-        const dPx = Math.max(12, (eq.depth_m || 0.9) * scale);
-        const style = catColors[eq.category] || catColors.rack;
+        const wPx = Math.max(12, (eq.width_m || 1.2) * scale);
+        const dPx = Math.max(10, (eq.depth_m || 0.9) * scale);
+        const preset = getEquipmentPreset(eq.subtype || eq.category);
+        const style = catColors[eq.category] || { fill: preset.color, stroke: "#ffffff" };
+        const isWallOrCeil = (eq.mount || preset.mount) !== "floor";
 
         const eqGroup = new Konva.Group({
           x: eq.x_px,
@@ -1898,7 +1974,29 @@ export class Canvas2DEngine {
             fill: style.fill,
             stroke: isSelected ? "#cba258" : style.stroke,
             strokeWidth: isSelected ? 2.5 : 1.4,
-            cornerRadius: 2,
+            dash: isWallOrCeil ? [3, 2] : undefined,
+            cornerRadius: isWallOrCeil ? 3 : 2,
+          })
+        );
+
+        // Front-face indicator (+Y local edge matches +Z accent strip in 3D)
+        const frontTri = Math.min(5, Math.max(3, wPx * 0.14));
+        eqGroup.add(
+          new Konva.Rect({
+            x: -wPx / 2 + 1.5,
+            y: dPx / 2 - 3,
+            width: Math.max(4, wPx - 3),
+            height: 3,
+            fill: "#fbbf24",
+            listening: false,
+          }),
+          new Konva.Line({
+            points: [-frontTri, dPx / 2, 0, dPx / 2 + frontTri, frontTri, dPx / 2],
+            closed: true,
+            fill: "#fbbf24",
+            stroke: "#111827",
+            strokeWidth: 0.75,
+            listening: false,
           })
         );
 
@@ -1919,6 +2017,22 @@ export class Canvas2DEngine {
 
         eqGroup.on("click", (ev) => {
           ev.cancelBubble = true;
+          if (this.store.ui.activeTool === "cable") {
+            if (!this.cableDraftSourceId) {
+              this.cableDraftSourceId = eq.id;
+              this.store.emit("toast", { message: `Source: ${eq.name}. Klik perangkat tujuan (Target).` });
+              this.renderTempOverlay(this.cursorPosPx);
+            } else if (this.cableDraftSourceId === eq.id) {
+              this.clearTempDrawing();
+            } else {
+              const created = this.store.addCable(this.cableDraftSourceId, eq.id);
+              this.clearTempDrawing();
+              if (created) {
+                this.store.emit("toast", { message: `Koneksi ${created.system.toUpperCase()} dibuat otomatis.` });
+              }
+            }
+            return;
+          }
           this.store.selectObject("equipment", eq.id);
         });
 
@@ -1930,6 +2044,69 @@ export class Canvas2DEngine {
         });
 
         this.cmeLayer.add(eqGroup);
+      }
+    }
+
+    // 4. Render Automatic Cables & Grouped Side-Mounted Waterfall Brackets
+    if (layers.cables !== false) {
+      const wfGroups = resolveWaterfallGroups(this.store.project);
+      const s = Math.max(0.5, this.stageScale());
+      for (const cab of this.store.project.cables || []) {
+        const route = resolveCableRoute(this.store.project, cab, wfGroups);
+        if (route.points2d_px.length < 2) continue;
+        const isSelected = sel?.kind === "cable" && sel?.id === cab.id;
+        const color = isSelected ? "#00754A" : cableColorFor(cab);
+        const line = new Konva.Line({
+          points: route.points2d_px.flat(),
+          stroke: color,
+          strokeWidth: isSelected ? 4 : 2.5,
+          dash: cab.system === "grounding" ? [6, 3] : cab.system === "cooling" ? [10, 4] : undefined,
+          lineCap: "round",
+          lineJoin: "round",
+          hitStrokeWidth: 10,
+        });
+        line.on("click", (ev) => {
+          ev.cancelBubble = true;
+          this.store.selectObject("cable", cab.id);
+        });
+        this.cmeLayer.add(line);
+
+        for (const wf of route.waterfalls) {
+          if (wf.style === "tray_waterfall") continue;
+          this.cmeLayer.add(
+            new Konva.Circle({
+              x: wf.x_px,
+              y: wf.y_px,
+              radius: 4.5 / s,
+              fill: "#ffffff",
+              stroke: color,
+              strokeWidth: 2,
+              listening: false,
+            })
+          );
+        }
+      }
+
+      for (const grp of wfGroups) {
+        const angDeg = (Math.atan2(grp.out_y ?? 1, grp.out_x || 0) * 180) / Math.PI;
+        const chuteLen = Math.max(6, 0.14 * scale);
+        const chuteWid = Math.max(9, grp.chute_width_m * scale);
+        this.cmeLayer.add(
+          new Konva.Rect({
+            x: grp.x_px,
+            y: grp.y_px,
+            width: chuteLen,
+            height: chuteWid,
+            offsetX: 1,
+            offsetY: chuteWid / 2,
+            rotation: angDeg,
+            fill: "#f59e0b",
+            stroke: "#78350f",
+            strokeWidth: 1.4 / s,
+            cornerRadius: 1.5 / s,
+            listening: false,
+          })
+        );
       }
     }
 
@@ -2196,14 +2373,16 @@ export class Canvas2DEngine {
           })
         );
       });
-    } else if (tool === "tray" && this.trayDraftPoints.length > 0) {
-      const snap = this.traySnap(cursorPt, this.shiftHeld);
-      const pts = [...this.trayDraftPoints.flat(), snap.x, snap.y];
+    } else if ((tool === "tray" && this.trayDraftPoints.length > 0) || (tool === "pipe" && this.pipeDraftPoints.length > 0)) {
+      const isPipe = tool === "pipe";
+      const draftPts = isPipe ? this.pipeDraftPoints : this.trayDraftPoints;
+      const snap = this.runSnap(tool, cursorPt, this.shiftHeld);
+      const pts = [...draftPts.flat(), snap.x, snap.y];
       this.overlayLayer.add(
         new Konva.Line({
           points: pts,
-          stroke: "#cba258",
-          strokeWidth: 6,
+          stroke: isPipe ? PIPE_DEFAULT_COLOR : trayColorForService(this.store.ui.trayService),
+          strokeWidth: isPipe ? 4 : 6,
           opacity: 0.75,
           dash: [8, 4],
           listening: false,
@@ -2217,6 +2396,33 @@ export class Canvas2DEngine {
             radius: 7 / this.stageScale(),
             stroke: "#00754A",
             strokeWidth: 2 / this.stageScale(),
+            listening: false,
+          })
+        );
+      }
+    } else if (tool === "cable" && this.cableDraftSourceId) {
+      const src = this.store.project.equipments.find((e) => e.id === this.cableDraftSourceId);
+      if (src) {
+        const previewColor = cableColorFor({
+          system: this.store.ui.cableSystem,
+          path_label: this.store.ui.cablePathLabel,
+        });
+        this.overlayLayer.add(
+          new Konva.Circle({
+            x: src.x_px,
+            y: src.y_px,
+            radius: 12 / this.stageScale(),
+            stroke: previewColor,
+            strokeWidth: 2.5 / this.stageScale(),
+            listening: false,
+          })
+        );
+        this.overlayLayer.add(
+          new Konva.Line({
+            points: [src.x_px, src.y_px, cursorPt.x, cursorPt.y],
+            stroke: previewColor,
+            strokeWidth: 2.5,
+            dash: [6, 4],
             listening: false,
           })
         );
