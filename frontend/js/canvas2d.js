@@ -9,6 +9,7 @@
 import { computeWallPreview, resolveConnection, WALL_SNAP_CSS_PX } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { ISOLATING_TOOLS } from "./store.js";
+import { snapDrawPoint } from "./trayNetwork.js";
 import { api } from "./api.js";
 import { suggestRoomName } from "./roomNames.js";
 import { buildRoomFaces, faceAt, findFreeEnds, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
@@ -52,6 +53,7 @@ export class Canvas2DEngine {
     this.rulerPoints = [];
     this.roomDraft = [];
     this.roomDraftRepeated = false;
+    this.trayDraftRepeated = false;
     this.roomFacesCache = null;
     this.freeEndsCache = null;
     this.freeEndMarks = [];
@@ -68,6 +70,7 @@ export class Canvas2DEngine {
     this.guideVisuals = [];
     this.wallDrag = null;
     this.spacePan = false;
+    this.shiftHeld = false;
     this.panState = null;
     this.stairDraft = null;
     this.isDraggingStair = false;
@@ -308,6 +311,8 @@ export class Canvas2DEngine {
     this.roomsLayer.listening((step === 3 || step === 4) && activeTool === "select");
     // Stage 5 installs on top of the blueprint: annotation (rooms above too) must not take clicks.
     this.cadLayer.listening(step !== 5);
+    // The tray tool must hit the stage, never an existing tray, equipment or stair shape.
+    this.cmeLayer.listening(activeTool !== "tray");
   }
 
   /** A shape of this kind may be dragged: not while drawing, and only where the stage allows editing it. */
@@ -455,6 +460,7 @@ export class Canvas2DEngine {
     this.rulerPoints = [];
     this.roomDraft = [];
     this.roomDraftRepeated = false;
+    this.trayDraftRepeated = false;
     this.trayDraftPoints = [];
     this.overlayLayer.destroyChildren();
     this.overlayLayer.batchDraw();
@@ -532,6 +538,10 @@ export class Canvas2DEngine {
         this.handleRoomToolClick(pt);
         return;
       }
+      if (tool === "tray") {
+        this.handleTrayToolClick(pt, e.evt.shiftKey);
+        return;
+      }
 
       if (e.target === this.stage) {
         if (tool === "select") {
@@ -561,8 +571,6 @@ export class Canvas2DEngine {
           this.store.addStaircase(pt.x, pt.y);
         } else if (tool === "ruler") {
           this.handleRulerClick(pt);
-        } else if (tool === "tray") {
-          this.handleTrayToolClick(pt);
         }
       }
     });
@@ -580,9 +588,16 @@ export class Canvas2DEngine {
       } else if (this.store.ui.activeTool === "wall") {
         this.clearTempDrawing();
       } else if (this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
-        this.store.addCableTray(this.trayDraftPoints);
-        this.clearTempDrawing();
+        // Same rule as the room polygon: only a second click on the same spot finishes the run,
+        // so quick clicks on different spots keep adding points.
+        if (this.trayDraftRepeated) this.finishTrayDraft();
       }
+    });
+
+    this.stage.on("contextmenu", (e) => {
+      if (this.store.ui.activeTool !== "tray") return;
+      e.evt.preventDefault();
+      if (this.trayDraftPoints.length >= 2) this.finishTrayDraft();
     });
 
     this.stage.on("mouseup", (e) => {
@@ -609,6 +624,7 @@ export class Canvas2DEngine {
     });
 
     window.addEventListener("keydown", (e) => {
+      this.shiftHeld = e.shiftKey;
       if (e.code === "Space") {
         this.spacePan = true;
       }
@@ -631,8 +647,7 @@ export class Canvas2DEngine {
           this.store.setActiveTool("select");
         }
       } else if (e.key === "Enter" && this.store.ui.activeTool === "tray" && this.trayDraftPoints.length >= 2) {
-        this.store.addCableTray(this.trayDraftPoints);
-        this.clearTempDrawing();
+        this.finishTrayDraft();
       } else if (
         e.key === "Enter" &&
         this.store.ui.activeTool === "room" &&
@@ -654,6 +669,7 @@ export class Canvas2DEngine {
     });
 
     window.addEventListener("keyup", (e) => {
+      this.shiftHeld = e.shiftKey;
       if (e.code === "Space") this.spacePan = false;
     });
 
@@ -966,8 +982,27 @@ export class Canvas2DEngine {
     this.cadLayer.batchDraw();
   }
 
-  handleTrayToolClick(pt) {
-    this.trayDraftPoints.push([pt.x, pt.y]);
+  /** Cursor point for the tray tool: snaps to existing tray vertices (8 screen px), Shift = ortho. */
+  traySnap(pt, ortho = false) {
+    const anchors = this.store.project.cable_trays.flatMap((t) => t.points_px || []);
+    const last = this.trayDraftPoints[this.trayDraftPoints.length - 1] || null;
+    return snapDrawPoint(pt, anchors, { radiusPx: 8 / this.stageScale(), from: last, ortho });
+  }
+
+  handleTrayToolClick(pt, ortho = false) {
+    const snap = this.traySnap(pt, ortho);
+    const last = this.trayDraftPoints[this.trayDraftPoints.length - 1];
+    if (last && Math.hypot(snap.x - last[0], snap.y - last[1]) < 2 / this.stageScale()) {
+      this.trayDraftRepeated = true;
+      return;
+    }
+    this.trayDraftRepeated = false;
+    this.trayDraftPoints.push([snap.x, snap.y]);
+  }
+
+  finishTrayDraft() {
+    this.store.addCableTray(this.trayDraftPoints);
+    this.clearTempDrawing();
   }
 
   // ==================== MASTER RENDER PIPELINE ====================
@@ -2159,7 +2194,8 @@ export class Canvas2DEngine {
         );
       });
     } else if (tool === "tray" && this.trayDraftPoints.length > 0) {
-      const pts = [...this.trayDraftPoints.flat(), cursorPt.x, cursorPt.y];
+      const snap = this.traySnap(cursorPt, this.shiftHeld);
+      const pts = [...this.trayDraftPoints.flat(), snap.x, snap.y];
       this.overlayLayer.add(
         new Konva.Line({
           points: pts,
@@ -2167,8 +2203,21 @@ export class Canvas2DEngine {
           strokeWidth: 6,
           opacity: 0.75,
           dash: [8, 4],
+          listening: false,
         })
       );
+      if (snap.snapped === "node") {
+        this.overlayLayer.add(
+          new Konva.Circle({
+            x: snap.x,
+            y: snap.y,
+            radius: 7 / this.stageScale(),
+            stroke: "#00754A",
+            strokeWidth: 2 / this.stageScale(),
+            listening: false,
+          })
+        );
+      }
     }
 
     this.overlayLayer.batchDraw();
