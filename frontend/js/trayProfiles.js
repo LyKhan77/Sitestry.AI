@@ -44,8 +44,8 @@ function mesh(geometry, material) {
   return new THREE.Mesh(geometry, material);
 }
 
-function perforatedProfile(lengthM, widthM, heightM, material) {
-  const group = new THREE.Group();
+/** Flat perforated base plate (alpha-mapped holes), tray bottom at y = -heightM. */
+function perforatedPlate(lengthM, widthM, heightM, material) {
   const plateMat = material.clone();
   const alpha = getPerforationTexture().clone();
   alpha.needsUpdate = true;
@@ -53,7 +53,12 @@ function perforatedProfile(lengthM, widthM, heightM, material) {
   plateMat.alphaMap = alpha;
   plateMat.alphaTest = 0.5;
   plateMat.side = THREE.DoubleSide;
-  group.add(mesh(box(lengthM, WALL_T, widthM, 0, -heightM + WALL_T / 2, 0), plateMat));
+  return mesh(box(lengthM, WALL_T, widthM, 0, -heightM + WALL_T / 2, 0), plateMat);
+}
+
+function perforatedProfile(lengthM, widthM, heightM, material) {
+  const group = new THREE.Group();
+  group.add(perforatedPlate(lengthM, widthM, heightM, material));
   const wallGeo = box(lengthM, heightM, WALL_T, 0, -heightM / 2, 0);
   const left = mesh(wallGeo, material);
   left.position.z = -widthM / 2 + WALL_T / 2;
@@ -126,4 +131,110 @@ const PROFILES = {
 export function buildTrayProfile(type, lengthM, widthM, heightM, material) {
   const build = PROFILES[type] || ladderProfile;
   return build(lengthM, widthM, heightM, material);
+}
+
+// ==================== FITTINGS ====================
+
+export const FITTING_KINDS = new Set(["elbow", "tee", "cross", "reducer"]);
+const REDUCER_LENGTH_M = 0.3;
+
+/** Half the footprint of a fitting along each arm: where straight segments must stop. */
+export function fittingCutM(fitting) {
+  if (fitting.kind === "reducer") return REDUCER_LENGTH_M / 2;
+  if (FITTING_KINDS.has(fitting.kind)) return Math.max(...fitting.arms.map((a) => a.widthM)) / 2;
+  return 0;
+}
+
+/** Plate of a square fitting, styled per type. */
+function fittingPlate(type, size, heightM, material) {
+  if (type === "duct") return mesh(box(size, heightM, size, 0, -heightM / 2, 0), material);
+  if (type === "ladder") {
+    const rungs = [];
+    const count = Math.max(2, Math.round(size / 0.12));
+    for (let r = 0; r <= count; r++) {
+      rungs.push(box(0.03, 0.03, size, -size / 2 + (r / count) * size, -heightM + 0.015, 0));
+    }
+    return mesh(mergeGeometries(rungs), material);
+  }
+  if (type === "wiremesh") {
+    const wires = [];
+    const count = Math.max(2, Math.round(size / 0.1));
+    for (let i = 0; i <= count; i++) {
+      const t = -size / 2 + (i / count) * size;
+      wires.push(box(size, WIRE_T, WIRE_T, 0, -heightM + WIRE_T / 2, t));
+      wires.push(box(WIRE_T, WIRE_T, size, t, -heightM + WIRE_T / 2, 0));
+    }
+    return mesh(mergeGeometries(wires), material);
+  }
+  return perforatedPlate(size, size, heightM, material);
+}
+
+/** Side wall on local side k (0 +x, 1 +z, 2 -x, 3 -z) of a square fitting. */
+function fittingWall(side, size, heightM, material) {
+  const along = side % 2 === 0; // wall runs along z on the +-x sides
+  const offset = (side < 2 ? 1 : -1) * (size / 2 - WALL_T / 2);
+  const geo = along
+    ? box(WALL_T, heightM, size, offset, -heightM / 2, 0)
+    : box(size, heightM, WALL_T, 0, -heightM / 2, offset);
+  return mesh(geo, material);
+}
+
+function reducerFitting(fitting, type, heightM, material) {
+  const group = new THREE.Group();
+  const [a0, a1] = fitting.arms;
+  const half0 = a0.widthM / 2;
+  const half1 = a1.widthM / 2;
+  const L = REDUCER_LENGTH_M;
+  // Local +x points toward arm 1, -x toward arm 0.
+  const shape = new THREE.Shape([
+    new THREE.Vector2(-L / 2, -half0),
+    new THREE.Vector2(L / 2, -half1),
+    new THREE.Vector2(L / 2, half1),
+    new THREE.Vector2(-L / 2, half0),
+  ]);
+  const plateGeo = new THREE.ExtrudeGeometry(shape, { depth: type === "duct" ? heightM : WALL_T, bevelEnabled: false });
+  plateGeo.rotateX(Math.PI / 2); // shape XY -> XZ, extrusion goes down
+  const plateTop = type === "duct" ? 0 : -heightM + WALL_T;
+  plateGeo.translate(0, plateTop, 0);
+  group.add(mesh(plateGeo, material));
+  if (type !== "duct") {
+    for (const sign of [-1, 1]) {
+      const dx = L;
+      const dz = sign * (half1 - half0);
+      const len = Math.hypot(dx, dz);
+      const wall = mesh(box(len, heightM, WALL_T, 0, -heightM / 2, 0), material);
+      wall.position.set(0, 0, sign * ((half0 + half1) / 2 - WALL_T / 2));
+      wall.rotation.y = -Math.atan2(dz, dx);
+      group.add(wall);
+    }
+  }
+  group.rotation.y = -a1.angleRad;
+  group.userData.wallCount = type === "duct" ? 0 : 2;
+  return group;
+}
+
+/**
+ * Fitting at a node: a base plate sized to the widest arm, with side walls only on the sides where
+ * no arm leaves (reducer: tapered plate). The group is centered on the node, tray top at y = 0.
+ */
+export function buildFitting(fitting, type, heightM, material) {
+  if (fitting.kind === "reducer") return reducerFitting(fitting, type, heightM, material);
+  const size = Math.max(...fitting.arms.map((a) => a.widthM));
+  const group = new THREE.Group();
+  group.add(fittingPlate(type, size, heightM, material));
+  const base = fitting.arms[0].angleRad;
+  const open = new Set(
+    fitting.arms.map((a) => (((Math.round((a.angleRad - base) / (Math.PI / 2)) % 4) + 4) % 4))
+  );
+  let walls = 0;
+  if (type !== "duct") {
+    for (let side = 0; side < 4; side++) {
+      if (open.has(side)) continue;
+      group.add(fittingWall(side, size, heightM, material));
+      walls += 1;
+    }
+  }
+  group.rotation.y = -base;
+  group.userData.wallCount = walls;
+  return group;
 }

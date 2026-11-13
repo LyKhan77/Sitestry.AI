@@ -15,13 +15,15 @@ test("a legacy points_px tray renders in 2D and 3D after migration", async ({ pa
     store.loadProjectData(data, true);
     app.canvas2d.renderAll();
     app.viewer3d.rebuildScene();
-    const groups = app.viewer3d.selectableMeshes.filter((g) => g.userData?.sitestryKind === "tray");
+    const all = app.viewer3d.selectableMeshes.filter((g) => g.userData?.sitestryKind === "tray");
+    const groups = all.filter((g) => !g.userData.fittingKind);
     return {
       nodes: store.project.tray_nodes.length,
       hasPoints: "points_px" in store.project.cable_trays[0],
       konvaTrayLines: app.canvas2d.cmeLayer.find((n) => n.className === "Line" && (n.dash() || []).length === 0 && n.opacity() === 0.42).length,
       groups: groups.length,
       type: groups[0]?.userData.trayType,
+      fittings: all.filter((g) => g.userData.fittingKind).map((g) => g.userData.fittingKind),
     };
   });
   expect(info.nodes).toBe(3);
@@ -29,4 +31,5 @@ test("a legacy points_px tray renders in 2D and 3D after migration", async ({ pa
   expect(info.konvaTrayLines).toBe(1);
   expect(info.groups).toBe(1);
   expect(info.type).toBe("ladder");
+  expect(info.fittings).toEqual(["elbow"]);
 });

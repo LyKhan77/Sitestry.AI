@@ -17,8 +17,9 @@ import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
 import { SceneSync } from "./sceneSync.js";
 import { buildRoomFaces } from "./roomFaces.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
-import { buildTrayProfile } from "./trayProfiles.js";
+import { buildFitting, buildTrayProfile, fittingCutM, FITTING_KINDS } from "./trayProfiles.js";
 import { trayPoints } from "./trayNetwork.js";
+import { deriveFittings } from "./trayFittings.js";
 
 export class Viewer3DEngine {
   constructor(containerId, labelsOverlayId, store) {
@@ -774,8 +775,18 @@ export class Viewer3DEngine {
   }
 
   buildCableTrays3D(scale, sel) {
-    for (const tray of this.store.project.cable_trays) {
-      const pts = trayPoints(this.store.project, tray);
+    const project = this.store.project;
+    const fittings = deriveFittings(project, scale);
+    const trayById = new Map(project.cable_trays.map((t) => [t.id, t]));
+    const materialFor = (tray, isSelected) =>
+      new THREE.MeshStandardMaterial({
+        color: isSelected ? 0x00754a : 0xcba258,
+        metalness: 0.7,
+        roughness: 0.3,
+      });
+
+    for (const tray of project.cable_trays) {
+      const pts = trayPoints(project, tray);
       if (pts.length < 2) continue;
 
       const isSelected = sel?.kind === "tray" && sel?.id === tray.id;
@@ -785,24 +796,26 @@ export class Viewer3DEngine {
 
       const trayGroup = new THREE.Group();
       trayGroup.userData = { sitestryKind: "tray", sitestryId: tray.id, trayType: tray.type };
-
-      const railMat = new THREE.MeshStandardMaterial({
-        color: isSelected ? 0x00754a : 0xcba258,
-        metalness: 0.7,
-        roughness: 0.3,
-      });
+      const railMat = materialFor(tray, isSelected);
 
       for (let i = 0; i < pts.length - 1; i++) {
         const p1 = this.pxToMeter3D(pts[i][0], pts[i][1]);
         const p2 = this.pxToMeter3D(pts[i + 1][0], pts[i + 1][1]);
         const dx = p2.x - p1.x;
         const dz = p2.z - p1.z;
-        const segLen = Math.hypot(dx, dz);
-        if (segLen < 0.1) continue;
+        const fullLen = Math.hypot(dx, dz);
+        if (fullLen < 0.1) continue;
+
+        // Stop the straight run at the fitting plate instead of overlapping it.
+        const startCut = fittingCutM(fittings.get(tray.node_ids[i]) || { kind: "end", arms: [] });
+        const endCut = fittingCutM(fittings.get(tray.node_ids[i + 1]) || { kind: "end", arms: [] });
+        const segLen = fullLen - startCut - endCut;
+        if (segLen < 0.05) continue;
 
         const angle = Math.atan2(dz, dx);
-        const mx = (p1.x + p2.x) / 2;
-        const mz = (p1.z + p2.z) / 2;
+        const midAlong = startCut + segLen / 2;
+        const mx = p1.x + (dx / fullLen) * midAlong;
+        const mz = p1.z + (dz / fullLen) * midAlong;
 
         const segGroup = buildTrayProfile(tray.type, segLen, widthM, heightM, railMat);
         segGroup.position.set(mx, elev, mz);
@@ -813,6 +826,26 @@ export class Viewer3DEngine {
 
       this.rootGroup.add(trayGroup);
       this.selectableMeshes.push(trayGroup);
+    }
+
+    for (const fitting of fittings.values()) {
+      if (!FITTING_KINDS.has(fitting.kind)) continue;
+      const first = trayById.get(fitting.arms[0].trayId);
+      if (!first) continue;
+      const isSelected =
+        sel?.kind === "tray" && fitting.arms.some((a) => a.trayId === sel.id);
+      const group = buildFitting(fitting, first.type, Number(first.height_m) || 0.1, materialFor(first, isSelected));
+      const c = this.pxToMeter3D(fitting.x_px, fitting.y_px);
+      group.position.set(c.x, Number(first.elevation_m) || 2.65, c.z);
+      group.userData = {
+        ...group.userData,
+        sitestryKind: "tray",
+        sitestryId: first.id,
+        trayType: first.type,
+        fittingKind: fitting.kind,
+      };
+      this.rootGroup.add(group);
+      this.selectableMeshes.push(group);
     }
   }
 
