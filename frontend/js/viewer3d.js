@@ -17,6 +17,7 @@ import { SUBTRACTION, Brush, Evaluator } from "three-bvh-csg";
 import { SceneSync } from "./sceneSync.js";
 import { buildRoomFaces } from "./roomFaces.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
+import { buildTrayProfile } from "./trayProfiles.js";
 
 export class Viewer3DEngine {
   constructor(containerId, labelsOverlayId, store) {
@@ -779,9 +780,10 @@ export class Viewer3DEngine {
       const isSelected = sel?.kind === "tray" && sel?.id === tray.id;
       const elev = Number(tray.elevation_m) || 2.65;
       const widthM = Number(tray.width_m) || 0.45;
+      const heightM = Number(tray.height_m) || 0.1;
 
       const trayGroup = new THREE.Group();
-      trayGroup.userData = { sitestryKind: "tray", sitestryId: tray.id };
+      trayGroup.userData = { sitestryKind: "tray", sitestryId: tray.id, trayType: tray.type };
 
       const railMat = new THREE.MeshStandardMaterial({
         color: isSelected ? 0x00754a : 0xcba258,
@@ -801,24 +803,9 @@ export class Viewer3DEngine {
         const mx = (p1.x + p2.x) / 2;
         const mz = (p1.z + p2.z) / 2;
 
-        const segGroup = new THREE.Group();
+        const segGroup = buildTrayProfile(tray.type, segLen, widthM, heightM, railMat);
         segGroup.position.set(mx, elev, mz);
         segGroup.rotation.y = -angle;
-
-        const rGeo = new THREE.BoxGeometry(segLen, 0.08, 0.04);
-        const rLeft = new THREE.Mesh(rGeo, railMat);
-        rLeft.position.z = -widthM / 2;
-        const rRight = new THREE.Mesh(rGeo, railMat);
-        rRight.position.z = widthM / 2;
-        segGroup.add(rLeft, rRight);
-
-        const rungCount = Math.max(2, Math.floor(segLen / 0.35));
-        const rungGeo = new THREE.BoxGeometry(0.04, 0.04, widthM);
-        for (let r = 0; r <= rungCount; r++) {
-          const rung = new THREE.Mesh(rungGeo, railMat);
-          rung.position.x = -segLen / 2 + (r / rungCount) * segLen;
-          segGroup.add(rung);
-        }
 
         trayGroup.add(segGroup);
       }
