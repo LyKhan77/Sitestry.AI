@@ -9,7 +9,8 @@
 import { computeWallPreview, resolveConnection, WALL_SNAP_CSS_PX } from "./annotationGeometry.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { ISOLATING_TOOLS } from "./store.js";
-import { nearestTrayAnchor, snapDrawPoint, trayPoints } from "./trayNetwork.js";
+import { getEquipmentPreset } from "./equipmentCatalog.js";
+import { nearestTrayAnchor, snapDrawPoint, trayColorForService, trayPoints } from "./trayNetwork.js";
 import { api } from "./api.js";
 import { suggestRoomName } from "./roomNames.js";
 import { buildRoomFaces, faceAt, findFreeEnds, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
@@ -982,10 +983,10 @@ export class Canvas2DEngine {
     this.cadLayer.batchDraw();
   }
 
-  /** Cursor point for the tray tool: snaps to existing tray vertices (8 screen px), Shift = ortho. */
+  /** Cursor point for the tray tool: snaps to matching-service tray vertices (8 screen px), Shift = ortho. */
   traySnap(pt, ortho = false) {
     const radiusPx = 8 / this.stageScale();
-    const anchor = nearestTrayAnchor(this.store.project, pt, radiusPx);
+    const anchor = nearestTrayAnchor(this.store.project, pt, radiusPx, this.store.ui.trayService);
     const last = this.trayDraftPoints[this.trayDraftPoints.length - 1] || null;
     return snapDrawPoint(pt, anchor ? [[anchor.x, anchor.y]] : [], { radiusPx, from: last, ortho });
   }
@@ -1709,9 +1710,10 @@ export class Canvas2DEngine {
         const flatPts = trayPts.flat();
         const widthPx = Math.max(8, (tray.width_m || 0.45) * scale);
 
+        const trayColor = tray.color || trayColorForService(tray.service);
         const railLine = new Konva.Line({
           points: flatPts,
-          stroke: isSelected ? "#00754A" : tray.color || "#cba258",
+          stroke: isSelected ? "#00754A" : trayColor,
           strokeWidth: widthPx,
           opacity: 0.42,
           lineCap: "round",
@@ -1720,7 +1722,7 @@ export class Canvas2DEngine {
 
         const centerLine = new Konva.Line({
           points: flatPts,
-          stroke: isSelected ? "#006241" : "#92400e",
+          stroke: isSelected ? "#006241" : tray.service === "data" ? "#0369a1" : tray.service === "unified" ? "#3f6212" : "#92400e",
           strokeWidth: 2,
           dash: [5, 5],
           listening: false, // otherwise it hides the strip below and a click on the axis selects nothing
@@ -1878,9 +1880,11 @@ export class Canvas2DEngine {
 
       for (const eq of this.store.project.equipments) {
         const isSelected = sel?.kind === "equipment" && sel?.id === eq.id;
-        const wPx = Math.max(14, (eq.width_m || 1.2) * scale);
-        const dPx = Math.max(12, (eq.depth_m || 0.9) * scale);
-        const style = catColors[eq.category] || catColors.rack;
+        const wPx = Math.max(12, (eq.width_m || 1.2) * scale);
+        const dPx = Math.max(10, (eq.depth_m || 0.9) * scale);
+        const preset = getEquipmentPreset(eq.subtype || eq.category);
+        const style = catColors[eq.category] || { fill: preset.color, stroke: "#ffffff" };
+        const isWallOrCeil = (eq.mount || preset.mount) !== "floor";
 
         const eqGroup = new Konva.Group({
           x: eq.x_px,
@@ -1898,7 +1902,8 @@ export class Canvas2DEngine {
             fill: style.fill,
             stroke: isSelected ? "#cba258" : style.stroke,
             strokeWidth: isSelected ? 2.5 : 1.4,
-            cornerRadius: 2,
+            dash: isWallOrCeil ? [3, 2] : undefined,
+            cornerRadius: isWallOrCeil ? 3 : 2,
           })
         );
 

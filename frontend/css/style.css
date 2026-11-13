@@ -739,6 +739,29 @@ body[data-stage="5"] .studio-body {
   color: var(--text-warm-muted);
 }
 
+.eq-subtype-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.eq-subtype-row label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-warm-muted);
+}
+
+.eq-subtype-row select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border-warm, #d6d3cd);
+  background: var(--bg-warm-cream);
+  color: var(--green-house);
+  font-size: 12px;
+}
+
 .cme-tool-buttons {
   display: flex;
   flex-direction: column;

@@ -527,42 +527,47 @@
         </div>
 
         <div class="surface-card" id="traySettingsCard">
-          <div class="card-header-label">TIPE CABLE TRAY</div>
+          <div class="card-header-label">TIPE &amp; FUNGSI CABLE TRAY</div>
           <div class="mode-group" role="group" aria-label="Tipe cable tray">
             <button type="button" class="mode-btn active" data-tray-type="perforated" aria-pressed="true">Perforated</button>
             <button type="button" class="mode-btn" data-tray-type="ladder" aria-pressed="false">Ladder</button>
             <button type="button" class="mode-btn" data-tray-type="duct" aria-pressed="false">Duct</button>
             <button type="button" class="mode-btn" data-tray-type="wiremesh" aria-pressed="false">Wire mesh</button>
           </div>
+          <div class="mode-group tray-service-group" role="group" aria-label="Kategori fungsi cable tray" style="margin-top:6px;">
+            <button type="button" class="mode-btn active" data-tray-service="unified" aria-pressed="true">Unified</button>
+            <button type="button" class="mode-btn" data-tray-service="power" aria-pressed="false">Power</button>
+            <button type="button" class="mode-btn" data-tray-service="data" aria-pressed="false">Data</button>
+          </div>
         </div>
 
         <div class="surface-card">
-          <div class="card-header-label">KATALOG PERANGKAT CME &amp; MEP</div>
-          <div class="eq-catalog-grid">
-            <button class="eq-catalog-card active" data-eq-cat="rack">
-              <strong>42U Server Rack</strong>
-              <span>0.6m &times; 1.1m &times; 2.1m</span>
+          <div class="card-header-label">KATALOG PERANGKAT (5 KATEGORI)</div>
+          <div class="eq-catalog-grid eq-generic-grid">
+            <button class="eq-catalog-card active" data-eq-group="rack" data-eq-cat="rack">
+              <strong>Rack</strong>
+              <span>Server / Network</span>
             </button>
-            <button class="eq-catalog-card" data-eq-cat="ups">
-              <strong>UPS 250kVA Frame</strong>
-              <span>1.6m &times; 0.95m &times; 2.0m</span>
+            <button class="eq-catalog-card" data-eq-group="power" data-eq-cat="panel">
+              <strong>Power</strong>
+              <span>Panel / UPS / Colokan / Ground</span>
             </button>
-            <button class="eq-catalog-card" data-eq-cat="battery">
-              <strong>Lithium Battery Bank</strong>
-              <span>2.2m &times; 0.9m &times; 2.0m</span>
+            <button class="eq-catalog-card" data-eq-group="data" data-eq-cat="data_cabinet">
+              <strong>Data</strong>
+              <span>ODF / Link Antar Lantai</span>
             </button>
-            <button class="eq-catalog-card" data-eq-cat="rectifier">
-              <strong>DC Rectifier System</strong>
-              <span>1.2m &times; 0.8m &times; 2.0m</span>
+            <button class="eq-catalog-card" data-eq-group="cooling" data-eq-cat="pac">
+              <strong>Cooling</strong>
+              <span>PAC / Chiller / In-Row / Fan</span>
             </button>
-            <button class="eq-catalog-card" data-eq-cat="panel">
-              <strong>ACPDB / SDP Panel</strong>
-              <span>1.4m &times; 0.65m &times; 2.0m</span>
+            <button class="eq-catalog-card" data-eq-group="security" data-eq-cat="cctv">
+              <strong>Security</strong>
+              <span>CCTV / Access / Smoke</span>
             </button>
-            <button class="eq-catalog-card" data-eq-cat="pac">
-              <strong>PAC Precision Cooling</strong>
-              <span>1.9m &times; 0.95m &times; 2.15m</span>
-            </button>
+          </div>
+          <div class="eq-subtype-row">
+            <label for="selEqSubtype">Sub-tipe Perangkat</label>
+            <select id="selEqSubtype" aria-label="Sub-tipe Perangkat"></select>
           </div>
 
           <div class="cme-tool-buttons">

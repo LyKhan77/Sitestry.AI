@@ -13,7 +13,22 @@ import { api } from "./api.js";
 import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
 import { BlueprintGuideSession } from "./blueprintGuides.js";
-import { TRAY_TYPES } from "./trayNetwork.js";
+import {
+  EQUIPMENT_GROUPS,
+  EQUIPMENT_GROUP_LABELS,
+  EQUIPMENT_SUBTYPES,
+  defaultSubtypeForGroup,
+  getEquipmentPreset,
+  resolveEquipmentGroup,
+  subtypesForGroup,
+} from "./equipmentCatalog.js";
+import {
+  TRAY_SERVICES,
+  TRAY_TYPES,
+  defaultTrayElevation,
+  normalizeTrayService,
+  trayColorForService,
+} from "./trayNetwork.js";
 import { countsOf, structureHash, workspaceFlags } from "./workspaceState.js";
 import {
   hideExtractionLayers,
@@ -1301,6 +1316,15 @@ class SitestryStudioApp {
         });
       });
     });
+    document.querySelectorAll("[data-tray-service]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        store.ui.trayService = btn.dataset.trayService;
+        document.querySelectorAll("[data-tray-service]").forEach((b) => {
+          b.classList.toggle("active", b.dataset.trayService === store.ui.trayService);
+          b.setAttribute("aria-pressed", String(b.dataset.trayService === store.ui.trayService));
+        });
+      });
+    });
     document.querySelectorAll("[data-wall-mode]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.disabled) return;
@@ -1459,13 +1483,35 @@ class SitestryStudioApp {
 
   // ==================== STAGE 5: MANUAL INSTALLATION EQUIPMENT ====================
   initStage5EquipmentControls() {
+    const selSubtype = document.getElementById("selEqSubtype");
+    const syncSubtypeOptions = (group, preferred = null) => {
+      if (!selSubtype) return;
+      const subs = subtypesForGroup(group);
+      selSubtype.innerHTML = subs
+        .map((s) => `<option value="${s.key}">${s.label} (${s.w}×${s.d}m)</option>`)
+        .join("");
+      const chosen =
+        preferred && subs.some((s) => s.key === preferred) ? preferred : defaultSubtypeForGroup(group);
+      selSubtype.value = chosen;
+      store.ui.pendingEquipmentCategory = chosen;
+    };
+
+    syncSubtypeOptions(store.ui.pendingEquipmentGroup || "rack", store.ui.pendingEquipmentCategory);
+
+    selSubtype?.addEventListener("change", () => {
+      store.ui.pendingEquipmentCategory = selSubtype.value;
+      store.setActiveTool("equipment");
+    });
+
     document.querySelectorAll(".eq-catalog-card").forEach((card) => {
       card.addEventListener("click", () => {
         document.querySelectorAll(".eq-catalog-card").forEach((c) => c.classList.remove("active"));
         card.classList.add("active");
-        store.ui.pendingEquipmentCategory = card.dataset.eqCat;
+        const group = card.dataset.eqGroup || "rack";
+        store.ui.pendingEquipmentGroup = group;
+        syncSubtypeOptions(group, card.dataset.eqCat);
         store.setActiveTool("equipment");
-        this.showToast(`Katalog aktif: ${card.querySelector("strong")?.textContent}. Klik pada denah 2D untuk memasang.`);
+        this.showToast(`Kategori aktif: ${card.querySelector("strong")?.textContent}. Klik pada denah 2D untuk memasang.`);
       });
     });
 
@@ -2391,24 +2437,35 @@ class SitestryStudioApp {
       document.getElementById("inpRoomColor").onchange = (e) => store.updateSelectedProperty({ color: e.target.value });
       document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
     } else if (sel.kind === "equipment") {
+      const grp = resolveEquipmentGroup(obj);
+      const subtype = obj.subtype || obj.category || "rack";
+      const subtypeOptions = Object.entries(EQUIPMENT_SUBTYPES)
+        .map(
+          ([k, meta]) =>
+            `<option value="${k}" ${subtype === k ? "selected" : ""}>[${EQUIPMENT_GROUP_LABELS[meta.group]}] ${meta.label}</option>`
+        )
+        .join("");
+      const isRiser = subtype === "power_riser" || subtype === "data_riser";
+      const remoteFloor = obj.link_meta?.remote_floor || "Lt. 2";
       container.innerHTML = `
         <div class="insp-card">
-          <div class="insp-title">Perangkat Telco CME / MEP</div>
+          <div class="insp-title">Perangkat ${EQUIPMENT_GROUP_LABELS[grp] || "CME / MEP"}</div>
           <div class="insp-field">
             <label>Nama / Tag Perangkat</label>
             <input type="text" id="inpEqName" value="${obj.name}" />
           </div>
           <div class="insp-field">
-            <label>Kategori 3D Mesh</label>
-            <select id="selEqCat">
-              <option value="rack" ${obj.category === "rack" ? "selected" : ""}>42U Server Rack Cabinet</option>
-              <option value="ups" ${obj.category === "ups" ? "selected" : ""}>UPS System (250kVA)</option>
-              <option value="battery" ${obj.category === "battery" ? "selected" : ""}>Lithium / VRLA Battery Bank</option>
-              <option value="rectifier" ${obj.category === "rectifier" ? "selected" : ""}>DC Rectifier / Capacitor</option>
-              <option value="panel" ${obj.category === "panel" ? "selected" : ""}>ACPDB / SDP / LVMDP Panel</option>
-              <option value="pac" ${obj.category === "pac" ? "selected" : ""}>PAC Precision Cooling</option>
-            </select>
+            <label>Sub-tipe Perangkat</label>
+            <select id="selEqCat">${subtypeOptions}</select>
           </div>
+          ${
+            isRiser
+              ? `<div class="insp-field">
+            <label>Tujuan Lantai (Link / Riser)</label>
+            <input type="text" id="inpEqRemoteFloor" value="${remoteFloor}" placeholder="mis. Lt. 2 / Rooftop" />
+          </div>`
+              : ""
+          }
           <div class="insp-row-2">
             <div class="insp-field">
               <label>Lebar (m)</label>
@@ -2436,7 +2493,27 @@ class SitestryStudioApp {
         </div>
       `;
       document.getElementById("inpEqName").onchange = (e) => store.updateSelectedProperty({ name: e.target.value });
-      document.getElementById("selEqCat").onchange = (e) => store.updateSelectedProperty({ category: e.target.value });
+      document.getElementById("selEqCat").onchange = (e) => {
+        const nextSub = e.target.value;
+        const p = getEquipmentPreset(nextSub);
+        store.updateSelectedProperty({
+          category: nextSub,
+          subtype: nextSub,
+          domain_group: p.group,
+          mount: p.mount,
+          width_m: p.w,
+          depth_m: p.d,
+          height_m: p.h,
+        });
+        this.renderInspector();
+      };
+      const inpRemote = document.getElementById("inpEqRemoteFloor");
+      if (inpRemote) {
+        inpRemote.onchange = (e) =>
+          store.updateSelectedProperty({
+            link_meta: { ...(obj.link_meta || {}), remote_floor: e.target.value },
+          });
+      }
       document.getElementById("inpEqW").onchange = (e) =>
         store.updateSelectedProperty({ width_m: parseFloat(e.target.value) || 1.0 });
       document.getElementById("inpEqD").onchange = (e) =>
@@ -2451,6 +2528,7 @@ class SitestryStudioApp {
       };
       document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
     } else if (sel.kind === "tray") {
+      const svc = normalizeTrayService(obj.service);
       container.innerHTML = `
         <div class="insp-card">
           <div class="insp-title">Jalur Cable Tray</div>
@@ -2458,11 +2536,19 @@ class SitestryStudioApp {
             <label>Nama Jalur</label>
             <input type="text" id="inpTrayName" value="${obj.name}" />
           </div>
-          <div class="insp-field">
-            <label>Tipe Tray</label>
-            <select id="inpTrayType">
-              ${TRAY_TYPES.map((t) => `<option value="${t}"${obj.type === t ? " selected" : ""}>${t}</option>`).join("")}
-            </select>
+          <div class="insp-row-2">
+            <div class="insp-field">
+              <label>Tipe Tray</label>
+              <select id="inpTrayType">
+                ${TRAY_TYPES.map((t) => `<option value="${t}"${obj.type === t ? " selected" : ""}>${t}</option>`).join("")}
+              </select>
+            </div>
+            <div class="insp-field">
+              <label>Fungsi Tray</label>
+              <select id="inpTrayService">
+                ${TRAY_SERVICES.map((s) => `<option value="${s}"${svc === s ? " selected" : ""}>${s}</option>`).join("")}
+              </select>
+            </div>
           </div>
           <div class="insp-row-2">
             <div class="insp-field">
@@ -2483,6 +2569,15 @@ class SitestryStudioApp {
       `;
       document.getElementById("inpTrayName").onchange = (e) => store.updateSelectedProperty({ name: e.target.value });
       document.getElementById("inpTrayType").onchange = (e) => store.updateSelectedProperty({ type: e.target.value });
+      document.getElementById("inpTrayService").onchange = (e) => {
+        const nextSvc = normalizeTrayService(e.target.value);
+        store.updateSelectedProperty({
+          service: nextSvc,
+          color: trayColorForService(nextSvc),
+          elevation_m: defaultTrayElevation(store.project, nextSvc),
+        });
+        this.renderInspector();
+      };
       document.getElementById("inpTrayHeight").onchange = (e) =>
         store.updateSelectedProperty({ height_m: parseFloat(e.target.value) || 0.1 });
       document.getElementById("inpTrayW").onchange = (e) =>

@@ -145,14 +145,11 @@ function initExportMenu() {
   });
 }
 
-const EQUIPMENT_LABELS = {
-  rack: "Server Rack 42U",
-  ups: "UPS 250kVA",
-  battery: "Lithium Battery Bank",
-  rectifier: "DC Rectifier",
-  panel: "ACPDB / SDP Panel",
-  pac: "PAC Precision Cooling",
-};
+import { EQUIPMENT_SUBTYPES } from "./equipmentCatalog.js";
+
+const EQUIPMENT_LABELS = Object.fromEntries(
+  Object.entries(EQUIPMENT_SUBTYPES).map(([k, v]) => [k, v.label])
+);
 
 /** Count equipments per `category`, in first-seen order. */
 export function equipmentTotals(equipments) {
@@ -172,9 +169,20 @@ export function renderBoqGrid(boq) {
   );
 }
 
-/** Stage 5 BoQ panel: structural summary plus one row per equipment category. */
+/** Stage 5 BoQ panel: structural summary, tray service breakdown, plus equipment counts. */
 export function renderBoqPanel(boq, equipments) {
   const totals = equipmentTotals(equipments);
+  const trayRows = [
+    Number(boq.powerTrayMeters) > 0
+      ? `<div class="boq-eq-row"><span>Tray Power</span><strong>${boq.powerTrayMeters} m</strong></div>`
+      : "",
+    Number(boq.dataTrayMeters) > 0
+      ? `<div class="boq-eq-row"><span>Tray Data</span><strong>${boq.dataTrayMeters} m</strong></div>`
+      : "",
+    Number(boq.unifiedTrayMeters) > 0
+      ? `<div class="boq-eq-row"><span>Tray Unified</span><strong>${boq.unifiedTrayMeters} m</strong></div>`
+      : "",
+  ].join("");
   const rows = totals.length
     ? totals
         .map(
@@ -183,7 +191,7 @@ export function renderBoqPanel(boq, equipments) {
         )
         .join("")
     : '<div class="boq-eq-empty">Belum ada perangkat terpasang.</div>';
-  return `<div class="boq-panel-title">BoQ live</div><div class="struct-summary-grid">${renderBoqGrid(boq)}</div>${rows}`;
+  return `<div class="boq-panel-title">BoQ live</div><div class="struct-summary-grid">${renderBoqGrid(boq)}</div>${trayRows}${rows}`;
 }
 
 // ==================== COMMAND PALETTE ====================
@@ -498,7 +506,7 @@ export function initV4Dock(app) {
   decorateToolButtons();
   buildDockFlyout(3, [".wall-assist-bar", "#stairSettingsCard", "#roomSettingsCard", ".layer-card"]);
   buildDockFlyout(4, [".cam-toggles-row", ".surface-card:has(#stage4SummaryGrid)"]);
-  buildDockFlyout(5, ["#traySettingsCard", ".eq-catalog-grid", ".preset-cme-row", "label.layer-check-row"]);
+  buildDockFlyout(5, ["#traySettingsCard", ".eq-catalog-grid", ".eq-subtype-row", ".preset-cme-row", "label.layer-check-row"]);
   initExportMenu();
   initPalette(app);
   document.getElementById("btnRetryExtract")?.addEventListener("click", () => app.startExtractionV4());

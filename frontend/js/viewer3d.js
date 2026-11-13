@@ -18,7 +18,8 @@ import { SceneSync } from "./sceneSync.js";
 import { buildRoomFaces } from "./roomFaces.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { buildFitting, buildTrayProfile, fittingCutM, FITTING_KINDS } from "./trayProfiles.js";
-import { trayPoints } from "./trayNetwork.js";
+import { getEquipmentPreset } from "./equipmentCatalog.js";
+import { trayColorForService, trayPoints } from "./trayNetwork.js";
 import { deriveFittings } from "./trayFittings.js";
 
 export class Viewer3DEngine {
@@ -739,7 +740,8 @@ export class Viewer3DEngine {
       const h = Number(eq.height_m) || 2.0;
       const elev = Number(eq.elevation_m) || 0.0;
       const isSelected = sel?.kind === "equipment" && sel?.id === eq.id;
-      const colors = palette[eq.category] || palette.rack;
+      const preset = getEquipmentPreset(eq.subtype || eq.category);
+      const colors = palette[eq.category] || { body: new THREE.Color(preset.color), accent: 0xf8fafc };
 
       const eqGroup = new THREE.Group();
       eqGroup.position.set(pos.x, elev, pos.z);
@@ -780,7 +782,7 @@ export class Viewer3DEngine {
     const trayById = new Map(project.cable_trays.map((t) => [t.id, t]));
     const materialFor = (tray, isSelected) =>
       new THREE.MeshStandardMaterial({
-        color: isSelected ? 0x00754a : 0xcba258,
+        color: isSelected ? 0x00754a : new THREE.Color(tray.color || trayColorForService(tray.service)),
         metalness: 0.7,
         roughness: 0.3,
       });
