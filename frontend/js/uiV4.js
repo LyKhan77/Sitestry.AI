@@ -48,6 +48,7 @@ export function syncTimeline(step) {
 // ==================== DOCK: tool icons, flyout, floating property panel ====================
 const ICONS = {
   select: '<path d="M5 3l12 7-5.5 1.5L9 17z" fill="currentColor"/>',
+  pan: '<path d="M9 11V4.5a1 1 0 1 1 2 0V10m0-4.5a1 1 0 1 1 2 0V10m0-3.5a1 1 0 1 1 2 0V12a4.5 4.5 0 0 1-9 0V8.5a1 1 0 1 1 2 0V11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
   wall: '<path d="M3 15L15 4" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>',
   door: '<path d="M4 16V4M4 16h12M4 4a12 12 0 0 1 12 12" fill="none" stroke="currentColor" stroke-width="2"/>',
   double_door:
@@ -63,6 +64,9 @@ const ICONS = {
   equipment:
     '<rect x="4" y="3" width="12" height="14" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 8h12M4 13h12" stroke="currentColor" stroke-width="2"/>',
   tray: '<path d="M3 5h14M3 15h14M6 5v10M10 5v10M14 5v10" fill="none" stroke="currentColor" stroke-width="2"/>',
+  pipe: '<path d="M3 8h9v4H3zM12 10h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="3" cy="10" r="1.5" fill="currentColor"/><circle cx="17" cy="15.5" r="1.5" fill="currentColor"/>',
+  cable:
+    '<circle cx="4.5" cy="5.5" r="2" fill="currentColor"/><circle cx="15.5" cy="14.5" r="2" fill="currentColor"/><path d="M6.5 5.5c5 0 2 9 7 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 };
 
 /** Add an inline icon and an accessible name (label + shortcut) to every tool button under `root`. */
@@ -170,8 +174,9 @@ export function renderBoqGrid(boq) {
 }
 
 /** Stage 5 BoQ panel: structural summary, tray service breakdown, plus equipment counts. */
-export function renderBoqPanel(boq, equipments) {
+export function renderBoqPanel(boq, equipments, collapsed = false) {
   const totals = equipmentTotals(equipments);
+  const directDrops = Math.max(0, Number(boq.waterfallCount || 0) - Number(boq.trayWaterfallCount || 0));
   const trayRows = [
     Number(boq.powerTrayMeters) > 0
       ? `<div class="boq-eq-row"><span>Tray Power</span><strong>${boq.powerTrayMeters} m</strong></div>`
@@ -200,8 +205,11 @@ export function renderBoqPanel(boq, equipments) {
     Number(boq.securityCableMeters) > 0
       ? `<div class="boq-eq-row"><span>Kabel Security</span><strong>${boq.securityCableMeters} m</strong></div>`
       : "",
-    Number(boq.waterfallCount) > 0
-      ? `<div class="boq-eq-row"><span>Waterfall Drop</span><strong>${boq.waterfallCount} pcs</strong></div>`
+    Number(boq.trayWaterfallCount) > 0
+      ? `<div class="boq-eq-row"><span>Tray Waterfall Drop</span><strong>${boq.trayWaterfallCount} pcs</strong></div>`
+      : "",
+    directDrops > 0
+      ? `<div class="boq-eq-row"><span>Direct Waterfall Drop</span><strong>${directDrops} pcs</strong></div>`
       : "",
   ].join("");
   const rows = totals.length
@@ -212,7 +220,14 @@ export function renderBoqPanel(boq, equipments) {
         )
         .join("")
     : '<div class="boq-eq-empty">Belum ada perangkat terpasang.</div>';
-  return `<div class="boq-panel-title">BoQ live</div><div class="struct-summary-grid">${renderBoqGrid(boq)}</div>${trayRows}${rows}`;
+  const toggleLabel = collapsed ? "Tampilkan" : "Sembunyikan";
+  return (
+    `<div class="boq-panel-header">` +
+    `<div class="boq-panel-title">BoQ live</div>` +
+    `<button type="button" id="btnToggleBoq" class="boq-toggle-btn" aria-expanded="${!collapsed}">${toggleLabel}</button>` +
+    `</div>` +
+    `<div class="boq-panel-body">${`<div class="struct-summary-grid">${renderBoqGrid(boq)}</div>${trayRows}${rows}`}</div>`
+  );
 }
 
 // ==================== COMMAND PALETTE ====================

@@ -19,6 +19,13 @@ export const CABLE_SYSTEM_LABELS = {
   security: "Security",
 };
 
+export const WATERFALL_STYLES = ["tray_waterfall", "direct"];
+
+export const WATERFALL_STYLE_LABELS = {
+  tray_waterfall: "Tray Waterfall",
+  direct: "Direct Drop",
+};
+
 const INFRA_SNAP_RADIUS_M = 3.0;
 const WALL_SEARCH_RADIUS_M = 4.5;
 
@@ -30,6 +37,14 @@ const SYSTEM_COLORS = {
   linkPower: "#f97316",
   cooling: "#06b6d4",
   security: "#9333ea",
+};
+
+const SYSTEM_PRIORITY = {
+  powerA: 0,
+  powerB: 1,
+  grounding: 2,
+  link: 3,
+  security: 4,
 };
 
 const LANE_OFFSETS_M = {
@@ -55,10 +70,39 @@ export function cableColorFor(cable, source = null, target = null) {
   return SYSTEM_COLORS.powerA;
 }
 
-function laneOffsetPx(cable, scale) {
+function systemLaneKey(cable) {
   const sys = cable?.system || "power";
-  const key = sys === "power" ? (cable?.path_label === "B" ? "powerB" : "powerA") : sys;
-  return (LANE_OFFSETS_M[key] ?? 0) * scale;
+  return sys === "power" ? (cable?.path_label === "B" ? "powerB" : "powerA") : sys;
+}
+
+/**
+ * Compute parallel horizontal offset & vertical tier inside a tray so multiple cables
+ * of the same or different systems bundle neatly side-by-side and stack cleanly.
+ */
+function computeTrayBundleSlot(project, cable, trayWidthM = 0.5, scale = 30.68) {
+  const allTrayCables = (project?.cables || []).filter((c) => c && c.system !== "cooling");
+  const idx = allTrayCables.findIndex((c) => c.id === cable?.id);
+  if (allTrayCables.length <= 1 || idx === -1) {
+    return { offsetPx: (LANE_OFFSETS_M[systemLaneKey(cable)] ?? 0) * scale, tier: 0 };
+  }
+
+  const ordered = allTrayCables
+    .map((c, order) => ({ c, key: systemLaneKey(c), order }))
+    .sort((a, b) => (SYSTEM_PRIORITY[a.key] ?? 9) - (SYSTEM_PRIORITY[b.key] ?? 9) || a.order - b.order);
+
+  const slot = Math.max(0, ordered.findIndex((item) => item.c.id === cable.id));
+  const usableW = Math.max(0.24, (Number(trayWidthM) || 0.5) - 0.08);
+  const spacing = 0.045;
+  const cols = Math.max(3, Math.floor(usableW / spacing) + 1);
+  const col = slot % cols;
+  const row = Math.floor(slot / cols);
+  const rowCount = Math.min(cols, ordered.length - row * cols);
+  const centeredOffsetM = (col - (rowCount - 1) / 2) * spacing;
+  return { offsetPx: centeredOffsetM * scale, tier: row };
+}
+
+export function normalizeWaterfallStyle(style) {
+  return WATERFALL_STYLES.includes(style) ? style : "tray_waterfall";
 }
 
 function equipmentConnectionZ(eq) {
@@ -335,10 +379,19 @@ export function resolveCableRoute(project, cable) {
     };
   }
 
-  const offsetPx = isCooling ? 0 : laneOffsetPx(cable, scale);
-  const offsetInfra = applyLaneOffset(dedupe2D(infraPoints), offsetPx);
+  const slot = isCooling ? { offsetPx: 0, tier: 0 } : computeTrayBundleSlot(project, cable, srcHit.run.width_m, scale);
+  const offsetInfra = applyLaneOffset(dedupe2D(infraPoints), slot.offsetPx);
   const entryPt = offsetInfra[0];
   const exitPt = offsetInfra[offsetInfra.length - 1];
+
+  // Seat non-cooling cables neatly inside the tray trough rather than floating on top of the side wall
+  if (!isCooling) {
+    const sideH = Number(srcHit.run.height_m ?? 0.1);
+    const floorElev = infraElev - sideH + 0.024 + slot.tier * 0.032;
+    infraElev = Math.min(infraElev - 0.012, Math.max(0.2, floorElev));
+  }
+
+  const wfStyle = normalizeWaterfallStyle(cable?.waterfall_style);
 
   const srcOutside = srcHit.dist > snapPx;
   const tgtOutside = tgtHit.dist > snapPx;
@@ -353,21 +406,41 @@ export function resolveCableRoute(project, cable) {
 
   const points2d_px = dedupe2D([...approachSrc, ...offsetInfra, ...approachTgt]);
 
+  const unitDir = (fromPt, toPt) => {
+    const dx = toPt[0] - fromPt[0];
+    const dy = toPt[1] - fromPt[1];
+    const len = Math.hypot(dx, dy);
+    return len > 1e-4 ? { x: dx / len, y: dy / len } : { x: 0, y: 1 };
+  };
+
   const waterfalls = [];
   const points3d = [];
+  const lipPx = wfStyle === "tray_waterfall" && !isCooling ? 0.12 * scale : 0;
   for (const [x_px, y_px] of approachSrc.slice(0, -1)) {
     points3d.push({ x_px, y_px, y_m: srcZ });
   }
-  points3d.push({ x_px: entryPt[0], y_px: entryPt[1], y_m: srcZ });
   if (Math.abs(infraElev - srcZ) > 0.05) {
+    const prevApproach = approachSrc[approachSrc.length - 2] || [source.x_px, source.y_px];
+    const outDir = unitDir(entryPt, prevApproach);
     if (!isCooling) {
       waterfalls.push({
         x_px: entryPt[0],
         y_px: entryPt[1],
         z_top_m: Math.max(infraElev, srcZ),
         z_bottom_m: Math.min(infraElev, srcZ),
+        style: wfStyle,
+        out_x: outDir.x,
+        out_y: outDir.y,
       });
     }
+    const lx = entryPt[0] + outDir.x * lipPx;
+    const ly = entryPt[1] + outDir.y * lipPx;
+    points3d.push({ x_px: lx, y_px: ly, y_m: srcZ });
+    if (lipPx > 0) {
+      points3d.push({ x_px: lx, y_px: ly, y_m: infraElev - 0.04 });
+    }
+    points3d.push({ x_px: entryPt[0], y_px: entryPt[1], y_m: infraElev });
+  } else {
     points3d.push({ x_px: entryPt[0], y_px: entryPt[1], y_m: infraElev });
   }
   for (const [x_px, y_px] of offsetInfra.slice(1, -1)) {
@@ -375,14 +448,26 @@ export function resolveCableRoute(project, cable) {
   }
   points3d.push({ x_px: exitPt[0], y_px: exitPt[1], y_m: infraElev });
   if (Math.abs(infraElev - tgtZ) > 0.05) {
+    const nextApproach = approachTgt[1] || [target.x_px, target.y_px];
+    const outDir = unitDir(exitPt, nextApproach);
     if (!isCooling) {
       waterfalls.push({
         x_px: exitPt[0],
         y_px: exitPt[1],
         z_top_m: Math.max(infraElev, tgtZ),
         z_bottom_m: Math.min(infraElev, tgtZ),
+        style: wfStyle,
+        out_x: outDir.x,
+        out_y: outDir.y,
       });
     }
+    const lx = exitPt[0] + outDir.x * lipPx;
+    const ly = exitPt[1] + outDir.y * lipPx;
+    if (lipPx > 0) {
+      points3d.push({ x_px: lx, y_px: ly, y_m: infraElev - 0.04 });
+    }
+    points3d.push({ x_px: lx, y_px: ly, y_m: tgtZ });
+  } else {
     points3d.push({ x_px: exitPt[0], y_px: exitPt[1], y_m: tgtZ });
   }
   for (const [x_px, y_px] of approachTgt.slice(1)) {

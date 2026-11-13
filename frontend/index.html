@@ -307,6 +307,10 @@
               <span class="kbd">V</span>
               <span>Select / Vertex</span>
             </button>
+            <button class="tool-btn" data-tool="pan" title="Geser Canvas tanpa Memilih Elemen (Shortcut: H)">
+              <span class="kbd">H</span>
+              <span>Pan View</span>
+            </button>
             <button class="tool-btn" data-tool="wall" title="Gambar Segmen Dinding Baru (Shortcut: W)">
               <span class="kbd">W</span>
               <span>Draw Wall</span>
@@ -490,6 +494,20 @@
         </div>
 
         <div class="surface-card">
+          <div class="card-header-label">NAVIGASI &amp; INSPEKSI</div>
+          <div class="tool-grid-2col">
+            <button class="tool-btn active" data-tool="select" title="Pilih Elemen untuk Inspeksi (Shortcut: V)">
+              <span class="kbd">V</span>
+              <span>Select</span>
+            </button>
+            <button class="tool-btn" data-tool="pan" title="Geser Canvas tanpa Memilih Elemen (Shortcut: H)">
+              <span class="kbd">H</span>
+              <span>Pan View</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="surface-card">
           <div class="card-header-label">PRESET KAMERA &amp; VIEWPORT</div>
           <div class="cam-preset-grid">
             <button id="btnStage4CamIso" class="btn-ceramic-sm active">3D Isometric Orbit</button>
@@ -562,6 +580,10 @@
             <button type="button" class="mode-btn active" data-cable-path="A" aria-pressed="true">Path A (Merah)</button>
             <button type="button" class="mode-btn" data-cable-path="B" aria-pressed="false">Path B (Biru)</button>
           </div>
+          <div class="mode-group cable-waterfall-group" role="group" aria-label="Gaya turun kabel" style="margin-top:6px;">
+            <button type="button" class="mode-btn active" data-cable-waterfall="tray_waterfall" aria-pressed="true">Tray Waterfall</button>
+            <button type="button" class="mode-btn" data-cable-waterfall="direct" aria-pressed="false">Direct Drop</button>
+          </div>
         </div>
 
         <div class="surface-card">
@@ -597,6 +619,10 @@
             <button class="tool-btn active" data-tool="select" id="btnToolSelect5" title="Pilih perangkat atau tray (Shortcut: V)">
               <span class="kbd">V</span>
               <span>Pilih / Geser (Select)</span>
+            </button>
+            <button class="tool-btn" data-tool="pan" id="btnToolPan5" title="Geser Canvas tanpa Memilih Elemen (Shortcut: H)">
+              <span class="kbd">H</span>
+              <span>Pan View</span>
             </button>
             <button class="tool-btn" data-tool="equipment" id="btnToolPlaceEq">
               <span class="kbd">E</span>

@@ -37,7 +37,10 @@ import {
 import {
   CABLE_SYSTEMS,
   CABLE_SYSTEM_LABELS,
+  WATERFALL_STYLES,
+  WATERFALL_STYLE_LABELS,
   cableColorFor,
+  normalizeWaterfallStyle,
   resolveCableRoute,
 } from "./cableRouter.js";
 import { countsOf, structureHash, workspaceFlags } from "./workspaceState.js";
@@ -66,6 +69,8 @@ const TOOL_HINTS = {
     "Mode: <strong>Select / Move Vertex [V]</strong> — Geser titik sudut dinding, geser pintu di sepanjang dinding, atau klik elemen untuk edit properti.",
   select_install:
     "Mode: <strong>Select [V]</strong> — Klik perangkat atau tray untuk memilih dan mengedit properti, geser perangkat untuk memindahkan, klik area kosong untuk batal pilih. Pilih Equipment atau Tray untuk memasang yang baru.",
+  pan:
+    "Mode: <strong>Pan View [H]</strong> — Geser viewport 2D dengan bebas untuk inspeksi tanpa risiko mengklik atau memilih elemen.",
   roi: "Mode: <strong>ROI Crop Box [C]</strong> — Geser sudut kanan-bawah kotak hijau untuk mengecualikan Kop Surat / Title Block.",
   ruler:
     "Mode: <strong>2-Point Ruler [R]</strong> — Klik Titik A dan Titik B pada jarak yang diketahui (misal Grid Kolom 6000mm atau Tile 600mm).",
@@ -1369,6 +1374,20 @@ class SitestryStudioApp {
         });
       });
     });
+    document.querySelectorAll("[data-cable-waterfall]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        store.ui.cableWaterfallStyle = normalizeWaterfallStyle(btn.dataset.cableWaterfall);
+        document.querySelectorAll("[data-cable-waterfall]").forEach((b) => {
+          b.classList.toggle("active", b.dataset.cableWaterfall === store.ui.cableWaterfallStyle);
+          b.setAttribute("aria-pressed", String(b.dataset.cableWaterfall === store.ui.cableWaterfallStyle));
+        });
+      });
+    });
+    document.getElementById("boqPanel")?.addEventListener("click", (e) => {
+      if (!e.target.closest("#btnToggleBoq")) return;
+      store.ui.boqCollapsed = !store.ui.boqCollapsed;
+      this.updateTelemetryAndStageMetrics();
+    });
     document.getElementById("chkTransparentFloor")?.addEventListener("change", (e) => {
       store.ui.transparentFloor = Boolean(e.target.checked);
       this.viewer3d.rebuildScene();
@@ -1847,6 +1866,7 @@ class SitestryStudioApp {
 
       const map = {
         v: "select",
+        h: "pan",
         c: "roi",
         r: "ruler",
         w: "wall",
@@ -1863,6 +1883,7 @@ class SitestryStudioApp {
         roi: [1],
         ruler: [1],
         select: [2, 3, 4, 5],
+        pan: [3, 4, 5],
         wall: [3],
         door: [3],
         double_door: [3],
@@ -1918,7 +1939,11 @@ class SitestryStudioApp {
 
     // v4 Stage 5 BoQ panel (hidden by CSS outside v4 stage 5)
     const boqPanel = document.getElementById("boqPanel");
-    if (boqPanel) boqPanel.innerHTML = renderBoqPanel(boq, p.equipments);
+    if (boqPanel) {
+      const collapsed = Boolean(store.ui.boqCollapsed);
+      boqPanel.classList.toggle("collapsed", collapsed);
+      boqPanel.innerHTML = renderBoqPanel(boq, p.equipments, collapsed);
+    }
   }
 
   // ==================== CONTEXTUAL PROPERTY INSPECTOR ====================
@@ -2683,6 +2708,10 @@ class SitestryStudioApp {
       const sysOpts = CABLE_SYSTEMS.map(
         (s) => `<option value="${s}"${obj.system === s ? " selected" : ""}>${CABLE_SYSTEM_LABELS[s] || s}</option>`
       ).join("");
+      const wfStyle = normalizeWaterfallStyle(obj.waterfall_style);
+      const wfOpts = WATERFALL_STYLES.map(
+        (ws) => `<option value="${ws}"${wfStyle === ws ? " selected" : ""}>${WATERFALL_STYLE_LABELS[ws] || ws}</option>`
+      ).join("");
       container.innerHTML = `
         <div class="insp-card">
           <div class="insp-title">Koneksi Cabling</div>
@@ -2707,6 +2736,14 @@ class SitestryStudioApp {
                 : `<div class="insp-field"><label>Panjang (m)</label><input type="text" readonly value="${route.length_m} m" /></div>`
             }
           </div>
+          ${
+            obj.system !== "cooling"
+              ? `<div class="insp-field">
+            <label>Drop Style (Waterfall)</label>
+            <select id="inpCabWaterfall">${wfOpts}</select>
+          </div>`
+              : ""
+          }
           <div class="insp-field">
             <label>Info Rute Otomatis</label>
             <div style="font-size:11px;color:var(--text-warm-muted);line-height:1.4;">
@@ -2730,6 +2767,13 @@ class SitestryStudioApp {
         });
         this.renderInspector();
       };
+      const inpWf = document.getElementById("inpCabWaterfall");
+      if (inpWf) {
+        inpWf.onchange = (e) => {
+          store.updateSelectedProperty({ waterfall_style: normalizeWaterfallStyle(e.target.value) });
+          this.renderInspector();
+        };
+      }
       const inpPath = document.getElementById("inpCabPath");
       if (inpPath) {
         inpPath.onchange = (e) => {

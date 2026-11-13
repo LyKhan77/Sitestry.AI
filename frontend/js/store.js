@@ -33,6 +33,7 @@ import {
 import {
   CABLE_SYSTEMS,
   cableColorFor,
+  normalizeWaterfallStyle,
   resolveCableRoute,
 } from "./cableRouter.js";
 import {
@@ -47,7 +48,7 @@ import {
 } from "./stairGeometry.js";
 
 /** Tools whose gesture owns the canvas: other elements are neither selectable nor draggable while one is active. */
-export const ISOLATING_TOOLS = new Set(["wall", "stair", "door", "double_door", "window", "column", "room"]);
+export const ISOLATING_TOOLS = new Set(["wall", "stair", "door", "double_door", "window", "column", "room", "pan"]);
 
 // Annotation is edited only in Stage 3; equipment and cable trays only in Stage 5.
 const STRUCTURAL_KINDS = new Set(["node", "wall", "opening", "column", "stair", "room"]);
@@ -98,7 +99,9 @@ export class SitestryStore extends EventTarget {
       pipeMounting: "underfloor", // "underfloor" | "overhead"
       cableSystem: "power", // "power" | "grounding" | "link" | "cooling" | "security"
       cablePathLabel: "A", // "A" | "B"
+      cableWaterfallStyle: "tray_waterfall", // "tray_waterfall" | "direct"
       transparentFloor: false,
+      boqCollapsed: false,
       selected: null, // { kind: "wall"|"node"|"column"|"opening"|"room"|"equipment"|"tray"|"stair", id: string }
       wallMode: "manual", // "manual" | "guided"
       endpointSnap: true,
@@ -908,6 +911,7 @@ export class SitestryStore extends EventTarget {
       name: opts.name || `${system.toUpperCase()}: ${source.name} → ${target.name}`,
       system,
       ...(pathLabel ? { path_label: pathLabel } : {}),
+      waterfall_style: normalizeWaterfallStyle(opts.waterfall_style || this.ui.cableWaterfallStyle),
       source_id: source.id,
       target_id: target.id,
       color: opts.color || cableColorFor({ system, path_label: pathLabel }, source, target),
@@ -1320,10 +1324,12 @@ export class SitestryStore extends EventTarget {
 
     const cableMeters = Object.fromEntries(CABLE_SYSTEMS.map((s) => [s, 0]));
     let waterfallCount = 0;
+    let trayWaterfallCount = 0;
     for (const cab of this.project.cables || []) {
       const route = resolveCableRoute(this.project, cab);
       cableMeters[cab.system] = (cableMeters[cab.system] || 0) + route.length_m;
       waterfallCount += route.waterfalls.length;
+      trayWaterfallCount += route.waterfalls.filter((wf) => wf.style === "tray_waterfall").length;
     }
 
     const doorsCount = this.project.openings.filter(
@@ -1354,6 +1360,7 @@ export class SitestryStore extends EventTarget {
       coolingRouteMeters: cableMeters.cooling.toFixed(1),
       securityCableMeters: cableMeters.security.toFixed(1),
       waterfallCount,
+      trayWaterfallCount,
       columnsCount: this.project.columns.length,
       doorsCount,
       windowsCount,

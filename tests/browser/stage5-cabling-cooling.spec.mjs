@@ -76,12 +76,49 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
 
     await expect(page.locator("#boqPanel")).toContainText("Kabel Power");
     await expect(page.locator("#boqPanel")).toContainText("Cooling Pipe");
-    await expect(page.locator("#boqPanel")).toContainText("Waterfall Drop");
+    await expect(page.locator("#boqPanel")).toContainText("Tray Waterfall Drop");
 
-    // 4. Toggle Transparan Lantai
+    // 4. BoQ Show/Hide toggle + tool icons for Pan, Pipe, and Cable
+    await expect(page.locator('#stagePanel5 [data-tool="pan"] .tool-ico')).toHaveCount(1);
+    await expect(page.locator('#stagePanel5 [data-tool="pipe"] .tool-ico')).toHaveCount(1);
+    await expect(page.locator('#stagePanel5 [data-tool="cable"] .tool-ico')).toHaveCount(1);
+    await page.locator("#btnToggleBoq").click();
+    await expect(page.locator("#boqPanel")).toHaveClass(/collapsed/);
+    await expect(page.locator("#boqPanel .boq-panel-body")).toBeHidden();
+    await page.locator("#btnToggleBoq").click();
+    await expect(page.locator("#boqPanel .boq-panel-body")).toBeVisible();
+
+    // 5. Toggle Transparan Lantai
     await page.locator("#chkTransparentFloor").check({ force: true });
     const transparentOn = await page.evaluate(() => window.sitestryApp.canvas2d.store.ui.transparentFloor);
     expect(transparentOn).toBe(true);
+  });
+
+  test("Pan tool inspects without selecting equipment on canvas", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    await loadStage(page, 5);
+
+    const eqPos = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const rack = store.addEquipment(1500, 1000, "rack");
+      store.selectObject(null, null);
+      return { x: rack.x_px, y: rack.y_px };
+    });
+
+    await setTool(page, "pan");
+    const [pt] = await worldPointsToScreen(page, [eqPos], 0.9);
+    const before = await page.evaluate(() => window.sitestryApp.canvas2d.stage.position());
+    await page.mouse.move(pt.x, pt.y);
+    await page.mouse.down();
+    await page.mouse.move(pt.x + 80, pt.y + 40);
+    await page.mouse.up();
+
+    const after = await page.evaluate(() => ({
+      pos: window.sitestryApp.canvas2d.stage.position(),
+      selected: window.sitestryApp.canvas2d.store.ui.selected,
+    }));
+    expect(after.selected).toBeNull();
+    expect(Math.round(after.pos.x - before.x)).toBeGreaterThanOrEqual(70);
   });
 
   test("cable tool connects source to target equipment on canvas click", async ({ page }) => {

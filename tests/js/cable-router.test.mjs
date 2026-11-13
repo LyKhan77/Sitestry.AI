@@ -96,3 +96,20 @@ test("power and grounding sharing the same tray receive distinct lateral lane of
   const gnd = resolveCableRoute(proj, { id: "c_g", system: "grounding", source_id: "panel1", target_id: "rack1" });
   assert.notEqual(pwr.points2d_px[1][1], gnd.points2d_px[1][1]);
 });
+
+test("multiple cables of the same system bundle side-by-side neatly and default to tray_waterfall", () => {
+  const proj = baseProject();
+  insertTrayRun(proj, [[40, 60], [300, 60]], { id: "t1", service: "power", width_m: 0.5, elevation_m: 3.25 }, 1);
+  const c1 = { id: "cp1", system: "power", path_label: "A", source_id: "panel1", target_id: "rack1" };
+  const c2 = { id: "cp2", system: "power", path_label: "A", source_id: "panel1", target_id: "rack1" };
+  const c3 = { id: "cp3", system: "power", path_label: "A", source_id: "panel1", target_id: "rack1", waterfall_style: "direct" };
+  proj.cables = [c1, c2, c3];
+
+  const r1 = resolveCableRoute(proj, c1);
+  const r2 = resolveCableRoute(proj, c2);
+  const r3 = resolveCableRoute(proj, c3);
+  const ys = new Set([r1.points2d_px[1][1], r2.points2d_px[1][1], r3.points2d_px[1][1]]);
+  assert.equal(ys.size, 3);
+  assert.equal(r1.waterfalls[0].style, "tray_waterfall");
+  assert.equal(r3.waterfalls[0].style, "direct");
+});

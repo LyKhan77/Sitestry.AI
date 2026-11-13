@@ -869,17 +869,45 @@ export class Viewer3DEngine {
   buildPipes3D(scale, sel) {
     void scale;
     const project = this.store.project;
+    const nodeDegree = new Map();
+    for (const pipe of project.pipe_runs || []) {
+      const ids = pipe.node_ids || [];
+      for (let i = 0; i < ids.length; i++) {
+        const inc = (i > 0 ? 1 : 0) + (i < ids.length - 1 ? 1 : 0);
+        nodeDegree.set(ids[i], (nodeDegree.get(ids[i]) || 0) + inc);
+      }
+    }
+
     for (const pipe of project.pipe_runs || []) {
       const pts = pipePoints(project, pipe);
       if (pts.length < 2) continue;
       const isSelected = sel?.kind === "pipe" && sel?.id === pipe.id;
       const elev = Number(pipe.elevation_m ?? 0.15);
-      const radius = Math.max(0.025, (Number(pipe.diameter_m) || 0.1) / 2);
-      const mat = new THREE.MeshStandardMaterial({
+      const radius = Math.max(0.03, (Number(pipe.diameter_m) || 0.1) / 2);
+      const innerR = radius * 0.72;
+      const outerMat = new THREE.MeshStandardMaterial({
         color: isSelected ? 0x00754a : new THREE.Color(pipe.color || PIPE_DEFAULT_COLOR),
         metalness: 0.55,
         roughness: 0.35,
       });
+      const boreMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a,
+        metalness: 0.2,
+        roughness: 0.85,
+        side: THREE.BackSide,
+      });
+      const flangeMat = new THREE.MeshStandardMaterial({
+        color: isSelected ? 0xcba258 : 0x334155,
+        metalness: 0.65,
+        roughness: 0.35,
+      });
+
+      // Hollow annular extrusion shape so pipe ends visibly show wall thickness and open bore
+      const wallShape = new THREE.Shape();
+      wallShape.absarc(0, 0, radius, 0, Math.PI * 2, false);
+      const holePath = new THREE.Path();
+      holePath.absarc(0, 0, innerR, 0, Math.PI * 2, true);
+      wallShape.holes.push(holePath);
 
       const pipeGroup = new THREE.Group();
       pipeGroup.userData = { sitestryKind: "pipe", sitestryId: pipe.id, mounting: pipe.mounting };
@@ -892,23 +920,90 @@ export class Viewer3DEngine {
         const len = Math.hypot(dx, dz);
         if (len < 0.05) continue;
 
-        const segMesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, 12), mat);
-        segMesh.position.set((p1.x + p2.x) / 2, elev, (p1.z + p2.z) / 2);
-        segMesh.rotation.z = Math.PI / 2;
-        segMesh.rotation.y = -Math.atan2(dz, dx);
-        pipeGroup.add(segMesh);
+        const segGroup = new THREE.Group();
+        segGroup.position.set(p1.x, elev, p1.z);
+        segGroup.rotation.y = -Math.atan2(dz, dx) + Math.PI / 2;
+
+        const shellGeo = new THREE.ExtrudeGeometry(wallShape, {
+          depth: len,
+          bevelEnabled: false,
+          curveSegments: 16,
+        });
+        const shellMesh = new THREE.Mesh(shellGeo, outerMat);
+        segGroup.add(shellMesh);
+
+        // Dark interior liner so the open pipe bore is deeply legible
+        const boreGeo = new THREE.CylinderGeometry(innerR, innerR, len, 16, 1, true);
+        boreGeo.rotateX(Math.PI / 2);
+        boreGeo.translate(0, 0, len / 2);
+        const boreMesh = new THREE.Mesh(boreGeo, boreMat);
+        segGroup.add(boreMesh);
+
+        pipeGroup.add(segGroup);
       }
 
-      for (const [px, py] of pts) {
+      const ids = pipe.node_ids || [];
+      for (let i = 0; i < pts.length; i++) {
+        const [px, py] = pts[i];
         const p = this.pxToMeter3D(px, py);
-        const joint = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.25, 10, 10), mat);
-        joint.position.set(p.x, elev, p.z);
-        pipeGroup.add(joint);
+        const deg = nodeDegree.get(ids[i]) || 1;
+        if (deg <= 1) {
+          // Open terminal flange rim (keeps bore open & hollow at pipe ends)
+          const nextPt = pts[i === 0 ? 1 : pts.length - 2];
+          const np = nextPt ? this.pxToMeter3D(nextPt[0], nextPt[1]) : p;
+          const rim = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.96, radius * 0.18, 8, 18), flangeMat);
+          rim.position.set(p.x, elev, p.z);
+          rim.rotation.y = -Math.atan2(np.z - p.z, np.x - p.x) + Math.PI / 2;
+          pipeGroup.add(rim);
+        } else {
+          // Compact elbow/tee coupling sleeve
+          const hub = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.18, 12, 12), flangeMat);
+          hub.position.set(p.x, elev, p.z);
+          pipeGroup.add(hub);
+        }
       }
 
       this.rootGroup.add(pipeGroup);
       this.selectableMeshes.push(pipeGroup);
     }
+  }
+
+  buildTrayWaterfallChute3D(isSelected) {
+    const chuteGroup = new THREE.Group();
+    const chuteMat = new THREE.MeshStandardMaterial({
+      color: isSelected ? 0x00754a : 0xf59e0b,
+      roughness: 0.4,
+      metalness: 0.35,
+      side: THREE.DoubleSide,
+    });
+    const railMat = new THREE.MeshStandardMaterial({
+      color: 0xb45309,
+      roughness: 0.45,
+      metalness: 0.4,
+    });
+
+    // Quarter-round drop-out lip along +Z then curving down -Y
+    const arcShape = new THREE.Shape();
+    arcShape.moveTo(0, 0);
+    arcShape.quadraticCurveTo(0.1, 0, 0.11, -0.1);
+    arcShape.lineTo(0.095, -0.1);
+    arcShape.quadraticCurveTo(0.085, -0.015, 0, -0.015);
+    arcShape.closePath();
+
+    const width = 0.14;
+    const rampGeo = new THREE.ExtrudeGeometry(arcShape, { depth: width, bevelEnabled: false, curveSegments: 10 });
+    rampGeo.translate(0, 0, -width / 2);
+    // Rotate so ramp flows along +Z outward from tray center
+    rampGeo.rotateY(-Math.PI / 2);
+    chuteGroup.add(new THREE.Mesh(rampGeo, chuteMat));
+
+    // Side guide ribs
+    for (const sx of [-width / 2 - 0.004, width / 2 + 0.004]) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.035, 0.1), railMat);
+      rib.position.set(sx, 0.01, 0.05);
+      chuteGroup.add(rib);
+    }
+    return chuteGroup;
   }
 
   buildCables3D(sel) {
@@ -939,21 +1034,28 @@ export class Viewer3DEngine {
       if (vectors.length < 2) continue;
 
       const curve = new THREE.CatmullRomCurve3(vectors, false, "catmullrom", 0.12);
-      const radius = cab.system === "power" ? 0.024 : cab.system === "cooling" ? 0.022 : 0.016;
+      const radius = cab.system === "power" ? 0.022 : cab.system === "cooling" ? 0.02 : 0.015;
       const tubularSegments = Math.max(16, vectors.length * 8);
       const tubeMesh = new THREE.Mesh(new THREE.TubeGeometry(curve, tubularSegments, radius, 8, false), mat);
       cableGroup.add(tubeMesh);
 
-      // Waterfall drop-out collars at tray entry/exit points
+      // Waterfall drop-outs: Tray Waterfall Chute (default) or compact Direct Drop grommet collar
       for (const wf of route.waterfalls) {
         const wm = this.pxToMeter3D(wf.x_px, wf.y_px);
-        const collar = new THREE.Mesh(
-          new THREE.TorusGeometry(radius * 2.2, radius * 0.65, 8, 16),
-          new THREE.MeshStandardMaterial({ color: 0xcba258, metalness: 0.7, roughness: 0.3 })
-        );
-        collar.rotation.x = Math.PI / 2;
-        collar.position.set(wm.x, wf.z_top_m, wm.z);
-        cableGroup.add(collar);
+        if (wf.style === "tray_waterfall") {
+          const chute = this.buildTrayWaterfallChute3D(isSelected);
+          chute.position.set(wm.x, wf.z_top_m + 0.015, wm.z);
+          chute.rotation.y = Math.atan2(wf.out_x || 0, wf.out_y ?? 1);
+          cableGroup.add(chute);
+        } else {
+          const collar = new THREE.Mesh(
+            new THREE.TorusGeometry(radius * 2.2, radius * 0.65, 8, 16),
+            new THREE.MeshStandardMaterial({ color: 0xcba258, metalness: 0.7, roughness: 0.3 })
+          );
+          collar.rotation.x = Math.PI / 2;
+          collar.position.set(wm.x, wf.z_top_m, wm.z);
+          cableGroup.add(collar);
+        }
       }
 
       this.rootGroup.add(cableGroup);

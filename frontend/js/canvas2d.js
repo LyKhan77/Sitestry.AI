@@ -314,11 +314,16 @@ export class Canvas2DEngine {
    */
   syncLayerListening() {
     const { step, activeTool } = this.store.ui;
-    this.roomsLayer.listening((step === 3 || step === 4) && activeTool === "select");
+    const isPan = activeTool === "pan";
+    this.roomsLayer.listening(!isPan && (step === 3 || step === 4) && activeTool === "select");
     // Stage 5 installs on top of the blueprint: annotation (rooms above too) must not take clicks.
-    this.cadLayer.listening(step !== 5);
+    this.cadLayer.listening(!isPan && step !== 5);
     // The tray and pipe tools must hit the stage, never an existing tray, pipe, equipment or stair shape.
-    this.cmeLayer.listening(activeTool !== "tray" && activeTool !== "pipe");
+    this.cmeLayer.listening(!isPan && activeTool !== "tray" && activeTool !== "pipe");
+    const container = this.stage?.container?.();
+    if (container) {
+      container.style.cursor = this.panState ? "grabbing" : isPan ? "grab" : "";
+    }
   }
 
   /** A shape of this kind may be dragged: not while drawing, and only where the stage allows editing it. */
@@ -522,7 +527,10 @@ export class Canvas2DEngine {
     });
 
     this.stage.on("mousedown", (e) => {
-      if (e.evt.button === 1 || (e.evt.button === 0 && this.spacePan)) {
+      if (
+        e.evt.button === 1 ||
+        (e.evt.button === 0 && (this.spacePan || this.store.ui.activeTool === "pan"))
+      ) {
         e.evt.preventDefault();
         const pos = this.stage.position();
         this.panState = {
@@ -531,6 +539,8 @@ export class Canvas2DEngine {
           stageX: pos.x,
           stageY: pos.y,
         };
+        const c = this.stage.container();
+        if (c) c.style.cursor = "grabbing";
         return;
       }
       if (e.evt.button !== 0) return;
@@ -634,6 +644,8 @@ export class Canvas2DEngine {
 
     window.addEventListener("mouseup", () => {
       this.panState = null;
+      const c = this.stage?.container?.();
+      if (c) c.style.cursor = this.store.ui.activeTool === "pan" ? "grab" : "";
     });
 
     window.addEventListener("keydown", (e) => {
@@ -1967,6 +1979,27 @@ export class Canvas2DEngine {
           })
         );
 
+        // Front-face indicator (+Y local edge matches +Z accent strip in 3D)
+        const frontTri = Math.min(5, Math.max(3, wPx * 0.14));
+        eqGroup.add(
+          new Konva.Rect({
+            x: -wPx / 2 + 1.5,
+            y: dPx / 2 - 3,
+            width: Math.max(4, wPx - 3),
+            height: 3,
+            fill: "#fbbf24",
+            listening: false,
+          }),
+          new Konva.Line({
+            points: [-frontTri, dPx / 2, 0, dPx / 2 + frontTri, frontTri, dPx / 2],
+            closed: true,
+            fill: "#fbbf24",
+            stroke: "#111827",
+            strokeWidth: 0.75,
+            listening: false,
+          })
+        );
+
         eqGroup.add(
           new Konva.Text({
             x: -wPx / 2 + 2,
@@ -2037,17 +2070,38 @@ export class Canvas2DEngine {
         this.cmeLayer.add(line);
 
         for (const wf of route.waterfalls) {
-          this.cmeLayer.add(
-            new Konva.Circle({
-              x: wf.x_px,
-              y: wf.y_px,
-              radius: 4.5 / Math.max(0.5, this.stageScale()),
-              fill: "#ffffff",
-              stroke: color,
-              strokeWidth: 2,
-              listening: false,
-            })
-          );
+          const s = Math.max(0.5, this.stageScale());
+          if (wf.style === "tray_waterfall") {
+            const angDeg = (Math.atan2(wf.out_y ?? 1, wf.out_x || 0) * 180) / Math.PI;
+            this.cmeLayer.add(
+              new Konva.Rect({
+                x: wf.x_px,
+                y: wf.y_px,
+                width: 7 / s,
+                height: 7 / s,
+                offsetX: 1 / s,
+                offsetY: 3.5 / s,
+                rotation: angDeg,
+                fill: "#f59e0b",
+                stroke: "#78350f",
+                strokeWidth: 1.2 / s,
+                cornerRadius: 1.5 / s,
+                listening: false,
+              })
+            );
+          } else {
+            this.cmeLayer.add(
+              new Konva.Circle({
+                x: wf.x_px,
+                y: wf.y_px,
+                radius: 4.5 / s,
+                fill: "#ffffff",
+                stroke: color,
+                strokeWidth: 2,
+                listening: false,
+              })
+            );
+          }
         }
       }
     }
