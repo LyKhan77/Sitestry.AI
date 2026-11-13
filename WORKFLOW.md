@@ -72,7 +72,7 @@ flowchart LR
 - **Edit rule**: only `equipment` and `tray` can be drawn, selected, dragged, deleted or edited. Walls, doors, windows, columns, stairs and room zones are locked and click-through (`cadLayer`/`roomsLayer` do not listen), so installation tools work inside zoned rooms.
 - **Capabilities**:
   - Select from the CME Catalog (`42U Server Rack`, `UPS 250kVA Frame`, `Lithium Battery Bank`, `DC Rectifier`, `ACPDB/SDP Panel`, `PAC Precision Cooling`) and click on the floorplan to place, drag to reposition, or rotate `90°`.
-  - Draw 3D overhead or underfloor **Cable Ladders (`[T]`)**.
+  - Draw overhead **Cable Tray** runs (`[T]`). Pick the type first (`perforated` default, `ladder`, `duct`, `wiremesh`); click the route points (clicks snap to existing tray vertices, `Shift` = straight 90°), finish with `Enter`, a double click on the last point, or a right click; `Esc` cancels. A run that starts or ends on another tray joins it at a shared vertex (`tray_nodes`); the 3D model builds Elbow, Tee, Cross and Reducer fittings by itself. Default elevation is the wall height minus 0.45 m (tray top), editable in the inspector together with type, width and side height.
   - Review live Bill of Quantities (BoQ) and export standardized `.JSON` schema or binary `.GLB` 3D model.
 
 ---

@@ -6,6 +6,12 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ## [v3.3.0] — Unreleased
 
+### Added — Cable tray network (Stage 5)
+- **Reliable drawing**: the dashed preview and existing tray/equipment shapes no longer swallow the click; quick clicks no longer finish the run early (only a repeated click on the same spot does); vertex and mid-segment snap with a ring marker, `Shift` ortho, right click to finish.
+- **Tray types**: `perforated` (default), `ladder`, `duct`, `wiremesh`, each with its own 3D profile; new `height_m`; default elevation = wall height - 0.45 m (tray top). Cable Ladder is renamed Cable Tray.
+- **Connected network**: shared `tray_nodes`; ending on the middle of another tray splits that segment. Legacy `points_px` trays migrate on load (BoQ length unchanged). Elbow, Tee, Cross and Reducer fittings are derived and built in 3D; straight runs stop at the fitting plate.
+- **Guided draw (not shipped)**: a rung-based strip detector for vector PDFs was prototyped. After two iterations it found the long IM-2 run on Ancol but only fragments of the Gatsu Battery-AHU run, missed the Battery Room U, and flagged stairs, a toilet partition and rack rows. It was not committed; the tray tool is Manual only.
+
 ### Fixed / Changed — Per-stage edit rules
 - **Drawing over zoned rooms**: zone polygons only take clicks with the select tool in Stage 3-4, so cable trays, equipment, columns, doors and windows can be placed inside a room that already has a zone (before, the click selected the zone).
 - **Edit lock** (`store.canEdit(kind)`): annotation (node, wall, opening, column, stair, room) is editable only in Stage 3; `equipment` and `tray` only in Stage 5; Stage 4 is view-only (select to inspect). The 2D canvas gates `draggable` per kind, Stage 5 makes annotation layers click-through, and Delete/`Hapus` plus every inspector control are disabled when the stage may not edit the selected kind.

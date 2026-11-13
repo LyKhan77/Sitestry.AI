@@ -88,6 +88,9 @@ The system prioritizes **structural precision first** (Topological Walls, Small-
         ├── workspaceState.js  # Pure structure hash and dirty/stale flags (Save and Build 3D)
         ├── roomFaces.js       # Closed-room detection and free wall ends from the wall graph (pure)
         ├── roomNames.js       # Room name from OCR text boxes (pure)
+        ├── trayNetwork.js     # Cable tray constants, drawing snap, shared-vertex graph and legacy migration (pure)
+        ├── trayFittings.js    # Elbow/Tee/Cross/Reducer derivation from the tray graph (pure)
+        ├── trayProfiles.js    # Three.js tray profiles per type and fitting geometry
         └── uiV4.js            # v4 Dock + Wizard UI: flag, timeline, dock/flyout, palette, Stage 2 reveal (default; `?ui=v3` = legacy)
 ```
 
