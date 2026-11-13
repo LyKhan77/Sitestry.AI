@@ -27,7 +27,7 @@ Specs: `docs/superpowers/specs/2026-11-12-stage-edit-lock-design.md`, `docs/supe
 
 ### Stage 5 Select tool (`feat/stage5-select-tool`, off `feat/tray-network`)
 - [x] `Select (V)` button in the rail, default tool in Stage 5, Select picks equipment and tray, empty click clears, `Esc` returns Equipment/Tray to Select, tray selectable on its axis (plan: `docs/superpowers/plans/2026-11-13-stage5-select-tool.md`)
-- [ ] Full Playwright suite on the final branch state (running)
+- [x] Full Playwright suite: 271 passed, 1 stale expectation in `workspace.spec.mjs` (stage 5 rail now includes `select`) fixed; that spec 47/47
 
 ### Open
 - [ ] Merge `fix/stage-edit-lock`, `feat/tray-network` and `feat/stage5-select-tool` to `main` (or open PRs); user decides
