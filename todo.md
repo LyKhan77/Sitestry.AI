@@ -31,7 +31,8 @@ Specs: `docs/superpowers/specs/2026-11-12-stage-edit-lock-design.md`, `docs/supe
 
 ### Pre-merge polish (`fix/pre-merge-polish`)
 - [x] Inspector re-locks on a stage change even when one of its inputs has focus; real-mouse drag test for Stage 5 Select; "Cable Ladder" comments renamed
-- [ ] Full Playwright suite on the final branch state (running), then local fast-forward merge into `main`
+- [x] Full Playwright suite 274/274 and unit tests 170/170 on the final branch state
+- [x] Local fast-forward merge into `main` (not pushed)
 
 ### Open
 - [ ] Merge `fix/stage-edit-lock`, `feat/tray-network` and `feat/stage5-select-tool` to `main` (or open PRs); user decides
