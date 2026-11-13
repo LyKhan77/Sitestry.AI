@@ -113,12 +113,57 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
     await page.mouse.move(pt.x + 80, pt.y + 40);
     await page.mouse.up();
 
-    const after = await page.evaluate(() => ({
-      pos: window.sitestryApp.canvas2d.stage.position(),
-      selected: window.sitestryApp.canvas2d.store.ui.selected,
-    }));
-    expect(after.selected).toBeNull();
-    expect(Math.round(after.pos.x - before.x)).toBeGreaterThanOrEqual(70);
+    // Also verify 3D canvas ignores pointer selection and switches OrbitControls to PAN
+    const res3d = await page.evaluate(async () => {
+      const THREE = await import("three");
+      const app = window.sitestryApp;
+      app.setViewMode("split");
+      app.viewer3d.rebuildScene();
+      const el = app.viewer3d.renderer.domElement;
+      const rect = el.getBoundingClientRect();
+      el.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          clientX: rect.left + rect.width / 2,
+          clientY: rect.top + rect.height / 2,
+        })
+      );
+      return {
+        isLeftPan: app.viewer3d.controls.mouseButtons.LEFT === THREE.MOUSE.PAN,
+        selected: app.canvas2d.store.ui.selected,
+        pos: app.canvas2d.stage.position(),
+      };
+    });
+    expect(res3d.isLeftPan).toBe(true);
+    expect(res3d.selected).toBeNull();
+    expect(Math.round(res3d.pos.x - before.x)).toBeGreaterThanOrEqual(70);
+  });
+
+  test("groups nearby cable drops into shared edge-mounted Tray Waterfall chutes", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    await loadStage(page, 5);
+
+    const grouped = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const app = window.sitestryApp;
+      store.ui.trayService = "power";
+      store.addCableTray([[1400, 960], [1800, 960]]);
+      const pdu = store.addEquipment(1420, 1020, "panel");
+      const rack = store.addEquipment(1780, 1020, "rack");
+      store.ui.cableSystem = "power";
+      store.ui.cablePathLabel = "A";
+      store.addCable(pdu.id, rack.id);
+      store.ui.cablePathLabel = "B";
+      store.addCable(pdu.id, rack.id);
+      app.setViewMode("3d");
+      app.viewer3d.rebuildScene();
+      const boq = store.computeBoQSummary();
+      const chuteMeshes = app.viewer3d.selectableMeshes.filter((m) => m.userData?.role === "tray_waterfall").length;
+      return { trayWaterfallCount: boq.trayWaterfallCount, chuteMeshes };
+    });
+    expect(grouped.trayWaterfallCount).toBe(2);
+    expect(grouped.chuteMeshes).toBe(2);
   });
 
   test("cable tool connects source to target equipment on canvas click", async ({ page }) => {

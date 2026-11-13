@@ -4,6 +4,7 @@ import {
   CABLE_SYSTEMS,
   cableColorFor,
   resolveCableRoute,
+  resolveWaterfallGroups,
 } from "../../frontend/js/cableRouter.js";
 import { insertTrayRun } from "../../frontend/js/trayNetwork.js";
 import { insertPipeRun } from "../../frontend/js/pipeNetwork.js";
@@ -97,7 +98,7 @@ test("power and grounding sharing the same tray receive distinct lateral lane of
   assert.notEqual(pwr.points2d_px[1][1], gnd.points2d_px[1][1]);
 });
 
-test("multiple cables of the same system bundle side-by-side neatly and default to tray_waterfall", () => {
+test("multiple cables of the same system bundle side-by-side neatly and share edge-mounted Tray Waterfall groups", () => {
   const proj = baseProject();
   insertTrayRun(proj, [[40, 60], [300, 60]], { id: "t1", service: "power", width_m: 0.5, elevation_m: 3.25 }, 1);
   const c1 = { id: "cp1", system: "power", path_label: "A", source_id: "panel1", target_id: "rack1" };
@@ -105,11 +106,23 @@ test("multiple cables of the same system bundle side-by-side neatly and default 
   const c3 = { id: "cp3", system: "power", path_label: "A", source_id: "panel1", target_id: "rack1", waterfall_style: "direct" };
   proj.cables = [c1, c2, c3];
 
-  const r1 = resolveCableRoute(proj, c1);
-  const r2 = resolveCableRoute(proj, c2);
-  const r3 = resolveCableRoute(proj, c3);
-  const ys = new Set([r1.points2d_px[1][1], r2.points2d_px[1][1], r3.points2d_px[1][1]]);
+  const groups = resolveWaterfallGroups(proj);
+  // c1 and c2 share 1 entry group at x≈40 and 1 exit group at x≈300 (c3 is direct)
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].cableCount, 2);
+  // Edge-mounted at tray center (y=60) + halfWidth (0.25m * 20px/m = 5px) -> y=65
+  assert.ok(Math.abs(groups[0].y_px - 65) < 0.5);
+
+  const r1 = resolveCableRoute(proj, c1, groups);
+  const r2 = resolveCableRoute(proj, c2, groups);
+  const r3 = resolveCableRoute(proj, c3, groups);
+  const ys = new Set([
+    r1.points2d_px.find(([x]) => Math.abs(x - 170) < 10 || x > 50)?.[1] ?? r1.points2d_px[2][1],
+    r2.points2d_px.find(([x]) => Math.abs(x - 170) < 10 || x > 50)?.[1] ?? r2.points2d_px[2][1],
+    r3.points2d_px[1][1],
+  ]);
   assert.equal(ys.size, 3);
   assert.equal(r1.waterfalls[0].style, "tray_waterfall");
+  assert.equal(r1.waterfalls[0].groupId, groups[0].id);
   assert.equal(r3.waterfalls[0].style, "direct");
 });

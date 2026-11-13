@@ -35,6 +35,7 @@ import {
   cableColorFor,
   normalizeWaterfallStyle,
   resolveCableRoute,
+  resolveWaterfallGroups,
 } from "./cableRouter.js";
 import {
   resolveStairGeometry,
@@ -1323,14 +1324,15 @@ export class SitestryStore extends EventTarget {
     }
 
     const cableMeters = Object.fromEntries(CABLE_SYSTEMS.map((s) => [s, 0]));
-    let waterfallCount = 0;
-    let trayWaterfallCount = 0;
+    const waterfallGroups = resolveWaterfallGroups(this.project);
+    let directDrops = 0;
     for (const cab of this.project.cables || []) {
-      const route = resolveCableRoute(this.project, cab);
+      const route = resolveCableRoute(this.project, cab, waterfallGroups);
       cableMeters[cab.system] = (cableMeters[cab.system] || 0) + route.length_m;
-      waterfallCount += route.waterfalls.length;
-      trayWaterfallCount += route.waterfalls.filter((wf) => wf.style === "tray_waterfall").length;
+      directDrops += route.waterfalls.filter((wf) => wf.style !== "tray_waterfall").length;
     }
+    const trayWaterfallCount = waterfallGroups.length;
+    const waterfallCount = trayWaterfallCount + directDrops;
 
     const doorsCount = this.project.openings.filter(
       (o) => o.type === "single_door" || o.type === "double_door"

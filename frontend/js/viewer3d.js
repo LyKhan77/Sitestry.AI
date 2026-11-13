@@ -21,7 +21,7 @@ import { buildFitting, buildTrayProfile, fittingCutM, FITTING_KINDS } from "./tr
 import { getEquipmentPreset } from "./equipmentCatalog.js";
 import { trayColorForService, trayPoints } from "./trayNetwork.js";
 import { PIPE_DEFAULT_COLOR, pipePoints } from "./pipeNetwork.js";
-import { cableColorFor, resolveCableRoute } from "./cableRouter.js";
+import { cableColorFor, resolveCableRoute, resolveWaterfallGroups } from "./cableRouter.js";
 import { deriveFittings } from "./trayFittings.js";
 
 export class Viewer3DEngine {
@@ -160,6 +160,17 @@ export class Viewer3DEngine {
     this.cageTex.wrapT = THREE.RepeatWrapping;
   }
 
+  syncToolInteraction() {
+    const isPan = this.store.ui.activeTool === "pan";
+    if (this.controls) {
+      this.controls.mouseButtons.LEFT = isPan ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+      this.controls.update();
+    }
+    if (this.renderer?.domElement) {
+      this.renderer.domElement.style.cursor = isPan ? "grab" : "";
+    }
+  }
+
   bindEvents() {
     this.store.addEventListener("geometryChanged", (event) => {
       // Stage 1-3 edits never touch 3D in the v4 workspace; Build 3D does.
@@ -169,9 +180,13 @@ export class Viewer3DEngine {
     this.store.addEventListener("selectionChanged", () => {
       this.updateSelectionHighlight();
     });
+    this.store.addEventListener("toolChanged", () => {
+      this.syncToolInteraction();
+    });
+    this.syncToolInteraction();
 
     this.renderer.domElement.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || this.store.ui.activeTool === "pan") return;
       const rect = this.renderer.domElement.getBoundingClientRect();
       this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -968,7 +983,7 @@ export class Viewer3DEngine {
     }
   }
 
-  buildTrayWaterfallChute3D(isSelected) {
+  buildTrayWaterfallChute3D(widthM = 0.22, isSelected = false) {
     const chuteGroup = new THREE.Group();
     const chuteMat = new THREE.MeshStandardMaterial({
       color: isSelected ? 0x00754a : 0xf59e0b,
@@ -977,30 +992,34 @@ export class Viewer3DEngine {
       side: THREE.DoubleSide,
     });
     const railMat = new THREE.MeshStandardMaterial({
-      color: 0xb45309,
+      color: isSelected ? 0x00754a : 0xb45309,
       roughness: 0.45,
       metalness: 0.4,
     });
 
-    // Quarter-round drop-out lip along +Z then curving down -Y
+    // Side-rail clip/hook (-0.045..0 in Z) that straddles the tray edge, curving smoothly out +Z and down -Y
     const arcShape = new THREE.Shape();
-    arcShape.moveTo(0, 0);
-    arcShape.quadraticCurveTo(0.1, 0, 0.11, -0.1);
-    arcShape.lineTo(0.095, -0.1);
-    arcShape.quadraticCurveTo(0.085, -0.015, 0, -0.015);
+    arcShape.moveTo(-0.045, -0.025);
+    arcShape.lineTo(-0.045, 0.015);
+    arcShape.lineTo(0.01, 0.015);
+    arcShape.quadraticCurveTo(0.13, 0.015, 0.145, -0.15);
+    arcShape.lineTo(0.128, -0.15);
+    arcShape.quadraticCurveTo(0.112, -0.002, 0.005, -0.002);
+    arcShape.lineTo(-0.028, -0.002);
+    arcShape.lineTo(-0.028, -0.025);
     arcShape.closePath();
 
-    const width = 0.14;
-    const rampGeo = new THREE.ExtrudeGeometry(arcShape, { depth: width, bevelEnabled: false, curveSegments: 10 });
+    const width = Math.max(0.16, Number(widthM) || 0.22);
+    const rampGeo = new THREE.ExtrudeGeometry(arcShape, { depth: width, bevelEnabled: false, curveSegments: 12 });
     rampGeo.translate(0, 0, -width / 2);
-    // Rotate so ramp flows along +Z outward from tray center
+    // Rotate so ramp clips on tray edge (Z <= 0) and spills outward along +Z
     rampGeo.rotateY(-Math.PI / 2);
     chuteGroup.add(new THREE.Mesh(rampGeo, chuteMat));
 
-    // Side guide ribs
-    for (const sx of [-width / 2 - 0.004, width / 2 + 0.004]) {
-      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.035, 0.1), railMat);
-      rib.position.set(sx, 0.01, 0.05);
+    // Side guide cheek plates
+    for (const sx of [-width / 2 - 0.005, width / 2 + 0.005]) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.048, 0.14), railMat);
+      rib.position.set(sx, 0.012, 0.055);
       chuteGroup.add(rib);
     }
     return chuteGroup;
@@ -1008,8 +1027,9 @@ export class Viewer3DEngine {
 
   buildCables3D(sel) {
     const project = this.store.project;
+    const wfGroups = resolveWaterfallGroups(project);
     for (const cab of project.cables || []) {
-      const route = resolveCableRoute(project, cab);
+      const route = resolveCableRoute(project, cab, wfGroups);
       if (route.points3d.length < 2) continue;
 
       const isSelected = sel?.kind === "cable" && sel?.id === cab.id;
@@ -1034,32 +1054,38 @@ export class Viewer3DEngine {
       if (vectors.length < 2) continue;
 
       const curve = new THREE.CatmullRomCurve3(vectors, false, "catmullrom", 0.12);
-      const radius = cab.system === "power" ? 0.022 : cab.system === "cooling" ? 0.02 : 0.015;
+      const radius = cab.system === "power" ? 0.02 : cab.system === "cooling" ? 0.02 : 0.015;
       const tubularSegments = Math.max(16, vectors.length * 8);
       const tubeMesh = new THREE.Mesh(new THREE.TubeGeometry(curve, tubularSegments, radius, 8, false), mat);
       cableGroup.add(tubeMesh);
 
-      // Waterfall drop-outs: Tray Waterfall Chute (default) or compact Direct Drop grommet collar
+      // Direct-drop grommet collars for non-waterfall drops
       for (const wf of route.waterfalls) {
+        if (wf.style === "tray_waterfall") continue;
         const wm = this.pxToMeter3D(wf.x_px, wf.y_px);
-        if (wf.style === "tray_waterfall") {
-          const chute = this.buildTrayWaterfallChute3D(isSelected);
-          chute.position.set(wm.x, wf.z_top_m + 0.015, wm.z);
-          chute.rotation.y = Math.atan2(wf.out_x || 0, wf.out_y ?? 1);
-          cableGroup.add(chute);
-        } else {
-          const collar = new THREE.Mesh(
-            new THREE.TorusGeometry(radius * 2.2, radius * 0.65, 8, 16),
-            new THREE.MeshStandardMaterial({ color: 0xcba258, metalness: 0.7, roughness: 0.3 })
-          );
-          collar.rotation.x = Math.PI / 2;
-          collar.position.set(wm.x, wf.z_top_m, wm.z);
-          cableGroup.add(collar);
-        }
+        const collar = new THREE.Mesh(
+          new THREE.TorusGeometry(radius * 2.2, radius * 0.65, 8, 16),
+          new THREE.MeshStandardMaterial({ color: 0xcba258, metalness: 0.7, roughness: 0.3 })
+        );
+        collar.rotation.x = Math.PI / 2;
+        collar.position.set(wm.x, wf.z_top_m, wm.z);
+        cableGroup.add(collar);
       }
 
       this.rootGroup.add(cableGroup);
       this.selectableMeshes.push(cableGroup);
+    }
+
+    // One grouped edge-mounted Tray Waterfall Chute per drop cluster on the tray side rail
+    for (const grp of wfGroups) {
+      const gm = this.pxToMeter3D(grp.x_px, grp.y_px);
+      const isSelected = sel?.kind === "tray" && sel?.id === grp.trayId;
+      const chute = this.buildTrayWaterfallChute3D(grp.chute_width_m, isSelected);
+      chute.position.set(gm.x, grp.z_top_m, gm.z);
+      chute.rotation.y = Math.atan2(grp.out_x || 0, grp.out_y ?? 1);
+      chute.userData = { sitestryKind: "tray", sitestryId: grp.trayId, role: "tray_waterfall" };
+      this.rootGroup.add(chute);
+      this.selectableMeshes.push(chute);
     }
   }
 

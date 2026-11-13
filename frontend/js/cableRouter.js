@@ -28,6 +28,7 @@ export const WATERFALL_STYLE_LABELS = {
 
 const INFRA_SNAP_RADIUS_M = 3.0;
 const WALL_SEARCH_RADIUS_M = 4.5;
+const WATERFALL_GROUP_RADIUS_M = 0.55;
 
 const SYSTEM_COLORS = {
   powerA: "#dc2626",
@@ -309,10 +310,150 @@ function applyLaneOffset(pts, offsetPx) {
   return out;
 }
 
+function trayHitEdgeAnchor(hit, nodeById, eq, scale) {
+  const a = nodeById.get(hit.aId);
+  const b = nodeById.get(hit.bId);
+  let tx = 1;
+  let ty = 0;
+  if (a && b) {
+    const dx = b.x_px - a.x_px;
+    const dy = b.y_px - a.y_px;
+    const len = Math.hypot(dx, dy);
+    if (len > 1e-4) {
+      tx = dx / len;
+      ty = dy / len;
+    }
+  }
+  const px = -ty;
+  const py = tx;
+  const dot = (eq.x_px - hit.x) * px + (eq.y_px - hit.y) * py;
+  const sideSign = dot >= 0 ? 1 : -1;
+  const outX = px * sideSign;
+  const outY = py * sideSign;
+  const widthM = Number(hit.run.width_m) || 0.5;
+  const halfWpx = (widthM / 2) * scale;
+  return {
+    trayId: hit.run.id,
+    trayElev: Number(hit.run.elevation_m ?? 3.35),
+    sideH: Number(hit.run.height_m ?? 0.1),
+    widthM,
+    sideSign,
+    tangent: { x: tx, y: ty },
+    outDir: { x: outX, y: outY },
+    hitX: hit.x,
+    hitY: hit.y,
+    edgeX: hit.x + outX * halfWpx,
+    edgeY: hit.y + outY * halfWpx,
+  };
+}
+
+/**
+ * Cluster nearby `tray_waterfall` cable drops on the same tray side rail into shared
+ * physical Tray Waterfall units (`edge-mounted` rather than one chute per cable).
+ */
+export function resolveWaterfallGroups(project) {
+  const byEqId = new Map((project?.equipments || []).map((e) => [e.id, e]));
+  const scale = Number(project?.metadata?.scale_px_per_meter) || 30.68;
+  const nodeById = new Map((project?.tray_nodes || []).map((n) => [n.id, n]));
+  const clusterRadiusPx = WATERFALL_GROUP_RADIUS_M * scale;
+
+  const events = [];
+  for (const cab of project?.cables || []) {
+    if (!cab || cab.system === "cooling") continue;
+    if (normalizeWaterfallStyle(cab.waterfall_style) !== "tray_waterfall") continue;
+    const source = byEqId.get(cab.source_id);
+    const target = byEqId.get(cab.target_id);
+    if (!source || !target) continue;
+
+    const services = eligibleServicesForCable(cab, source, target);
+    const runs = (project?.cable_trays || []).filter((t) => services.has(normalizeTrayService(t.service)));
+    if (!runs.length) continue;
+
+    const srcHit = closestPointOnRuns(source.x_px, source.y_px, runs, nodeById);
+    const tgtHit = closestPointOnRuns(target.x_px, target.y_px, runs, nodeById);
+    if (!srcHit || !tgtHit) continue;
+    const { adj } = buildGraphWithPortals(runs, nodeById, srcHit, tgtHit);
+    if (!dijkstra(adj, "__src__", "__tgt__")) continue;
+
+    const srcZ = equipmentConnectionZ(source);
+    const tgtZ = equipmentConnectionZ(target);
+    const srcAnch = trayHitEdgeAnchor(srcHit, nodeById, source, scale);
+    const tgtAnch = trayHitEdgeAnchor(tgtHit, nodeById, target, scale);
+
+    if (Math.abs(srcAnch.trayElev - srcZ) > 0.05) {
+      events.push({ key: `${cab.id}:entry`, cableId: cab.id, eqZ: srcZ, ...srcAnch });
+    }
+    if (Math.abs(tgtAnch.trayElev - tgtZ) > 0.05) {
+      events.push({ key: `${cab.id}:exit`, cableId: cab.id, eqZ: tgtZ, ...tgtAnch });
+    }
+  }
+
+  const groups = [];
+  for (const ev of events) {
+    let targetGroup = null;
+    for (const grp of groups) {
+      if (grp.trayId !== ev.trayId || grp.sideSign !== ev.sideSign) continue;
+      if (Math.hypot(ev.edgeX - grp.x_px, ev.edgeY - grp.y_px) <= clusterRadiusPx) {
+        targetGroup = grp;
+        break;
+      }
+    }
+    if (!targetGroup) {
+      targetGroup = {
+        id: `wfgrp_${groups.length + 1}`,
+        trayId: ev.trayId,
+        sideSign: ev.sideSign,
+        tangent_x: ev.tangent.x,
+        tangent_y: ev.tangent.y,
+        out_x: ev.outDir.x,
+        out_y: ev.outDir.y,
+        z_top_m: ev.trayElev,
+        z_bottom_m: ev.eqZ,
+        events: [ev],
+        x_px: ev.edgeX,
+        y_px: ev.edgeY,
+      };
+      groups.push(targetGroup);
+    } else {
+      targetGroup.events.push(ev);
+      targetGroup.z_bottom_m = Math.min(targetGroup.z_bottom_m, ev.eqZ);
+      // Keep the anchor projected onto the first event's outer tray edge line
+      const n = targetGroup.events.length;
+      const avgHitX = targetGroup.events.reduce((s, e) => s + e.hitX, 0) / n;
+      const avgHitY = targetGroup.events.reduce((s, e) => s + e.hitY, 0) / n;
+      const base = targetGroup.events[0];
+      const deltaAlong = (avgHitX - base.hitX) * base.tangent.x + (avgHitY - base.hitY) * base.tangent.y;
+      targetGroup.x_px = base.edgeX + base.tangent.x * deltaAlong;
+      targetGroup.y_px = base.edgeY + base.tangent.y * deltaAlong;
+    }
+  }
+
+  for (const grp of groups) {
+    const count = grp.events.length;
+    grp.cableCount = count;
+    grp.chute_width_m = Math.max(0.18, Math.min(0.65, count * 0.045 + 0.07));
+    grp.slots = new Map();
+    const sorted = grp.events
+      .slice()
+      .sort(
+        (a, b) =>
+          (a.hitX - grp.x_px) * grp.tangent_x +
+          (a.hitY - grp.y_px) * grp.tangent_y -
+          ((b.hitX - grp.x_px) * grp.tangent_x + (b.hitY - grp.y_px) * grp.tangent_y)
+      );
+    sorted.forEach((ev, idx) => {
+      const alongM = (idx - (count - 1) / 2) * 0.038;
+      grp.slots.set(ev.key, alongM);
+    });
+  }
+
+  return groups;
+}
+
 /**
  * Compute the 2D & 3D route, length in meters, and waterfall drops for a single cable connection.
  */
-export function resolveCableRoute(project, cable) {
+export function resolveCableRoute(project, cable, precomputedGroups = null) {
   const empty = {
     points2d_px: [],
     points3d: [],
@@ -383,6 +524,7 @@ export function resolveCableRoute(project, cable) {
   const offsetInfra = applyLaneOffset(dedupe2D(infraPoints), slot.offsetPx);
   const entryPt = offsetInfra[0];
   const exitPt = offsetInfra[offsetInfra.length - 1];
+  const trayTopElev = infraElev;
 
   // Seat non-cooling cables neatly inside the tray trough rather than floating on top of the side wall
   if (!isCooling) {
@@ -392,19 +534,55 @@ export function resolveCableRoute(project, cable) {
   }
 
   const wfStyle = normalizeWaterfallStyle(cable?.waterfall_style);
+  const groups = !isCooling && wfStyle === "tray_waterfall" ? precomputedGroups || resolveWaterfallGroups(project) : [];
+  const findGroupForKey = (dropKey) => groups.find((g) => g.slots.has(dropKey)) || null;
+  const entryGroup = !isCooling && wfStyle === "tray_waterfall" ? findGroupForKey(`${cable?.id}:entry`) : null;
+  const exitGroup = !isCooling && wfStyle === "tray_waterfall" ? findGroupForKey(`${cable?.id}:exit`) : null;
+
+  const entryDropAnchor = entryGroup
+    ? [
+        entryGroup.x_px + entryGroup.tangent_x * (entryGroup.slots.get(`${cable?.id}:entry`) || 0) * scale + entryGroup.out_x * 0.13 * scale,
+        entryGroup.y_px + entryGroup.tangent_y * (entryGroup.slots.get(`${cable?.id}:entry`) || 0) * scale + entryGroup.out_y * 0.13 * scale,
+      ]
+    : entryPt;
+  const exitDropAnchor = exitGroup
+    ? [
+        exitGroup.x_px + exitGroup.tangent_x * (exitGroup.slots.get(`${cable?.id}:exit`) || 0) * scale + exitGroup.out_x * 0.13 * scale,
+        exitGroup.y_px + exitGroup.tangent_y * (exitGroup.slots.get(`${cable?.id}:exit`) || 0) * scale + exitGroup.out_y * 0.13 * scale,
+      ]
+    : exitPt;
 
   const srcOutside = srcHit.dist > snapPx;
   const tgtOutside = tgtHit.dist > snapPx;
   const fallback_used = srcOutside || tgtOutside;
 
   const approachSrc = srcOutside
-    ? orthogonalPath(source.x_px, source.y_px, entryPt[0], entryPt[1], walls, wallNodeById, maxWallPx)
-    : [[source.x_px, source.y_px], entryPt];
+    ? orthogonalPath(source.x_px, source.y_px, entryDropAnchor[0], entryDropAnchor[1], walls, wallNodeById, maxWallPx)
+    : [[source.x_px, source.y_px], entryDropAnchor];
   const approachTgt = tgtOutside
-    ? orthogonalPath(exitPt[0], exitPt[1], target.x_px, target.y_px, walls, wallNodeById, maxWallPx)
-    : [exitPt, [target.x_px, target.y_px]];
+    ? orthogonalPath(exitDropAnchor[0], exitDropAnchor[1], target.x_px, target.y_px, walls, wallNodeById, maxWallPx)
+    : [exitDropAnchor, [target.x_px, target.y_px]];
 
-  const points2d_px = dedupe2D([...approachSrc, ...offsetInfra, ...approachTgt]);
+  const entryEdgePt = entryGroup
+    ? [
+        entryGroup.x_px + entryGroup.tangent_x * (entryGroup.slots.get(`${cable?.id}:entry`) || 0) * scale,
+        entryGroup.y_px + entryGroup.tangent_y * (entryGroup.slots.get(`${cable?.id}:entry`) || 0) * scale,
+      ]
+    : entryPt;
+  const exitEdgePt = exitGroup
+    ? [
+        exitGroup.x_px + exitGroup.tangent_x * (exitGroup.slots.get(`${cable?.id}:exit`) || 0) * scale,
+        exitGroup.y_px + exitGroup.tangent_y * (exitGroup.slots.get(`${cable?.id}:exit`) || 0) * scale,
+      ]
+    : exitPt;
+
+  const points2d_px = dedupe2D([
+    ...approachSrc,
+    ...(entryGroup ? [entryEdgePt] : []),
+    ...offsetInfra,
+    ...(exitGroup ? [exitEdgePt] : []),
+    ...approachTgt,
+  ]);
 
   const unitDir = (fromPt, toPt) => {
     const dx = toPt[0] - fromPt[0];
@@ -415,61 +593,87 @@ export function resolveCableRoute(project, cable) {
 
   const waterfalls = [];
   const points3d = [];
-  const lipPx = wfStyle === "tray_waterfall" && !isCooling ? 0.12 * scale : 0;
   for (const [x_px, y_px] of approachSrc.slice(0, -1)) {
     points3d.push({ x_px, y_px, y_m: srcZ });
   }
-  if (Math.abs(infraElev - srcZ) > 0.05) {
-    const prevApproach = approachSrc[approachSrc.length - 2] || [source.x_px, source.y_px];
-    const outDir = unitDir(entryPt, prevApproach);
-    if (!isCooling) {
+
+  if (Math.abs(trayTopElev - srcZ) > 0.05) {
+    if (entryGroup && !isCooling) {
       waterfalls.push({
-        x_px: entryPt[0],
-        y_px: entryPt[1],
-        z_top_m: Math.max(infraElev, srcZ),
-        z_bottom_m: Math.min(infraElev, srcZ),
-        style: wfStyle,
-        out_x: outDir.x,
-        out_y: outDir.y,
+        groupId: entryGroup.id,
+        x_px: entryGroup.x_px,
+        y_px: entryGroup.y_px,
+        z_top_m: entryGroup.z_top_m,
+        z_bottom_m: entryGroup.z_bottom_m,
+        style: "tray_waterfall",
+        out_x: entryGroup.out_x,
+        out_y: entryGroup.out_y,
       });
+      points3d.push({ x_px: entryDropAnchor[0], y_px: entryDropAnchor[1], y_m: srcZ });
+      points3d.push({ x_px: entryDropAnchor[0], y_px: entryDropAnchor[1], y_m: Math.max(srcZ, trayTopElev - 0.14) });
+      points3d.push({ x_px: entryEdgePt[0], y_px: entryEdgePt[1], y_m: trayTopElev + 0.015 });
+      points3d.push({ x_px: entryPt[0], y_px: entryPt[1], y_m: infraElev });
+    } else {
+      const prevApproach = approachSrc[approachSrc.length - 2] || [source.x_px, source.y_px];
+      const outDir = unitDir(entryPt, prevApproach);
+      if (!isCooling) {
+        waterfalls.push({
+          x_px: entryPt[0],
+          y_px: entryPt[1],
+          z_top_m: Math.max(trayTopElev, srcZ),
+          z_bottom_m: Math.min(trayTopElev, srcZ),
+          style: wfStyle,
+          out_x: outDir.x,
+          out_y: outDir.y,
+        });
+      }
+      points3d.push({ x_px: entryPt[0], y_px: entryPt[1], y_m: srcZ });
+      points3d.push({ x_px: entryPt[0], y_px: entryPt[1], y_m: infraElev });
     }
-    const lx = entryPt[0] + outDir.x * lipPx;
-    const ly = entryPt[1] + outDir.y * lipPx;
-    points3d.push({ x_px: lx, y_px: ly, y_m: srcZ });
-    if (lipPx > 0) {
-      points3d.push({ x_px: lx, y_px: ly, y_m: infraElev - 0.04 });
-    }
-    points3d.push({ x_px: entryPt[0], y_px: entryPt[1], y_m: infraElev });
   } else {
     points3d.push({ x_px: entryPt[0], y_px: entryPt[1], y_m: infraElev });
   }
+
   for (const [x_px, y_px] of offsetInfra.slice(1, -1)) {
     points3d.push({ x_px, y_px, y_m: infraElev });
   }
   points3d.push({ x_px: exitPt[0], y_px: exitPt[1], y_m: infraElev });
-  if (Math.abs(infraElev - tgtZ) > 0.05) {
-    const nextApproach = approachTgt[1] || [target.x_px, target.y_px];
-    const outDir = unitDir(exitPt, nextApproach);
-    if (!isCooling) {
+
+  if (Math.abs(trayTopElev - tgtZ) > 0.05) {
+    if (exitGroup && !isCooling) {
       waterfalls.push({
-        x_px: exitPt[0],
-        y_px: exitPt[1],
-        z_top_m: Math.max(infraElev, tgtZ),
-        z_bottom_m: Math.min(infraElev, tgtZ),
-        style: wfStyle,
-        out_x: outDir.x,
-        out_y: outDir.y,
+        groupId: exitGroup.id,
+        x_px: exitGroup.x_px,
+        y_px: exitGroup.y_px,
+        z_top_m: exitGroup.z_top_m,
+        z_bottom_m: exitGroup.z_bottom_m,
+        style: "tray_waterfall",
+        out_x: exitGroup.out_x,
+        out_y: exitGroup.out_y,
       });
+      points3d.push({ x_px: exitEdgePt[0], y_px: exitEdgePt[1], y_m: trayTopElev + 0.015 });
+      points3d.push({ x_px: exitDropAnchor[0], y_px: exitDropAnchor[1], y_m: Math.max(tgtZ, trayTopElev - 0.14) });
+      points3d.push({ x_px: exitDropAnchor[0], y_px: exitDropAnchor[1], y_m: tgtZ });
+    } else {
+      const nextApproach = approachTgt[1] || [target.x_px, target.y_px];
+      const outDir = unitDir(exitPt, nextApproach);
+      if (!isCooling) {
+        waterfalls.push({
+          x_px: exitPt[0],
+          y_px: exitPt[1],
+          z_top_m: Math.max(trayTopElev, tgtZ),
+          z_bottom_m: Math.min(trayTopElev, tgtZ),
+          style: wfStyle,
+          out_x: outDir.x,
+          out_y: outDir.y,
+        });
+      }
+      points3d.push({ x_px: exitPt[0], y_px: exitPt[1], y_m: tgtZ });
     }
-    const lx = exitPt[0] + outDir.x * lipPx;
-    const ly = exitPt[1] + outDir.y * lipPx;
-    if (lipPx > 0) {
-      points3d.push({ x_px: lx, y_px: ly, y_m: infraElev - 0.04 });
-    }
-    points3d.push({ x_px: lx, y_px: ly, y_m: tgtZ });
   } else {
     points3d.push({ x_px: exitPt[0], y_px: exitPt[1], y_m: tgtZ });
   }
+
   for (const [x_px, y_px] of approachTgt.slice(1)) {
     points3d.push({ x_px, y_px, y_m: tgtZ });
   }

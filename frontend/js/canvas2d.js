@@ -12,7 +12,7 @@ import { ISOLATING_TOOLS } from "./store.js";
 import { getEquipmentPreset } from "./equipmentCatalog.js";
 import { nearestTrayAnchor, snapDrawPoint, trayColorForService, trayPoints } from "./trayNetwork.js";
 import { PIPE_DEFAULT_COLOR, nearestPipeAnchor, pipePoints } from "./pipeNetwork.js";
-import { cableColorFor, resolveCableRoute } from "./cableRouter.js";
+import { cableColorFor, resolveCableRoute, resolveWaterfallGroups } from "./cableRouter.js";
 import { api } from "./api.js";
 import { suggestRoomName } from "./roomNames.js";
 import { buildRoomFaces, faceAt, findFreeEnds, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
@@ -2047,10 +2047,12 @@ export class Canvas2DEngine {
       }
     }
 
-    // 4. Render Automatic Cables & Waterfall Drop Markers
+    // 4. Render Automatic Cables & Grouped Side-Mounted Waterfall Brackets
     if (layers.cables !== false) {
+      const wfGroups = resolveWaterfallGroups(this.store.project);
+      const s = Math.max(0.5, this.stageScale());
       for (const cab of this.store.project.cables || []) {
-        const route = resolveCableRoute(this.store.project, cab);
+        const route = resolveCableRoute(this.store.project, cab, wfGroups);
         if (route.points2d_px.length < 2) continue;
         const isSelected = sel?.kind === "cable" && sel?.id === cab.id;
         const color = isSelected ? "#00754A" : cableColorFor(cab);
@@ -2070,39 +2072,41 @@ export class Canvas2DEngine {
         this.cmeLayer.add(line);
 
         for (const wf of route.waterfalls) {
-          const s = Math.max(0.5, this.stageScale());
-          if (wf.style === "tray_waterfall") {
-            const angDeg = (Math.atan2(wf.out_y ?? 1, wf.out_x || 0) * 180) / Math.PI;
-            this.cmeLayer.add(
-              new Konva.Rect({
-                x: wf.x_px,
-                y: wf.y_px,
-                width: 7 / s,
-                height: 7 / s,
-                offsetX: 1 / s,
-                offsetY: 3.5 / s,
-                rotation: angDeg,
-                fill: "#f59e0b",
-                stroke: "#78350f",
-                strokeWidth: 1.2 / s,
-                cornerRadius: 1.5 / s,
-                listening: false,
-              })
-            );
-          } else {
-            this.cmeLayer.add(
-              new Konva.Circle({
-                x: wf.x_px,
-                y: wf.y_px,
-                radius: 4.5 / s,
-                fill: "#ffffff",
-                stroke: color,
-                strokeWidth: 2,
-                listening: false,
-              })
-            );
-          }
+          if (wf.style === "tray_waterfall") continue;
+          this.cmeLayer.add(
+            new Konva.Circle({
+              x: wf.x_px,
+              y: wf.y_px,
+              radius: 4.5 / s,
+              fill: "#ffffff",
+              stroke: color,
+              strokeWidth: 2,
+              listening: false,
+            })
+          );
         }
+      }
+
+      for (const grp of wfGroups) {
+        const angDeg = (Math.atan2(grp.out_y ?? 1, grp.out_x || 0) * 180) / Math.PI;
+        const chuteLen = Math.max(6, 0.14 * scale);
+        const chuteWid = Math.max(9, grp.chute_width_m * scale);
+        this.cmeLayer.add(
+          new Konva.Rect({
+            x: grp.x_px,
+            y: grp.y_px,
+            width: chuteLen,
+            height: chuteWid,
+            offsetX: 1,
+            offsetY: chuteWid / 2,
+            rotation: angDeg,
+            fill: "#f59e0b",
+            stroke: "#78350f",
+            strokeWidth: 1.4 / s,
+            cornerRadius: 1.5 / s,
+            listening: false,
+          })
+        );
       }
     }
 
