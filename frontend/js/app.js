@@ -5,7 +5,7 @@
  *   2. Process Extraction (Procedural Vision & CAD Vector Extraction Pipeline)
  *   3. Review Annotation (Human-in-the-Loop 2D CAD Editor for Walls, Doors+Tags, Windows, Pillars, Stairs, Rooms)
  *   4. Build 3D (Real-Time CSG 3D Structural Digital Twin)
- *   5. Installation Equipment (Manual Telco CME & Cable Ladder Placement + BoQ & GLB Export)
+ *   5. Installation Equipment (Manual Telco CME & Cable Tray Placement + BoQ & GLB Export)
  */
 
 import { store } from "./store.js";
@@ -13,6 +13,7 @@ import { api } from "./api.js";
 import { Canvas2DEngine } from "./canvas2d.js";
 import { Viewer3DEngine } from "./viewer3d.js";
 import { BlueprintGuideSession } from "./blueprintGuides.js";
+import { TRAY_TYPES } from "./trayNetwork.js";
 import { countsOf, structureHash, workspaceFlags } from "./workspaceState.js";
 import {
   hideExtractionLayers,
@@ -55,7 +56,7 @@ const TOOL_HINTS = {
     "Mode: <strong>Room Zone [Z] · Poligon</strong> — Klik titik sudut (menempel ke sudut dinding). Klik titik awal atau Enter untuk menutup, Esc membatalkan.",
   equipment:
     "Mode: <strong>Place CME Equipment [E]</strong> — Klik pada denah untuk memasang Rak Server 42U, UPS, Battery, Rectifier, Panel, atau PAC.",
-  tray: "Mode: <strong>Draw 3D Cable Ladder [T]</strong> — Klik titik-titik jalur kabel; tekan Enter atau Double-Click untuk membangun 3D Ladder.",
+  tray: "Mode: <strong>Draw Cable Tray [T]</strong> — Klik titik-titik jalur tray (menempel ke ujung tray lain, Shift = lurus 90°); tekan Enter, klik dua kali di titik terakhir, atau klik kanan untuk menyelesaikan.",
 };
 
 const TELCO_ROOM_PRESETS = [
@@ -1288,6 +1289,15 @@ class SitestryStudioApp {
     document.querySelectorAll("[data-room-mode]").forEach((btn) => {
       btn.addEventListener("click", () => store.setRoomMode(btn.dataset.roomMode));
     });
+    document.querySelectorAll("[data-tray-type]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        store.ui.trayType = btn.dataset.trayType;
+        document.querySelectorAll("[data-tray-type]").forEach((b) => {
+          b.classList.toggle("active", b.dataset.trayType === store.ui.trayType);
+          b.setAttribute("aria-pressed", String(b.dataset.trayType === store.ui.trayType));
+        });
+      });
+    });
     document.querySelectorAll("[data-wall-mode]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.disabled) return;
@@ -1457,7 +1467,7 @@ class SitestryStudioApp {
 
     document.getElementById("btnLoadPresetCme")?.addEventListener("click", () => {
       store.loadPresetTelcoEquipment();
-      this.showToast("Contoh perangkat Telco CME & Cable Ladder berhasil dimuat.");
+      this.showToast("Contoh perangkat Telco CME & Cable Tray berhasil dimuat.");
     });
 
     document.getElementById("btnStage5ExportGlb")?.addEventListener("click", async () => {
@@ -2438,10 +2448,16 @@ class SitestryStudioApp {
     } else if (sel.kind === "tray") {
       container.innerHTML = `
         <div class="insp-card">
-          <div class="insp-title">Jalur 3D Cable Ladder</div>
+          <div class="insp-title">Jalur Cable Tray</div>
           <div class="insp-field">
             <label>Nama Jalur</label>
             <input type="text" id="inpTrayName" value="${obj.name}" />
+          </div>
+          <div class="insp-field">
+            <label>Tipe Tray</label>
+            <select id="inpTrayType">
+              ${TRAY_TYPES.map((t) => `<option value="${t}"${obj.type === t ? " selected" : ""}>${t}</option>`).join("")}
+            </select>
           </div>
           <div class="insp-row-2">
             <div class="insp-field">
@@ -2449,14 +2465,21 @@ class SitestryStudioApp {
               <input type="number" id="inpTrayW" step="0.05" value="${obj.width_m}" />
             </div>
             <div class="insp-field">
-              <label>Elevasi (m)</label>
-              <input type="number" id="inpTrayElev" step="0.1" value="${obj.elevation_m}" />
+              <label>Tinggi sisi (m)</label>
+              <input type="number" id="inpTrayHeight" step="0.01" value="${obj.height_m ?? 0.1}" />
             </div>
           </div>
-          <button id="btnDelObj" class="insp-action-btn danger">Hapus Cable Ladder</button>
+          <div class="insp-field">
+            <label>Elevasi atas tray (m)</label>
+            <input type="number" id="inpTrayElev" step="0.05" value="${obj.elevation_m}" />
+          </div>
+          <button id="btnDelObj" class="insp-action-btn danger">Hapus Cable Tray</button>
         </div>
       `;
       document.getElementById("inpTrayName").onchange = (e) => store.updateSelectedProperty({ name: e.target.value });
+      document.getElementById("inpTrayType").onchange = (e) => store.updateSelectedProperty({ type: e.target.value });
+      document.getElementById("inpTrayHeight").onchange = (e) =>
+        store.updateSelectedProperty({ height_m: parseFloat(e.target.value) || 0.1 });
       document.getElementById("inpTrayW").onchange = (e) =>
         store.updateSelectedProperty({ width_m: parseFloat(e.target.value) || 0.45 });
       document.getElementById("inpTrayElev").onchange = (e) =>

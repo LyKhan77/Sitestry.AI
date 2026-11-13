@@ -25,3 +25,14 @@ test("an anchor beats ortho when both apply", () => {
   const r = snapDrawPoint({ x: 99, y: 6 }, [[100, 8]], { radiusPx: 8, from: [0, 0], ortho: true });
   assert.deepEqual(r, { x: 100, y: 8, snapped: "node" });
 });
+
+import { TRAY_TYPES, defaultTrayElevation } from "../../frontend/js/trayNetwork.js";
+
+test("tray types list the four supported types", () => {
+  assert.deepEqual(TRAY_TYPES, ["perforated", "ladder", "duct", "wiremesh"]);
+});
+
+test("default elevation sits 0.45 m below the ceiling", () => {
+  assert.equal(defaultTrayElevation({ metadata: { default_wall_height_m: 3.8 } }), 3.35);
+  assert.equal(defaultTrayElevation({ metadata: { default_wall_height_m: 3.0 } }), 2.55);
+});

@@ -1,8 +1,18 @@
 /**
  * Sitestry.AI — cable tray network helpers (pure, no DOM).
  *
- * Vertex snapping for drawing, and (later) the shared-vertex tray graph.
+ * Tray constants and defaults, vertex snapping for drawing, and the shared-vertex tray graph.
  */
+
+export const TRAY_TYPES = ["perforated", "ladder", "duct", "wiremesh"];
+
+/** Trays hang 0.45 m below the ceiling; `elevation_m` is the tray top. */
+export const TRAY_CEILING_GAP_M = 0.45;
+
+export function defaultTrayElevation(project) {
+  const wallHeight = Number(project?.metadata?.default_wall_height_m) || 3.8;
+  return Math.round((wallHeight - TRAY_CEILING_GAP_M) * 100) / 100;
+}
 
 /**
  * Snap a cursor point while drawing a tray run.

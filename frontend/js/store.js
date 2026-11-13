@@ -7,6 +7,7 @@
 
 import { planWallInsertion, planWallSplit } from "./annotationGeometry.js";
 import { isSimplePolygon, polygonArea } from "./roomFaces.js";
+import { defaultTrayElevation } from "./trayNetwork.js";
 import {
   resolveStairGeometry,
   computeDefaultHeading,
@@ -60,6 +61,7 @@ export class SitestryStore extends EventTarget {
       viewMode: "2d", // "2d" | "split" | "3d"
       activeTool: "roi", // "select" | "roi" | "ruler" | "wall" | "column" | "door" | "double_door" | "window" | "room" | "stair" | "equipment" | "tray"
       pendingEquipmentCategory: "rack",
+      trayType: "perforated", // "perforated" | "ladder" | "duct" | "wiremesh"
       selected: null, // { kind: "wall"|"node"|"column"|"opening"|"room"|"equipment"|"tray"|"stair", id: string }
       wallMode: "manual", // "manual" | "guided"
       endpointSnap: true,
@@ -776,15 +778,16 @@ export class SitestryStore extends EventTarget {
     return eq;
   }
 
-  addCableTray(points_px) {
+  addCableTray(points_px, opts = {}) {
     if (!points_px || points_px.length < 2) return null;
     this.pushHistorySnapshot();
     const tray = {
       id: `tray_${this.project.cable_trays.length + 1}_${Date.now().toString(36).slice(-3)}`,
-      name: `3D Cable Ladder Route #${this.project.cable_trays.length + 1}`,
-      type: "ladder",
-      width_m: 0.5,
-      elevation_m: 2.75,
+      name: `Cable Tray Route #${this.project.cable_trays.length + 1}`,
+      type: opts.type || this.ui.trayType || "perforated",
+      width_m: opts.width_m ?? 0.5,
+      height_m: 0.1,
+      elevation_m: defaultTrayElevation(this.project),
       color: "#cba258",
       points_px: points_px.map((pt) => [Math.round(pt[0] * 10) / 10, Math.round(pt[1] * 10) / 10]),
     };
@@ -1054,10 +1057,11 @@ export class SitestryStore extends EventTarget {
 
     this.project.cable_trays.push({
       id: `tray_preset_1_${Date.now().toString(36).slice(-2)}`,
-      name: "Main Overhead Power & Fiber Ladder",
-      type: "ladder",
+      name: "Main Overhead Power & Fiber Tray",
+      type: "perforated",
       width_m: 0.5,
-      elevation_m: 2.75,
+      height_m: 0.1,
+      elevation_m: defaultTrayElevation(this.project),
       color: "#cba258",
       points_px: [
         [Math.round(cx - 115), Math.round(cy - 10)],

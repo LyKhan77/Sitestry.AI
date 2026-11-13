@@ -498,7 +498,7 @@ export function initV4Dock(app) {
   decorateToolButtons();
   buildDockFlyout(3, [".wall-assist-bar", "#stairSettingsCard", "#roomSettingsCard", ".layer-card"]);
   buildDockFlyout(4, [".cam-toggles-row", ".surface-card:has(#stage4SummaryGrid)"]);
-  buildDockFlyout(5, [".eq-catalog-grid", ".preset-cme-row", "label.layer-check-row"]);
+  buildDockFlyout(5, ["#traySettingsCard", ".eq-catalog-grid", ".preset-cme-row", "label.layer-check-row"]);
   initExportMenu();
   initPalette(app);
   document.getElementById("btnRetryExtract")?.addEventListener("click", () => app.startExtractionV4());
