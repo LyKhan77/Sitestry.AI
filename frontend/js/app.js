@@ -34,6 +34,12 @@ import {
   defaultPipeElevation,
   normalizePipeMounting,
 } from "./pipeNetwork.js";
+import {
+  CABLE_SYSTEMS,
+  CABLE_SYSTEM_LABELS,
+  cableColorFor,
+  resolveCableRoute,
+} from "./cableRouter.js";
 import { countsOf, structureHash, workspaceFlags } from "./workspaceState.js";
 import {
   hideExtractionLayers,
@@ -80,6 +86,8 @@ const TOOL_HINTS = {
     "Mode: <strong>Place CME Equipment [E]</strong> — Pilih kategori &amp; sub-tipe, lalu klik pada denah untuk memasang (item dinding otomatis snap ke dinding).",
   pipe:
     "Mode: <strong>Draw Cooling Pipe [P]</strong> — Klik titik-titik jalur pipa cooling (Underfloor / Overhead). Tahan Shift untuk lurus, klik dua kali / klik kanan / Enter untuk selesai.",
+  cable:
+    "Mode: <strong>Auto Cabling [C]</strong> — Pilih sistem (Power / Grounding / Link / Cooling / Security), klik Equipment Sumber (Source) lalu klik Equipment Tujuan (Target).",
   tray: "Mode: <strong>Draw Cable Tray [T]</strong> — Klik titik-titik jalur tray (menempel ke ujung tray lain, Shift = lurus 90°); tekan Enter, klik dua kali di titik terakhir, atau klik kanan untuk menyelesaikan.",
 };
 
@@ -1341,6 +1349,26 @@ class SitestryStudioApp {
         });
       });
     });
+    document.querySelectorAll("[data-cable-system]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        store.ui.cableSystem = btn.dataset.cableSystem;
+        document.querySelectorAll("[data-cable-system]").forEach((b) => {
+          b.classList.toggle("active", b.dataset.cableSystem === store.ui.cableSystem);
+          b.setAttribute("aria-pressed", String(b.dataset.cableSystem === store.ui.cableSystem));
+        });
+        const pathGroup = document.querySelector(".cable-path-group");
+        if (pathGroup) pathGroup.hidden = store.ui.cableSystem !== "power";
+      });
+    });
+    document.querySelectorAll("[data-cable-path]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        store.ui.cablePathLabel = btn.dataset.cablePath;
+        document.querySelectorAll("[data-cable-path]").forEach((b) => {
+          b.classList.toggle("active", b.dataset.cablePath === store.ui.cablePathLabel);
+          b.setAttribute("aria-pressed", String(b.dataset.cablePath === store.ui.cablePathLabel));
+        });
+      });
+    });
     document.getElementById("chkTransparentFloor")?.addEventListener("change", (e) => {
       store.ui.transparentFloor = Boolean(e.target.checked);
       this.viewer3d.rebuildScene();
@@ -1845,8 +1873,9 @@ class SitestryStudioApp {
         equipment: [5],
         tray: [5],
         pipe: [5],
+        cable: [5],
       };
-      const stage5Override = store.ui.step === 5 ? { p: "pipe" } : null;
+      const stage5Override = store.ui.step === 5 ? { p: "pipe", c: "cable" } : null;
       const nextTool = (stage5Override && stage5Override[key]) || map[key];
       if (nextTool && toolStages[nextTool]?.includes(store.ui.step)) {
         store.setActiveTool(nextTool);
@@ -2648,6 +2677,70 @@ class SitestryStudioApp {
         store.updateSelectedProperty({ diameter_m: parseFloat(e.target.value) || 0.1 });
       document.getElementById("inpPipeElev").onchange = (e) =>
         store.updateSelectedProperty({ elevation_m: parseFloat(e.target.value) || 0.15 });
+      document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
+    } else if (sel.kind === "cable") {
+      const route = resolveCableRoute(store.project, obj);
+      const sysOpts = CABLE_SYSTEMS.map(
+        (s) => `<option value="${s}"${obj.system === s ? " selected" : ""}>${CABLE_SYSTEM_LABELS[s] || s}</option>`
+      ).join("");
+      container.innerHTML = `
+        <div class="insp-card">
+          <div class="insp-title">Koneksi Cabling</div>
+          <div class="insp-field">
+            <label>Nama / Tag Kabel</label>
+            <input type="text" id="inpCabName" value="${obj.name}" />
+          </div>
+          <div class="insp-row-2">
+            <div class="insp-field">
+              <label>Sistem</label>
+              <select id="inpCabSys">${sysOpts}</select>
+            </div>
+            ${
+              obj.system === "power"
+                ? `<div class="insp-field">
+              <label>Jalur Power</label>
+              <select id="inpCabPath">
+                <option value="A"${obj.path_label !== "B" ? " selected" : ""}>Path A (Merah)</option>
+                <option value="B"${obj.path_label === "B" ? " selected" : ""}>Path B (Biru)</option>
+              </select>
+            </div>`
+                : `<div class="insp-field"><label>Panjang (m)</label><input type="text" readonly value="${route.length_m} m" /></div>`
+            }
+          </div>
+          <div class="insp-field">
+            <label>Info Rute Otomatis</label>
+            <div style="font-size:11px;color:var(--text-warm-muted);line-height:1.4;">
+              Panjang: <strong>${route.length_m} m</strong> &bull;
+              Jalur: <strong>${route.eligible_infra}</strong> &bull;
+              Waterfall: <strong>${route.waterfalls.length}</strong>
+              ${route.fallback_used ? " &bull; <em>Via dinding/siku 90°</em>" : ""}
+            </div>
+          </div>
+          <button id="btnDelObj" class="insp-action-btn danger">Hapus Koneksi Kabel</button>
+        </div>
+      `;
+      document.getElementById("inpCabName").onchange = (e) => store.updateSelectedProperty({ name: e.target.value });
+      document.getElementById("inpCabSys").onchange = (e) => {
+        const nextSys = e.target.value;
+        const nextPath = nextSys === "power" ? obj.path_label || "A" : undefined;
+        store.updateSelectedProperty({
+          system: nextSys,
+          path_label: nextPath,
+          color: cableColorFor({ system: nextSys, path_label: nextPath }),
+        });
+        this.renderInspector();
+      };
+      const inpPath = document.getElementById("inpCabPath");
+      if (inpPath) {
+        inpPath.onchange = (e) => {
+          const nextPath = e.target.value;
+          store.updateSelectedProperty({
+            path_label: nextPath,
+            color: cableColorFor({ system: "power", path_label: nextPath }),
+          });
+          this.renderInspector();
+        };
+      }
       document.getElementById("btnDelObj").onclick = () => store.deleteSelected();
     } else {
       const scale = store.project.metadata.scale_px_per_meter || 30.68;

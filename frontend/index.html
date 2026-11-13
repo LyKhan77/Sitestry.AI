@@ -549,6 +549,21 @@
           </div>
         </div>
 
+        <div class="surface-card" id="cableSettingsCard">
+          <div class="card-header-label">SISTEM CABLING OTOMATIS</div>
+          <div class="mode-group cable-sys-group" role="group" aria-label="Sistem cabling" style="flex-wrap:wrap;gap:4px;">
+            <button type="button" class="mode-btn active" data-cable-system="power" aria-pressed="true">Power</button>
+            <button type="button" class="mode-btn" data-cable-system="grounding" aria-pressed="false">Grounding</button>
+            <button type="button" class="mode-btn" data-cable-system="link" aria-pressed="false">Link</button>
+            <button type="button" class="mode-btn" data-cable-system="cooling" aria-pressed="false">Cooling</button>
+            <button type="button" class="mode-btn" data-cable-system="security" aria-pressed="false">Security</button>
+          </div>
+          <div class="mode-group cable-path-group" role="group" aria-label="Jalur power" style="margin-top:6px;">
+            <button type="button" class="mode-btn active" data-cable-path="A" aria-pressed="true">Path A (Merah)</button>
+            <button type="button" class="mode-btn" data-cable-path="B" aria-pressed="false">Path B (Biru)</button>
+          </div>
+        </div>
+
         <div class="surface-card">
           <div class="card-header-label">KATALOG PERANGKAT (5 KATEGORI)</div>
           <div class="eq-catalog-grid eq-generic-grid">
@@ -594,6 +609,10 @@
             <button class="tool-btn" data-tool="pipe" id="btnToolDrawPipe">
               <span class="kbd">P</span>
               <span>Gambar Cooling Pipe</span>
+            </button>
+            <button class="tool-btn" data-tool="cable" id="btnToolDrawCable">
+              <span class="kbd">C</span>
+              <span>Cabling (Source &rarr; Target)</span>
             </button>
           </div>
 

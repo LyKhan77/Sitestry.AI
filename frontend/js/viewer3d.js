@@ -21,6 +21,7 @@ import { buildFitting, buildTrayProfile, fittingCutM, FITTING_KINDS } from "./tr
 import { getEquipmentPreset } from "./equipmentCatalog.js";
 import { trayColorForService, trayPoints } from "./trayNetwork.js";
 import { PIPE_DEFAULT_COLOR, pipePoints } from "./pipeNetwork.js";
+import { cableColorFor, resolveCableRoute } from "./cableRouter.js";
 import { deriveFittings } from "./trayFittings.js";
 
 export class Viewer3DEngine {
@@ -332,6 +333,9 @@ export class Viewer3DEngine {
     }
     if (layers.pipes !== false) {
       this.buildPipes3D(scale, sel);
+    }
+    if (layers.cables !== false) {
+      this.buildCables3D(sel);
     }
 
     this.update3DLabelsOverlay();
@@ -904,6 +908,56 @@ export class Viewer3DEngine {
 
       this.rootGroup.add(pipeGroup);
       this.selectableMeshes.push(pipeGroup);
+    }
+  }
+
+  buildCables3D(sel) {
+    const project = this.store.project;
+    for (const cab of project.cables || []) {
+      const route = resolveCableRoute(project, cab);
+      if (route.points3d.length < 2) continue;
+
+      const isSelected = sel?.kind === "cable" && sel?.id === cab.id;
+      const color = isSelected ? 0x00754a : new THREE.Color(cableColorFor(cab));
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.35,
+        metalness: 0.25,
+      });
+
+      const cableGroup = new THREE.Group();
+      cableGroup.userData = { sitestryKind: "cable", sitestryId: cab.id, system: cab.system };
+
+      const vectors = [];
+      for (const p of route.points3d) {
+        const m = this.pxToMeter3D(p.x_px, p.y_px);
+        const v = new THREE.Vector3(m.x, p.y_m, m.z);
+        if (!vectors.length || vectors[vectors.length - 1].distanceTo(v) > 0.02) {
+          vectors.push(v);
+        }
+      }
+      if (vectors.length < 2) continue;
+
+      const curve = new THREE.CatmullRomCurve3(vectors, false, "catmullrom", 0.12);
+      const radius = cab.system === "power" ? 0.024 : cab.system === "cooling" ? 0.022 : 0.016;
+      const tubularSegments = Math.max(16, vectors.length * 8);
+      const tubeMesh = new THREE.Mesh(new THREE.TubeGeometry(curve, tubularSegments, radius, 8, false), mat);
+      cableGroup.add(tubeMesh);
+
+      // Waterfall drop-out collars at tray entry/exit points
+      for (const wf of route.waterfalls) {
+        const wm = this.pxToMeter3D(wf.x_px, wf.y_px);
+        const collar = new THREE.Mesh(
+          new THREE.TorusGeometry(radius * 2.2, radius * 0.65, 8, 16),
+          new THREE.MeshStandardMaterial({ color: 0xcba258, metalness: 0.7, roughness: 0.3 })
+        );
+        collar.rotation.x = Math.PI / 2;
+        collar.position.set(wm.x, wf.z_top_m, wm.z);
+        cableGroup.add(collar);
+      }
+
+      this.rootGroup.add(cableGroup);
+      this.selectableMeshes.push(cableGroup);
     }
   }
 

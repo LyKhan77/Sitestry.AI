@@ -12,6 +12,7 @@ import { ISOLATING_TOOLS } from "./store.js";
 import { getEquipmentPreset } from "./equipmentCatalog.js";
 import { nearestTrayAnchor, snapDrawPoint, trayColorForService, trayPoints } from "./trayNetwork.js";
 import { PIPE_DEFAULT_COLOR, nearestPipeAnchor, pipePoints } from "./pipeNetwork.js";
+import { cableColorFor, resolveCableRoute } from "./cableRouter.js";
 import { api } from "./api.js";
 import { suggestRoomName } from "./roomNames.js";
 import { buildRoomFaces, faceAt, findFreeEnds, isSimplePolygon, pointInPolygon, polygonArea } from "./roomFaces.js";
@@ -67,6 +68,7 @@ export class Canvas2DEngine {
     this.roomDragTransaction = null;
     this.trayDraftPoints = [];
     this.pipeDraftPoints = [];
+    this.cableDraftSourceId = null;
     this.cursorPosPx = { x: 0, y: 0 };
     this.isDraggingNode = false;
     this.dragTransaction = null;
@@ -321,7 +323,7 @@ export class Canvas2DEngine {
 
   /** A shape of this kind may be dragged: not while drawing, and only where the stage allows editing it. */
   canDrag(kind) {
-    return !this.isDrawingTool() && this.store.canEdit(kind);
+    return !this.isDrawingTool() && this.store.ui.activeTool !== "cable" && this.store.canEdit(kind);
   }
 
   isDrawingTool() {
@@ -336,7 +338,8 @@ export class Canvas2DEngine {
         this.rulerPoints.length ||
         this.roomDraft.length ||
         this.trayDraftPoints.length ||
-        this.pipeDraftPoints.length
+        this.pipeDraftPoints.length ||
+        this.cableDraftSourceId
     );
   }
 
@@ -469,6 +472,7 @@ export class Canvas2DEngine {
     this.pipeDraftRepeated = false;
     this.trayDraftPoints = [];
     this.pipeDraftPoints = [];
+    this.cableDraftSourceId = null;
     this.overlayLayer.destroyChildren();
     this.overlayLayer.batchDraw();
   }
@@ -651,7 +655,7 @@ export class Canvas2DEngine {
           !hadDraft &&
           !typing &&
           document.body.dataset.ui === "v4" &&
-          (this.isDrawingTool() || ["equipment", "tray", "pipe"].includes(this.store.ui.activeTool))
+          (this.isDrawingTool() || ["equipment", "tray", "pipe", "cable"].includes(this.store.ui.activeTool))
         ) {
           this.store.setActiveTool("select");
         }
@@ -1980,6 +1984,22 @@ export class Canvas2DEngine {
 
         eqGroup.on("click", (ev) => {
           ev.cancelBubble = true;
+          if (this.store.ui.activeTool === "cable") {
+            if (!this.cableDraftSourceId) {
+              this.cableDraftSourceId = eq.id;
+              this.store.emit("toast", { message: `Source: ${eq.name}. Klik perangkat tujuan (Target).` });
+              this.renderTempOverlay(this.cursorPosPx);
+            } else if (this.cableDraftSourceId === eq.id) {
+              this.clearTempDrawing();
+            } else {
+              const created = this.store.addCable(this.cableDraftSourceId, eq.id);
+              this.clearTempDrawing();
+              if (created) {
+                this.store.emit("toast", { message: `Koneksi ${created.system.toUpperCase()} dibuat otomatis.` });
+              }
+            }
+            return;
+          }
           this.store.selectObject("equipment", eq.id);
         });
 
@@ -1991,6 +2011,44 @@ export class Canvas2DEngine {
         });
 
         this.cmeLayer.add(eqGroup);
+      }
+    }
+
+    // 4. Render Automatic Cables & Waterfall Drop Markers
+    if (layers.cables !== false) {
+      for (const cab of this.store.project.cables || []) {
+        const route = resolveCableRoute(this.store.project, cab);
+        if (route.points2d_px.length < 2) continue;
+        const isSelected = sel?.kind === "cable" && sel?.id === cab.id;
+        const color = isSelected ? "#00754A" : cableColorFor(cab);
+        const line = new Konva.Line({
+          points: route.points2d_px.flat(),
+          stroke: color,
+          strokeWidth: isSelected ? 4 : 2.5,
+          dash: cab.system === "grounding" ? [6, 3] : cab.system === "cooling" ? [10, 4] : undefined,
+          lineCap: "round",
+          lineJoin: "round",
+          hitStrokeWidth: 10,
+        });
+        line.on("click", (ev) => {
+          ev.cancelBubble = true;
+          this.store.selectObject("cable", cab.id);
+        });
+        this.cmeLayer.add(line);
+
+        for (const wf of route.waterfalls) {
+          this.cmeLayer.add(
+            new Konva.Circle({
+              x: wf.x_px,
+              y: wf.y_px,
+              radius: 4.5 / Math.max(0.5, this.stageScale()),
+              fill: "#ffffff",
+              stroke: color,
+              strokeWidth: 2,
+              listening: false,
+            })
+          );
+        }
       }
     }
 
@@ -2280,6 +2338,33 @@ export class Canvas2DEngine {
             radius: 7 / this.stageScale(),
             stroke: "#00754A",
             strokeWidth: 2 / this.stageScale(),
+            listening: false,
+          })
+        );
+      }
+    } else if (tool === "cable" && this.cableDraftSourceId) {
+      const src = this.store.project.equipments.find((e) => e.id === this.cableDraftSourceId);
+      if (src) {
+        const previewColor = cableColorFor({
+          system: this.store.ui.cableSystem,
+          path_label: this.store.ui.cablePathLabel,
+        });
+        this.overlayLayer.add(
+          new Konva.Circle({
+            x: src.x_px,
+            y: src.y_px,
+            radius: 12 / this.stageScale(),
+            stroke: previewColor,
+            strokeWidth: 2.5 / this.stageScale(),
+            listening: false,
+          })
+        );
+        this.overlayLayer.add(
+          new Konva.Line({
+            points: [src.x_px, src.y_px, cursorPt.x, cursorPt.y],
+            stroke: previewColor,
+            strokeWidth: 2.5,
+            dash: [6, 4],
             listening: false,
           })
         );

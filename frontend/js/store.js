@@ -31,6 +31,11 @@ import {
   prunePipeNodes,
 } from "./pipeNetwork.js";
 import {
+  CABLE_SYSTEMS,
+  cableColorFor,
+  resolveCableRoute,
+} from "./cableRouter.js";
+import {
   resolveStairGeometry,
   computeDefaultHeading,
   isParametricStair,
@@ -46,7 +51,7 @@ export const ISOLATING_TOOLS = new Set(["wall", "stair", "door", "double_door", 
 
 // Annotation is edited only in Stage 3; equipment and cable trays only in Stage 5.
 const STRUCTURAL_KINDS = new Set(["node", "wall", "opening", "column", "stair", "room"]);
-const INSTALL_KINDS = new Set(["equipment", "tray", "pipe"]);
+const INSTALL_KINDS = new Set(["equipment", "tray", "pipe", "cable"]);
 
 export class SitestryStore extends EventTarget {
   constructor() {
@@ -77,6 +82,7 @@ export class SitestryStore extends EventTarget {
       tray_nodes: [],
       pipe_runs: [],
       pipe_nodes: [],
+      cables: [],
     };
 
     // UI & Editor state across the 5 Segmented Stages:
@@ -90,6 +96,8 @@ export class SitestryStore extends EventTarget {
       trayType: "perforated", // "perforated" | "ladder" | "duct" | "wiremesh"
       trayService: "unified", // "power" | "data" | "unified"
       pipeMounting: "underfloor", // "underfloor" | "overhead"
+      cableSystem: "power", // "power" | "grounding" | "link" | "cooling" | "security"
+      cablePathLabel: "A", // "A" | "B"
       transparentFloor: false,
       selected: null, // { kind: "wall"|"node"|"column"|"opening"|"room"|"equipment"|"tray"|"stair", id: string }
       wallMode: "manual", // "manual" | "guided"
@@ -121,6 +129,7 @@ export class SitestryStore extends EventTarget {
         equipments: true,
         trays: true,
         pipes: true,
+        cables: true,
         grid: true,
         freeEnds: true,
         baseFloor: true,
@@ -402,6 +411,7 @@ export class SitestryStore extends EventTarget {
       tray_nodes: data.tray_nodes || [],
       pipe_runs: data.pipe_runs || [],
       pipe_nodes: data.pipe_nodes || [],
+      cables: data.cables || [],
     };
     migrateTrayNetwork(this.project);
     this.ui.selected = null;
@@ -445,6 +455,7 @@ export class SitestryStore extends EventTarget {
       equipment: this.project.equipments,
       tray: this.project.cable_trays,
       pipe: this.project.pipe_runs,
+      cable: this.project.cables,
       stair: this.project.stairs,
     };
     const arr = map[sel.kind];
@@ -879,6 +890,34 @@ export class SitestryStore extends EventTarget {
     return pipe;
   }
 
+  addCable(sourceId, targetId, opts = {}) {
+    if (!sourceId || !targetId || sourceId === targetId) return null;
+    const source = this.project.equipments.find((e) => e.id === sourceId);
+    const target = this.project.equipments.find((e) => e.id === targetId);
+    if (!source || !target) return null;
+
+    this.pushHistorySnapshot();
+    const system = CABLE_SYSTEMS.includes(opts.system || this.ui.cableSystem)
+      ? opts.system || this.ui.cableSystem
+      : "power";
+    const pathLabel = system === "power" ? opts.path_label || this.ui.cablePathLabel || "A" : undefined;
+    if (!Array.isArray(this.project.cables)) this.project.cables = [];
+
+    const cable = {
+      id: `cab_${this.project.cables.length + 1}_${Date.now().toString(36).slice(-3)}`,
+      name: opts.name || `${system.toUpperCase()}: ${source.name} → ${target.name}`,
+      system,
+      ...(pathLabel ? { path_label: pathLabel } : {}),
+      source_id: source.id,
+      target_id: target.id,
+      color: opts.color || cableColorFor({ system, path_label: pathLabel }, source, target),
+    };
+    this.project.cables.push(cable);
+    this.selectObject("cable", cable.id);
+    this.emit("geometryChanged", { source: "addCable" });
+    return cable;
+  }
+
   buildStairParameters(parameters = {}) {
     const meta = this.project.metadata;
     const defaults = this.ui.stairDefaults || {};
@@ -1205,12 +1244,17 @@ export class SitestryStore extends EventTarget {
       this.project.rooms = this.project.rooms.filter((r) => r.id !== sel.id);
     } else if (sel.kind === "equipment") {
       this.project.equipments = this.project.equipments.filter((e) => e.id !== sel.id);
+      this.project.cables = (this.project.cables || []).filter(
+        (c) => c.source_id !== sel.id && c.target_id !== sel.id
+      );
     } else if (sel.kind === "tray") {
       this.project.cable_trays = this.project.cable_trays.filter((t) => t.id !== sel.id);
       pruneTrayNodes(this.project);
     } else if (sel.kind === "pipe") {
       this.project.pipe_runs = (this.project.pipe_runs || []).filter((p) => p.id !== sel.id);
       prunePipeNodes(this.project);
+    } else if (sel.kind === "cable") {
+      this.project.cables = (this.project.cables || []).filter((c) => c.id !== sel.id);
     } else if (sel.kind === "stair") {
       this.project.stairs = this.project.stairs.filter((s) => s.id !== sel.id);
     }
@@ -1274,6 +1318,14 @@ export class SitestryStore extends EventTarget {
       pipeLengthMeters += pipeLengthM(this.project, p, scale);
     }
 
+    const cableMeters = Object.fromEntries(CABLE_SYSTEMS.map((s) => [s, 0]));
+    let waterfallCount = 0;
+    for (const cab of this.project.cables || []) {
+      const route = resolveCableRoute(this.project, cab);
+      cableMeters[cab.system] = (cableMeters[cab.system] || 0) + route.length_m;
+      waterfallCount += route.waterfalls.length;
+    }
+
     const doorsCount = this.project.openings.filter(
       (o) => o.type === "single_door" || o.type === "double_door"
     ).length;
@@ -1296,6 +1348,12 @@ export class SitestryStore extends EventTarget {
       dataTrayMeters: dataTrayMeters.toFixed(1),
       unifiedTrayMeters: unifiedTrayMeters.toFixed(1),
       pipeLengthMeters: pipeLengthMeters.toFixed(1),
+      powerCableMeters: cableMeters.power.toFixed(1),
+      groundingCableMeters: cableMeters.grounding.toFixed(1),
+      linkCableMeters: cableMeters.link.toFixed(1),
+      coolingRouteMeters: cableMeters.cooling.toFixed(1),
+      securityCableMeters: cableMeters.security.toFixed(1),
+      waterfallCount,
       columnsCount: this.project.columns.length,
       doorsCount,
       windowsCount,

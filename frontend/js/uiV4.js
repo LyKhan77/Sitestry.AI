@@ -185,6 +185,24 @@ export function renderBoqPanel(boq, equipments) {
     Number(boq.pipeLengthMeters) > 0
       ? `<div class="boq-eq-row"><span>Cooling Pipe</span><strong>${boq.pipeLengthMeters} m</strong></div>`
       : "",
+    Number(boq.powerCableMeters) > 0
+      ? `<div class="boq-eq-row"><span>Kabel Power</span><strong>${boq.powerCableMeters} m</strong></div>`
+      : "",
+    Number(boq.groundingCableMeters) > 0
+      ? `<div class="boq-eq-row"><span>Kabel Grounding</span><strong>${boq.groundingCableMeters} m</strong></div>`
+      : "",
+    Number(boq.linkCableMeters) > 0
+      ? `<div class="boq-eq-row"><span>Kabel Link</span><strong>${boq.linkCableMeters} m</strong></div>`
+      : "",
+    Number(boq.coolingRouteMeters) > 0
+      ? `<div class="boq-eq-row"><span>Aliran Cooling</span><strong>${boq.coolingRouteMeters} m</strong></div>`
+      : "",
+    Number(boq.securityCableMeters) > 0
+      ? `<div class="boq-eq-row"><span>Kabel Security</span><strong>${boq.securityCableMeters} m</strong></div>`
+      : "",
+    Number(boq.waterfallCount) > 0
+      ? `<div class="boq-eq-row"><span>Waterfall Drop</span><strong>${boq.waterfallCount} pcs</strong></div>`
+      : "",
   ].join("");
   const rows = totals.length
     ? totals
@@ -512,6 +530,7 @@ export function initV4Dock(app) {
   buildDockFlyout(5, [
     "#traySettingsCard",
     "#pipeSettingsCard",
+    "#cableSettingsCard",
     ".eq-catalog-grid",
     ".eq-subtype-row",
     ".preset-cme-row",
