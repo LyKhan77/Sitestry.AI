@@ -6,7 +6,7 @@
  * deterministic lateral lane offsets on shared trays, and 3D waterfall drop coordinates.
  */
 
-import { getEquipmentPreset } from "./equipmentCatalog.js";
+import { getEquipmentPreset, resolveEquipmentElevationM } from "./equipmentCatalog.js";
 import { normalizeTrayService } from "./trayNetwork.js";
 
 export const CABLE_SYSTEMS = ["power", "grounding", "link", "cooling", "security"];
@@ -106,9 +106,9 @@ export function normalizeWaterfallStyle(style) {
   return WATERFALL_STYLES.includes(style) ? style : "tray_waterfall";
 }
 
-function equipmentConnectionZ(eq) {
+function equipmentConnectionZ(eq, project = null) {
   const preset = getEquipmentPreset(eq?.subtype || eq?.category);
-  const elev = Number(eq?.elevation_m) || 0;
+  const elev = project ? resolveEquipmentElevationM(project, eq) : Number(eq?.elevation_m) || 0;
   const h = Number(eq?.height_m) || preset.h || 2.0;
   const mount = eq?.mount || preset.mount || "floor";
   if (mount === "floor") return elev + h;
@@ -377,8 +377,8 @@ export function resolveWaterfallGroups(project) {
     const { adj } = buildGraphWithPortals(runs, nodeById, srcHit, tgtHit);
     if (!dijkstra(adj, "__src__", "__tgt__")) continue;
 
-    const srcZ = equipmentConnectionZ(source);
-    const tgtZ = equipmentConnectionZ(target);
+    const srcZ = equipmentConnectionZ(source, project);
+    const tgtZ = equipmentConnectionZ(target, project);
     const srcAnch = trayHitEdgeAnchor(srcHit, nodeById, source, scale);
     const tgtAnch = trayHitEdgeAnchor(tgtHit, nodeById, target, scale);
 
@@ -485,8 +485,8 @@ export function resolveCableRoute(project, cable, precomputedGroups = null) {
   const rawNodes = isCooling ? project.pipe_nodes || [] : project.tray_nodes || [];
   const nodeById = new Map(rawNodes.map((n) => [n.id, n]));
 
-  const srcZ = equipmentConnectionZ(source);
-  const tgtZ = equipmentConnectionZ(target);
+  const srcZ = equipmentConnectionZ(source, project);
+  const tgtZ = equipmentConnectionZ(target, project);
 
   const srcHit = runs.length ? closestPointOnRuns(source.x_px, source.y_px, runs, nodeById) : null;
   const tgtHit = runs.length ? closestPointOnRuns(target.x_px, target.y_px, runs, nodeById) : null;

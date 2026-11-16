@@ -18,6 +18,7 @@ docs/superpowers/specs/
 scratch/
 *.log
 tmp/
+temp/
 
 # Private Sample Blueprints (runtime inputs, not source)
 floorplan/

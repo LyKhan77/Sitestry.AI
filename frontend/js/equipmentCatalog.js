@@ -6,6 +6,8 @@
  * while preserving 100% compatibility with legacy presets (rack, ups, battery, rectifier, panel, pac).
  */
 
+import { buildRoomFaces, faceAt, pointInPolygon, polygonArea } from "./roomFaces.js";
+
 export const EQUIPMENT_GROUPS = ["rack", "power", "data", "cooling", "security"];
 
 export const EQUIPMENT_GROUP_LABELS = {
@@ -28,7 +30,7 @@ export const EQUIPMENT_SUBTYPES = {
     w: 0.6,
     d: 1.1,
     h: 2.1,
-    elev: 0.45,
+    elev: 0.0,
     mount: "floor",
     color: "#1e3932",
   },
@@ -38,7 +40,7 @@ export const EQUIPMENT_SUBTYPES = {
     w: 0.8,
     d: 1.0,
     h: 2.1,
-    elev: 0.45,
+    elev: 0.0,
     mount: "floor",
     color: "#234a3f",
   },
@@ -122,7 +124,7 @@ export const EQUIPMENT_SUBTYPES = {
     w: 0.8,
     d: 0.8,
     h: 2.1,
-    elev: 0.45,
+    elev: 0.0,
     mount: "floor",
     color: "#0369a1",
   },
@@ -154,7 +156,7 @@ export const EQUIPMENT_SUBTYPES = {
     w: 1.9,
     d: 0.95,
     h: 2.15,
-    elev: 0.45,
+    elev: 0.0,
     mount: "floor",
     color: "#0e7490",
   },
@@ -164,7 +166,7 @@ export const EQUIPMENT_SUBTYPES = {
     w: 0.35,
     d: 1.1,
     h: 2.1,
-    elev: 0.45,
+    elev: 0.0,
     mount: "floor",
     color: "#0891b2",
   },
@@ -276,4 +278,72 @@ export function snapWallMountPosition(x_px, y_px, walls = [], nodes = [], maxDis
     }
   }
   return best;
+}
+
+/**
+ * Resolve the physical floor slab height (meters) beneath 2D coordinate `(x_px, y_px)`:
+ * 1. Matching `project.rooms` zone slab top (`max(0.06, elevation_m || 0.25)`, picking smallest containing polygon),
+ * 2. Else automatic closed-room concrete `BaseFloor` (`0.02 m` when enabled),
+ * 3. Else `0.0 m`.
+ */
+export function resolveFloorElevationAt(project, x_px, y_px, { hasBaseFloor = true, baseFaces = null } = {}) {
+  if (!project || !Number.isFinite(Number(x_px)) || !Number.isFinite(Number(y_px))) return 0;
+  const px = Number(x_px);
+  const py = Number(y_px);
+
+  let matchedRoom = null;
+  let bestArea = Infinity;
+  for (const room of project.rooms || []) {
+    if (!room?.polygon_px || room.polygon_px.length < 3) continue;
+    if (!pointInPolygon([px, py], room.polygon_px)) continue;
+    const area = Math.abs(polygonArea(room.polygon_px));
+    if (area < bestArea) {
+      bestArea = area;
+      matchedRoom = room;
+    }
+  }
+  if (matchedRoom) {
+    return Math.max(0.06, Number(matchedRoom.elevation_m) || 0.25);
+  }
+
+  if (hasBaseFloor && (baseFaces?.length || project.walls?.length)) {
+    const faces = baseFaces ?? buildRoomFaces(project);
+    if (faces.length && faceAt(faces, px, py)) return 0.02;
+  }
+
+  return 0;
+}
+
+/**
+ * Compute default `elevation_m` for newly placed/retyped equipment at `(x_px, y_px)`.
+ * Floor-standing equipment sits on the resolved floor slab; wall-mounted sits above it;
+ * ceiling-mounted hangs below `default_wall_height_m`.
+ */
+export function defaultEquipmentElevation(project, subtypeOrCategory, x_px, y_px, opts = {}) {
+  const preset = getEquipmentPreset(subtypeOrCategory);
+  const wallHeight = Number(project?.metadata?.default_wall_height_m) || 3.8;
+  if (preset.mount === "ceiling") {
+    return Math.max(0.2, Math.round((wallHeight - preset.h - 0.05) * 100) / 100);
+  }
+  const floorZ = resolveFloorElevationAt(project, x_px, y_px, opts);
+  if (preset.mount === "wall") {
+    return Math.min(
+      Math.max(0.05, wallHeight - preset.h),
+      Math.round((floorZ + preset.elev) * 100) / 100
+    );
+  }
+  return floorZ;
+}
+
+/**
+ * Resolve effective 3D base elevation (meters) for an equipment instance.
+ * Floor-mounted units (`mount === "floor"`) always sit flush on the room/base floor beneath them.
+ */
+export function resolveEquipmentElevationM(project, eq, opts = {}) {
+  const preset = getEquipmentPreset(eq?.subtype || eq?.category);
+  const mount = eq?.mount || preset.mount || "floor";
+  if (mount === "floor") {
+    return resolveFloorElevationAt(project, eq?.x_px, eq?.y_px, opts);
+  }
+  return Number(eq?.elevation_m ?? preset.elev) || 0;
 }

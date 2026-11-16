@@ -2037,10 +2037,7 @@ export class Canvas2DEngine {
         });
 
         eqGroup.on("dragend", () => {
-          this.store.pushHistorySnapshot();
-          eq.x_px = Math.round(eqGroup.x() * 10) / 10;
-          eq.y_px = Math.round(eqGroup.y() * 10) / 10;
-          this.store.emit("geometryChanged", { source: "moveEquipment" });
+          this.store.moveEquipment(eq.id, eqGroup.x(), eqGroup.y());
         });
 
         this.cmeLayer.add(eqGroup);

@@ -5,7 +5,9 @@ import {
   EQUIPMENT_SUBTYPES,
   defaultSubtypeForGroup,
   getEquipmentPreset,
+  resolveEquipmentElevationM,
   resolveEquipmentGroup,
+  resolveFloorElevationAt,
   snapWallMountPosition,
   subtypesForGroup,
 } from "../../frontend/js/equipmentCatalog.js";
@@ -92,4 +94,64 @@ test("store.addEquipment supports generic subtypes, wall snapping, and BoQ group
   assert.equal(boq.equipmentsByGroup.cooling, 1);
   assert.equal(boq.equipmentsByGroup.rack, 0);
   assert.equal(boq.equipmentsByGroup.data, 0);
+});
+
+test("floor-mounted equipment rests flush on room floor, base floor (0.02m), or ground (0m)", () => {
+  const store = new SitestryStore();
+  // Closed outer structural room (0..400, 0..200) -> BaseFloor = 0.02 m where no room zone exists
+  store.project.nodes = [
+    { id: "n1", x_px: 0, y_px: 0 },
+    { id: "n2", x_px: 400, y_px: 0 },
+    { id: "n3", x_px: 400, y_px: 200 },
+    { id: "n4", x_px: 0, y_px: 200 },
+  ];
+  store.project.walls = [
+    { id: "w1", start_node: "n1", end_node: "n2", thickness_m: 0.2, height_m: 3.8, type: "solid" },
+    { id: "w2", start_node: "n2", end_node: "n3", thickness_m: 0.2, height_m: 3.8, type: "solid" },
+    { id: "w3", start_node: "n3", end_node: "n4", thickness_m: 0.2, height_m: 3.8, type: "solid" },
+    { id: "w4", start_node: "n4", end_node: "n1", thickness_m: 0.2, height_m: 3.8, type: "solid" },
+  ];
+  store.project.rooms = [
+    {
+      id: "r1",
+      name: "R. Meeting",
+      floor_type: "raised_floor_60cm",
+      elevation_m: 0.06,
+      polygon_px: [[10, 10], [180, 10], [180, 180], [10, 180]],
+    },
+    {
+      id: "r2",
+      name: "Data Hall",
+      floor_type: "raised_floor_60cm",
+      elevation_m: 0.45,
+      polygon_px: [[200, 10], [390, 10], [390, 190], [200, 190]],
+    },
+  ];
+
+  // Placed inside +0.06m room -> flush on 0.06m
+  const rackInLowRoom = store.addEquipment(80, 80, "rack");
+  assert.equal(rackInLowRoom.elevation_m, 0.06);
+
+  // Moved into +0.45m room -> tracks 0.45m floor
+  store.moveEquipment(rackInLowRoom.id, 280, 80);
+  assert.equal(rackInLowRoom.elevation_m, 0.45);
+
+  // Wall outlet in +0.45m room sits 0.6m above the 0.45m floor
+  const outlet = store.addEquipment(250, 5, "outlet");
+  assert.equal(resolveFloorElevationAt(store.project, 250, 15), 0.45);
+  assert.ok(outlet.elevation_m >= 0.6);
+
+  // Saved stale rack (legacy hardcoded 0.45m) inside +0.06m room or +0.02m BaseFloor resolves flush
+  assert.equal(
+    resolveEquipmentElevationM(store.project, { subtype: "rack", mount: "floor", x_px: 80, y_px: 80, elevation_m: 0.45 }),
+    0.06
+  );
+  assert.equal(
+    resolveEquipmentElevationM(store.project, { subtype: "pac", mount: "floor", x_px: 190, y_px: 100, elevation_m: 0.45 }),
+    0.02
+  );
+  assert.equal(
+    resolveEquipmentElevationM(store.project, { subtype: "rack", mount: "floor", x_px: 500, y_px: 500, elevation_m: 0.45 }),
+    0
+  );
 });

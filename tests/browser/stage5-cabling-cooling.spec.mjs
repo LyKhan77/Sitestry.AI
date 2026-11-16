@@ -269,4 +269,47 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
       }
     }
   });
+
+  test("3D floor-mounted equipment touches room or base floor even when saved with stale elevation", async ({ page }) => {
+    await gotoAppV4(page, VIEWPORT);
+    await loadStage(page, 5);
+
+    const ys = await page.evaluate(async () => {
+      const { store } = await import("/js/store.js");
+      const app = window.sitestryApp;
+      // Add a closed room slab zone at +0.06m around (1450..1650, 950..1150)
+      store.project.rooms.push({
+        id: "room_low",
+        name: "R. Low +0.06",
+        floor_type: "raised_floor_60cm",
+        elevation_m: 0.06,
+        polygon_px: [[1450, 950], [1650, 950], [1650, 1150], [1450, 1150]],
+      });
+      const rFresh = store.addEquipment(1520, 1040, "rack");
+      const rStale = store.addEquipment(1580, 1040, "data_cabinet");
+      // Simulate legacy saved elevation_m = 0.45 inside a 0.06m room
+      rStale.elevation_m = 0.45;
+      const rOutside = store.addEquipment(2400, 2400, "pac");
+      rOutside.elevation_m = 0.45;
+
+      // Sync builtProject snapshot so 3D renders the added 0.06m room
+      store.builtProject = structuredClone(store.project);
+      app.setViewMode("3d");
+      app.viewer3d.rebuildScene();
+
+      const yOf = (id) =>
+        app.viewer3d.selectableMeshes.find((m) => m.userData?.sitestryId === id)?.position.y ?? null;
+      return {
+        freshStoredElev: rFresh.elevation_m,
+        yFresh: yOf(rFresh.id),
+        yStale: yOf(rStale.id),
+        yOutside: yOf(rOutside.id),
+      };
+    });
+
+    expect(ys.freshStoredElev).toBeCloseTo(0.06, 3);
+    expect(ys.yFresh).toBeCloseTo(0.06, 3);
+    expect(ys.yStale).toBeCloseTo(0.06, 3);
+    expect(ys.yOutside).toBeCloseTo(0.0, 3);
+  });
 });

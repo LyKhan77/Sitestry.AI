@@ -17,6 +17,7 @@ import {
   EQUIPMENT_GROUPS,
   EQUIPMENT_GROUP_LABELS,
   EQUIPMENT_SUBTYPES,
+  defaultEquipmentElevation,
   defaultSubtypeForGroup,
   getEquipmentPreset,
   resolveEquipmentGroup,
@@ -2580,6 +2581,7 @@ class SitestryStudioApp {
           width_m: p.w,
           depth_m: p.d,
           height_m: p.h,
+          elevation_m: defaultEquipmentElevation(store.project, nextSub, obj.x_px, obj.y_px),
         });
         this.renderInspector();
       };

@@ -8,8 +8,10 @@
 import { planWallInsertion, planWallSplit } from "./annotationGeometry.js";
 import {
   EQUIPMENT_GROUPS,
+  defaultEquipmentElevation,
   getEquipmentPreset,
   resolveEquipmentGroup,
+  resolveFloorElevationAt,
   snapWallMountPosition,
 } from "./equipmentCatalog.js";
 import { isSimplePolygon, polygonArea } from "./roomFaces.js";
@@ -819,10 +821,7 @@ export class SitestryStore extends EventTarget {
       }
     }
 
-    const elev =
-      preset.mount === "ceiling"
-        ? Math.max(0.2, Math.round((wallHeight - preset.h - 0.05) * 100) / 100)
-        : preset.elev;
+    const elev = defaultEquipmentElevation(this.project, subtype, px, py);
 
     const eq = {
       id: `eq_${this.project.equipments.length + 1}_${Date.now().toString(36).slice(-3)}`,
@@ -843,6 +842,21 @@ export class SitestryStore extends EventTarget {
     this.project.equipments.push(eq);
     this.selectObject("equipment", eq.id);
     this.emit("geometryChanged", { source: "addEquipment" });
+    return eq;
+  }
+
+  /** Move an equipment item in 2D and keep floor-mounted units grounded on the room floor underneath. */
+  moveEquipment(id, x_px, y_px) {
+    const eq = (this.project.equipments || []).find((e) => e.id === id);
+    if (!eq) return null;
+    this.pushHistorySnapshot();
+    eq.x_px = Math.round(Number(x_px) * 10) / 10;
+    eq.y_px = Math.round(Number(y_px) * 10) / 10;
+    const preset = getEquipmentPreset(eq.subtype || eq.category);
+    if ((eq.mount || preset.mount || "floor") === "floor") {
+      eq.elevation_m = resolveFloorElevationAt(this.project, eq.x_px, eq.y_px);
+    }
+    this.emit("geometryChanged", { source: "moveEquipment" });
     return eq;
   }
 
@@ -1155,28 +1169,34 @@ export class SitestryStore extends EventTarget {
     const cy = roi.y + roi.height * 0.48;
 
     const sampleEq = [
-      { name: "Server Rack 42U #01", category: "rack", dx: -95, dy: -45, w: 0.6, d: 1.1, h: 2.1, elev: 0.45, rot: 0 },
-      { name: "Server Rack 42U #02", category: "rack", dx: -72, dy: -45, w: 0.6, d: 1.1, h: 2.1, elev: 0.45, rot: 0 },
-      { name: "Server Rack 42U #03", category: "rack", dx: -49, dy: -45, w: 0.6, d: 1.1, h: 2.1, elev: 0.45, rot: 0 },
-      { name: "Server Rack 42U #04", category: "rack", dx: -26, dy: -45, w: 0.6, d: 1.1, h: 2.1, elev: 0.45, rot: 0 },
-      { name: "UPS System 250kVA #A", category: "ups", dx: 55, dy: -35, w: 1.6, d: 0.95, h: 2.0, elev: 0.0, rot: 0 },
-      { name: "Lithium Battery Bank #A", category: "battery", dx: 125, dy: -35, w: 2.2, d: 0.9, h: 2.0, elev: 0.0, rot: 0 },
-      { name: "DC Rectifier System", category: "rectifier", dx: 55, dy: 45, w: 1.2, d: 0.8, h: 2.0, elev: 0.0, rot: 0 },
-      { name: "ACPDB / LVMDP Panel", category: "panel", dx: 115, dy: 45, w: 1.4, d: 0.65, h: 2.0, elev: 0.0, rot: 0 },
-      { name: "PAC Precision Cooling #1", category: "pac", dx: -145, dy: 20, w: 1.9, d: 0.95, h: 2.15, elev: 0.45, rot: 90 },
+      { name: "Server Rack 42U #01", category: "rack", dx: -95, dy: -45, w: 0.6, d: 1.1, h: 2.1, rot: 0 },
+      { name: "Server Rack 42U #02", category: "rack", dx: -72, dy: -45, w: 0.6, d: 1.1, h: 2.1, rot: 0 },
+      { name: "Server Rack 42U #03", category: "rack", dx: -49, dy: -45, w: 0.6, d: 1.1, h: 2.1, rot: 0 },
+      { name: "Server Rack 42U #04", category: "rack", dx: -26, dy: -45, w: 0.6, d: 1.1, h: 2.1, rot: 0 },
+      { name: "UPS System 250kVA #A", category: "ups", dx: 55, dy: -35, w: 1.6, d: 0.95, h: 2.0, rot: 0 },
+      { name: "Lithium Battery Bank #A", category: "battery", dx: 125, dy: -35, w: 2.2, d: 0.9, h: 2.0, rot: 0 },
+      { name: "DC Rectifier System", category: "rectifier", dx: 55, dy: 45, w: 1.2, d: 0.8, h: 2.0, rot: 0 },
+      { name: "ACPDB / LVMDP Panel", category: "panel", dx: 115, dy: 45, w: 1.4, d: 0.65, h: 2.0, rot: 0 },
+      { name: "PAC Precision Cooling #1", category: "pac", dx: -145, dy: 20, w: 1.9, d: 0.95, h: 2.15, rot: 90 },
     ];
 
     sampleEq.forEach((item, idx) => {
+      const px = Math.round((cx + item.dx) * 10) / 10;
+      const py = Math.round((cy + item.dy) * 10) / 10;
+      const preset = getEquipmentPreset(item.category);
       this.project.equipments.push({
         id: `eq_preset_${idx + 1}_${Date.now().toString(36).slice(-2)}`,
         name: item.name,
         category: item.category,
-        x_px: Math.round((cx + item.dx) * 10) / 10,
-        y_px: Math.round((cy + item.dy) * 10) / 10,
+        domain_group: preset.group,
+        subtype: item.category,
+        mount: preset.mount,
+        x_px: px,
+        y_px: py,
         width_m: item.w,
         depth_m: item.d,
         height_m: item.h,
-        elevation_m: item.elev,
+        elevation_m: defaultEquipmentElevation(this.project, item.category, px, py),
         rotation_deg: item.rot,
       });
     });

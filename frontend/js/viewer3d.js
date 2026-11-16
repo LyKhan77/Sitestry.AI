@@ -18,7 +18,7 @@ import { SceneSync } from "./sceneSync.js";
 import { buildRoomFaces } from "./roomFaces.js";
 import { isParametricStair, resolveStairGeometry } from "./stairGeometry.js";
 import { buildFitting, buildTrayProfile, buildTrayWaterfall, fittingCutM, FITTING_KINDS } from "./trayProfiles.js";
-import { getEquipmentPreset } from "./equipmentCatalog.js";
+import { getEquipmentPreset, resolveEquipmentElevationM } from "./equipmentCatalog.js";
 import { trayColorForService, trayPoints } from "./trayNetwork.js";
 import { PIPE_DEFAULT_COLOR, pipePoints } from "./pipeNetwork.js";
 import { cableColorFor, resolveCableRoute, resolveWaterfallGroups } from "./cableRouter.js";
@@ -763,12 +763,16 @@ export class Viewer3DEngine {
       pac: { body: 0x064e3b, accent: 0x10b981 },
     };
 
+    const structProj = this.structureProject();
+    const hasBaseFloor = this.store.ui.layers.baseFloor !== false;
+    const baseFaces = hasBaseFloor ? buildRoomFaces(structProj) : [];
+
     for (const eq of this.store.project.equipments) {
       const pos = this.pxToMeter3D(eq.x_px, eq.y_px);
       const w = Number(eq.width_m) || 1.2;
       const d = Number(eq.depth_m) || 0.9;
       const h = Number(eq.height_m) || 2.0;
-      const elev = Number(eq.elevation_m) || 0.0;
+      const elev = resolveEquipmentElevationM(structProj, eq, { hasBaseFloor, baseFaces });
       const isSelected = sel?.kind === "equipment" && sel?.id === eq.id;
       const preset = getEquipmentPreset(eq.subtype || eq.category);
       const colors = palette[eq.category] || { body: new THREE.Color(preset.color), accent: 0xf8fafc };
