@@ -88,7 +88,7 @@ test.describe("focused workspace", () => {
     expect((await visibleTools(page)).sort()).toEqual(
       ["select", "pan", "wall", "door", "double_door", "window", "column", "stair", "room"].sort()
     );
-    await loadStage(page, 5);
+    await loadStage(page, 4);
     expect((await visibleTools(page)).sort()).toEqual(
       ["select", "pan", "equipment", "tray", "pipe", "cable"].sort()
     );

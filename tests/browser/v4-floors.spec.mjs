@@ -9,7 +9,7 @@ async function boot(page) {
 }
 
 async function buildAtStage4(page) {
-  await loadStage(page, 4);
+  await loadStage(page, 5);
   await page.locator("#btnBuild3D").click();
   await expect.poll(() => page.evaluate(() => document.body.dataset.build)).toBe("fresh");
 }

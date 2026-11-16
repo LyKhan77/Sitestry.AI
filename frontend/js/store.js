@@ -53,7 +53,7 @@ import {
 /** Tools whose gesture owns the canvas: other elements are neither selectable nor draggable while one is active. */
 export const ISOLATING_TOOLS = new Set(["wall", "stair", "door", "double_door", "window", "column", "room", "pan"]);
 
-// Annotation is edited only in Stage 3; equipment and cable trays only in Stage 5.
+// Room Layout is edited only in Stage 3; Installation (equipment, trays, pipes, cables) only in Stage 4; Stage 5 Result is read-only.
 const STRUCTURAL_KINDS = new Set(["node", "wall", "opening", "column", "stair", "room"]);
 const INSTALL_KINDS = new Set(["equipment", "tray", "pipe", "cable"]);
 
@@ -90,7 +90,7 @@ export class SitestryStore extends EventTarget {
     };
 
     // UI & Editor state across the 5 Segmented Stages:
-    // 1: Input -> 2: Process Extraction -> 3: Review Annotation -> 4: Build 3D -> 5: Installation Equipment
+    // 1: Input -> 2: Process Extraction -> 3: Room Layout -> 4: Installation -> 5: Result (Read-Only 3D)
     this.ui = {
       step: 1,
       viewMode: "2d", // "2d" | "split" | "3d"
@@ -436,7 +436,7 @@ export class SitestryStore extends EventTarget {
   /** True when objects of this kind may be changed in the current workflow stage. */
   canEdit(kind) {
     if (this.ui.step === 3) return STRUCTURAL_KINDS.has(kind);
-    if (this.ui.step === 5) return INSTALL_KINDS.has(kind);
+    if (this.ui.step === 4) return INSTALL_KINDS.has(kind);
     return false;
   }
 

@@ -8,6 +8,7 @@
  */
 
 const STRUCTURE_KEYS = ["nodes", "walls", "columns", "openings", "rooms", "stairs"];
+const INSTALL_KEYS = ["equipments", "cable_trays", "tray_nodes", "pipe_runs", "pipe_nodes", "cables"];
 
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -37,6 +38,13 @@ function hashString(str) {
 export function structureHash(project) {
   const picked = { scale: project?.metadata?.scale_px_per_meter ?? null };
   for (const key of STRUCTURE_KEYS) picked[key] = project?.[key] ?? [];
+  return hashString(canonical(picked));
+}
+
+/** Fingerprint the full editable project (Room Layout + Installation) for Save & Build 3D. */
+export function projectHash(project) {
+  const picked = { scale: project?.metadata?.scale_px_per_meter ?? null };
+  for (const key of [...STRUCTURE_KEYS, ...INSTALL_KEYS]) picked[key] = project?.[key] ?? [];
   return hashString(canonical(picked));
 }
 

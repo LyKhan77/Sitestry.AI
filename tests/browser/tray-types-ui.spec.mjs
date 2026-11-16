@@ -9,14 +9,14 @@ const state = (page) =>
     return { trayType: s.ui.trayType, trays: JSON.parse(JSON.stringify(s.project.cable_trays)) };
   });
 
-async function bootStage5(page) {
+async function bootStage4(page) {
   await gotoAppV4(page, VIEWPORT);
-  await loadStage(page, 5);
+  await loadStage(page, 4);
 }
 
 test.describe("tray types in the UI", () => {
   test("the tray tool offers four types and perforated is the default", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await setTool(page, "tray");
     const buttons = page.locator("[data-tray-type]");
     await expect(buttons).toHaveCount(4);
@@ -28,7 +28,7 @@ test.describe("tray types in the UI", () => {
   });
 
   test("the inspector edits type and height of a selected tray", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await page.evaluate(() => {
       const s = window.sitestryApp.canvas2d.store;
       const tray = s.addCableTray([[1420, 1100], [1620, 1100]]);

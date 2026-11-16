@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { structureHash, workspaceFlags, countsOf } from "../../frontend/js/workspaceState.js";
+import { structureHash, projectHash, workspaceFlags, countsOf } from "../../frontend/js/workspaceState.js";
 
 const base = () => ({
   metadata: { scale_px_per_meter: 30.68, roi_px: { x: 1, y: 2, width: 3, height: 4 } },
@@ -58,4 +58,19 @@ test("structureHash ignores tray nodes", () => {
   const b = base();
   b.tray_nodes = [{ id: "tn_1", x_px: 3, y_px: 4 }];
   assert.equal(structureHash(a), structureHash(b));
+});
+
+test("projectHash detects changes in installation (equipments, trays, pipes, cables)", () => {
+  const a = base();
+  const b = base();
+  b.equipments.push({ id: "e2", x_px: 9, y_px: 9 });
+  assert.notEqual(projectHash(a), projectHash(b));
+
+  const c = base();
+  c.cables = [{ id: "cab_1", source_id: "e1", target_id: "e2" }];
+  assert.notEqual(projectHash(a), projectHash(c));
+
+  const d = base();
+  d.pipe_runs = [{ id: "p1", node_ids: ["pn1", "pn2"] }];
+  assert.notEqual(projectHash(a), projectHash(d));
 });

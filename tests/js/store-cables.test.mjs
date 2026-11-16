@@ -5,7 +5,7 @@ import { SitestryStore } from "../../frontend/js/store.js";
 test("store.addCable creates, selects, cascade-deletes on equipment removal, and supports undo", () => {
   const store = new SitestryStore();
   store.project.metadata.scale_px_per_meter = 20;
-  store.ui.step = 5;
+  store.ui.step = 4;
 
   const panel = store.addEquipment(40, 80, "panel");
   const rack = store.addEquipment(240, 80, "rack");

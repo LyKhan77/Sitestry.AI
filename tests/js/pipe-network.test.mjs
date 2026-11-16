@@ -47,7 +47,7 @@ test("store.addPipeRun, deleteSelected, undo/redo, and BoQ pipeMeters work toget
 
   store.selectObject("pipe", p.id);
   assert.equal(store.canEdit("pipe"), false);
-  store.ui.step = 5;
+  store.ui.step = 4;
   assert.equal(store.canEdit("pipe"), true);
 
   store.deleteSelected();

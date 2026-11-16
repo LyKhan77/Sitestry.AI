@@ -10,9 +10,9 @@ const visibleCount = (page, selector) =>
   );
 
 test.describe("v4 stage 4-5 dock", () => {
-  test("camera presets appear once", async ({ page }) => {
+  test("camera presets appear once in stage 5 Result", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     expect(
       await visibleCount(
         page,
@@ -23,19 +23,17 @@ test.describe("v4 stage 4-5 dock", () => {
     expect(await visibleCount(page, '[data-camera-preset="walk"], #btnStage4CamWalk, #btnCamWalk')).toBe(1);
   });
 
-  test("export lives in one menu in stages 4-5 only", async ({ page }) => {
+  test("export lives in one menu in stage 5 only", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    for (const stage of [1, 2, 3]) {
+    for (const stage of [1, 2, 3, 4]) {
       await loadStage(page, stage);
       await expect(page.locator("#btnExportMenu")).toBeHidden();
     }
-    for (const stage of [4, 5]) {
-      await loadStage(page, stage);
-      await expect(page.locator("#btnExportMenu")).toBeVisible();
-      await expect(page.locator("#btnExportJson")).toBeHidden();
-      await expect(page.locator("#btnExportGlb")).toBeHidden();
-      await expect(page.locator("#btnStage5ExportGlb")).toBeHidden();
-    }
+    await loadStage(page, 5);
+    await expect(page.locator("#btnExportMenu")).toBeVisible();
+    await expect(page.locator("#btnExportJson")).toBeHidden();
+    await expect(page.locator("#btnExportGlb")).toBeHidden();
+    await expect(page.locator("#btnStage5ExportGlb")).toBeHidden();
     await page.locator("#btnExportMenu").click();
     const [download] = await Promise.all([
       page.waitForEvent("download"),
@@ -46,7 +44,7 @@ test.describe("v4 stage 4-5 dock", () => {
 
   test("export menu is keyboard operable", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     const trigger = page.locator("#btnExportMenu");
     await trigger.focus();
     await page.keyboard.press("Enter");
@@ -59,17 +57,17 @@ test.describe("v4 stage 4-5 dock", () => {
     await expect(trigger).toBeFocused();
   });
 
-  test("stage 4 flyout is open with toggles and summary", async ({ page }) => {
+  test("stage 5 flyout is open with toggles and summary", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     await expect(page.locator("#btnDockPanel")).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator("#btnToggleXray")).toBeVisible();
     await expect(page.locator("#stage4SummaryGrid")).toBeVisible();
   });
 
-  test("stage 5 rail offers select, equipment and tray tools, catalog is in the flyout", async ({ page }) => {
+  test("stage 4 rail offers select, equipment and tray tools, catalog is in the flyout", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
     const tools = await page.evaluate(() =>
       Array.from(document.querySelectorAll(".stage-panel.active .tool-btn"))
         .filter((el) => el.offsetParent !== null)
@@ -85,8 +83,15 @@ test.describe("v4 stage 4-5 dock", () => {
     await expect(page.locator("#selEqSubtype")).toBeVisible();
   });
 
-  test("stage 5 shows BoQ and lists equipment after loading the preset", async ({ page }) => {
+  test("stage 5 shows BoQ and lists equipment after loading the preset in stage 4", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
+    await loadStage(page, 4);
+    await page.locator("#btnLoadPresetCme").click();
+    await expect
+      .poll(() =>
+        page.evaluate(async () => (await import("/js/store.js")).store.project.equipments.length)
+      )
+      .toBeGreaterThan(0);
     await loadStage(page, 5);
     const boq = await page.evaluate(async () => {
       const { store } = await import("/js/store.js");
@@ -95,12 +100,6 @@ test.describe("v4 stage 4-5 dock", () => {
     const panel = page.locator("#boqPanel");
     await expect(panel).toBeVisible();
     await expect(panel).toContainText(String(boq.solidWallMeters));
-    await page.locator("#btnLoadPresetCme").click();
-    await expect
-      .poll(() =>
-        page.evaluate(async () => (await import("/js/store.js")).store.project.equipments.length)
-      )
-      .toBeGreaterThan(0);
     await expect(panel.locator(".boq-eq-row").first()).toBeVisible();
     await expect(panel).toContainText("Server Rack 42U");
   });

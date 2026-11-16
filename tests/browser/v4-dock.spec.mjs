@@ -81,15 +81,13 @@ test.describe("v4 stage 3 dock", () => {
     expect(clipped).toBe(false);
   });
 
-  test("view switch only in stages 4-5", async ({ page }) => {
+  test("view switch only in stage 5 (Result)", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 1);
-    await expect(page.locator(".view-mode-group")).toBeHidden();
-    await loadStage(page, 2);
-    await expect(page.locator(".view-mode-group")).toBeHidden();
-    await loadStage(page, 3);
-    await expect(page.locator(".view-mode-group")).toBeHidden();
-    await loadStage(page, 4);
+    for (const s of [1, 2, 3, 4]) {
+      await loadStage(page, s);
+      await expect(page.locator(".view-mode-group")).toBeHidden();
+    }
+    await loadStage(page, 5);
     await expect(page.locator(".view-mode-group")).toBeVisible();
   });
 

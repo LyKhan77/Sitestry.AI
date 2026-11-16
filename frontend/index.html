@@ -68,24 +68,24 @@
       <button class="step-item" data-step="3" id="stepBtn3">
         <span class="step-num">3</span>
         <div class="step-meta">
-          <span class="step-title">Review Annotation</span>
-          <span class="step-desc">2D CAD Editor</span>
+          <span class="step-title">Room Layout</span>
+          <span class="step-desc">2D Structural CAD</span>
         </div>
       </button>
       <div class="step-divider"></div>
       <button class="step-item" data-step="4" id="stepBtn4">
         <span class="step-num">4</span>
         <div class="step-meta">
-          <span class="step-title">Build 3D</span>
-          <span class="step-desc">Structural Twin</span>
+          <span class="step-title">Installation</span>
+          <span class="step-desc">CME &amp; Cabling 2D</span>
         </div>
       </button>
       <div class="step-divider"></div>
       <button class="step-item" data-step="5" id="stepBtn5">
         <span class="step-num">5</span>
         <div class="step-meta">
-          <span class="step-title">Installation Equipment</span>
-          <span class="step-desc">Manual CME &amp; BoQ</span>
+          <span class="step-title">Result</span>
+          <span class="step-desc">3D Twin &amp; BoQ</span>
         </div>
       </button>
     </nav>
@@ -94,6 +94,10 @@
     <div class="action-cluster">
       <button id="btnWorkspace" type="button" class="btn-outline-pill" title="Kembali ke halaman Workspace">Workspace</button>
       <div class="save-cluster">
+        <label class="autosave-toggle" title="Aktifkan/nonaktifkan Auto-Save">
+          <input type="checkbox" id="chkAutoSave" checked />
+          <span>Auto-Save</span>
+        </label>
         <span id="saveStatus" class="save-status" role="status" aria-live="polite"></span>
         <button id="btnSave" type="button" class="btn-save" title="Simpan project (Ctrl/Cmd+S)">Simpan</button>
       </div>
@@ -107,7 +111,7 @@
       <button id="btnExportGlb" class="btn-outline-pill" title="Export 3D Model (.GLB)">
         Export .GLB
       </button>
-      <!-- V4: single Export menu (Stage 4-5 only); items reuse the legacy export handlers -->
+      <!-- V4: single Export menu (Stage 5 Result only); items reuse the legacy export handlers -->
       <div id="exportMenu" class="export-menu">
         <button type="button" id="btnExportMenu" class="btn-outline-pill" aria-haspopup="menu" aria-expanded="false" aria-controls="exportMenuList">Export &#9662;</button>
         <ul id="exportMenuList" class="export-menu-list" role="menu" hidden>
@@ -479,69 +483,21 @@
 
         <div class="stage-cta-footer">
           <button id="btnNextToStage4" class="btn-primary-pill">
-            <span>Build 3D Digital Twin</span>
+            <span>Lanjut ke Installation</span>
             <span class="cta-arrow">&rarr;</span>
+          </button>
+          <button id="btnSkipToStage5" class="btn-ceramic-full" style="margin-top:8px;">
+            <span>Lewati ke Result (3D) &rarr;</span>
           </button>
         </div>
       </div>
 
-      <!-- ==================== STAGE 4 PANEL: BUILD 3D (STRUCTURAL TWIN) ==================== -->
+      <!-- ==================== STAGE 4 PANEL: INSTALLATION (2D CME & CABLING EDITOR) ==================== -->
       <div class="stage-panel" id="stagePanel4">
         <div class="stage-hero-banner">
-          <span class="stage-kicker">STAGE 04 &bull; BUILD 3D STRUCTURE</span>
-          <h2>3D Architectural Digital Twin</h2>
-          <p>Hasil ekstrusi 3D otomatis dari topologi dinding, bukaan pintu CSG, jendela dengan ambang atas/bawah, tangga, dan kolom.</p>
-        </div>
-
-        <div class="surface-card">
-          <div class="card-header-label">NAVIGASI &amp; INSPEKSI</div>
-          <div class="tool-grid-2col">
-            <button class="tool-btn active" data-tool="select" title="Pilih Elemen untuk Inspeksi (Shortcut: V)">
-              <span class="kbd">V</span>
-              <span>Select</span>
-            </button>
-            <button class="tool-btn" data-tool="pan" title="Geser Canvas tanpa Memilih Elemen (Shortcut: H)">
-              <span class="kbd">H</span>
-              <span>Pan View</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="surface-card">
-          <div class="card-header-label">PRESET KAMERA &amp; VIEWPORT</div>
-          <div class="cam-preset-grid">
-            <button id="btnStage4CamIso" class="btn-ceramic-sm active">3D Isometric Orbit</button>
-            <button id="btnStage4CamTop" class="btn-ceramic-sm">3D Top Ortho</button>
-            <button id="btnStage4CamWalk" class="btn-ceramic-sm">Eye-Level Walk</button>
-            <button id="btnStage4SplitSync" class="btn-ceramic-sm">Split 2D | 3D Sync</button>
-          </div>
-          <div class="cam-toggles-row">
-            <button id="btnToggle3DLabels" class="btn-pill-toggle active">Label Ruangan 3D</button>
-            <button id="btnToggleXray" class="btn-pill-toggle">Mode X-Ray Dinding</button>
-          </div>
-        </div>
-
-        <div class="surface-card">
-          <div class="card-header-label">RINGKASAN GEOMETRI STRUKTURAL</div>
-          <div class="struct-summary-grid" id="stage4SummaryGrid">
-            <!-- Populated dynamically -->
-          </div>
-        </div>
-
-        <div class="stage-cta-footer">
-          <button id="btnNextToStage5" class="btn-primary-pill">
-            <span>Lanjut ke Installation Equipment</span>
-            <span class="cta-arrow">&rarr;</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- ==================== STAGE 5 PANEL: INSTALLATION EQUIPMENT ==================== -->
-      <div class="stage-panel" id="stagePanel5">
-        <div class="stage-hero-banner">
-          <span class="stage-kicker">STAGE 05 &bull; INSTALLATION EQUIPMENT</span>
-          <h2>Instalasi Manual Perangkat CME</h2>
-          <p>Pilih perangkat dari katalog di bawah lalu klik pada denah 2D untuk menempatkan secara presisi, atau gambar jalur Cable Tray.</p>
+          <span class="stage-kicker">STAGE 04 &bull; INSTALLATION</span>
+          <h2>Instalasi Perangkat CME &amp; Cabling</h2>
+          <p>Pilih perangkat, gambar jalur Cable Tray / Cooling Pipe, dan hubungkan Auto-Cabling pada kanvas 2D.</p>
         </div>
 
         <div class="surface-card" id="traySettingsCard">
@@ -651,10 +607,61 @@
             <input type="checkbox" id="chkLayerEquipments" checked />
             <span>Tampilkan Perangkat CME di 2D/3D</span>
           </label>
-          <label class="layer-check-row" id="rowTransparentFloor" style="margin-top:4px;">
+        </div>
+
+        <div class="stage-cta-footer">
+          <button id="btnNextToStage5" class="btn-primary-pill">
+            <span>Build &amp; Lihat Result</span>
+            <span class="cta-arrow">&rarr;</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================== STAGE 5 PANEL: RESULT (READ-ONLY 3D TWIN & INSPECTION) ==================== -->
+      <div class="stage-panel" id="stagePanel5">
+        <div class="stage-hero-banner">
+          <span class="stage-kicker">STAGE 05 &bull; RESULT &amp; INSPECTION</span>
+          <h2>3D Architectural &amp; CME Digital Twin</h2>
+          <p>Mode inspeksi (Read-Only) gabungan Room Layout dan Installation. Perubahan di tahap sebelumnya memerlukan Build Ulang 3D.</p>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">NAVIGASI &amp; INSPEKSI (READ-ONLY)</div>
+          <div class="tool-grid-2col">
+            <button class="tool-btn active" data-tool="select" title="Pilih Elemen untuk Inspeksi (Shortcut: V)">
+              <span class="kbd">V</span>
+              <span>Inspect (Select)</span>
+            </button>
+            <button class="tool-btn" data-tool="pan" title="Geser Canvas tanpa Memilih Elemen (Shortcut: H)">
+              <span class="kbd">H</span>
+              <span>Pan View</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">PRESET KAMERA &amp; VIEWPORT</div>
+          <div class="cam-preset-grid">
+            <button id="btnStage4CamIso" class="btn-ceramic-sm active">3D Isometric Orbit</button>
+            <button id="btnStage4CamTop" class="btn-ceramic-sm">3D Top Ortho</button>
+            <button id="btnStage4CamWalk" class="btn-ceramic-sm">Eye-Level Walk</button>
+            <button id="btnStage4SplitSync" class="btn-ceramic-sm">Split 2D | 3D Sync</button>
+          </div>
+          <div class="cam-toggles-row">
+            <button id="btnToggle3DLabels" class="btn-pill-toggle active">Label Ruangan 3D</button>
+            <button id="btnToggleXray" class="btn-pill-toggle">Mode X-Ray Dinding</button>
+          </div>
+          <label class="layer-check-row" id="rowTransparentFloor" style="margin-top:8px;">
             <input type="checkbox" id="chkTransparentFloor" />
             <span>Transparan Lantai 3D (X-Ray)</span>
           </label>
+        </div>
+
+        <div class="surface-card">
+          <div class="card-header-label">RINGKASAN GEOMETRI STRUKTURAL</div>
+          <div class="struct-summary-grid" id="stage4SummaryGrid">
+            <!-- Populated dynamically -->
+          </div>
         </div>
 
         <div class="stage-cta-footer dual-export">
@@ -734,8 +741,8 @@
         <!-- RIGHT PANE: 3D THREE.JS DIGITAL TWIN -->
         <div class="pane pane-3d" id="pane3D">
           <div id="buildBanner" class="build-banner" role="status">
-            <span class="build-msg build-msg-none">Belum ada 3D. Bangun model dari denah yang sudah disimpan.</span>
-            <span class="build-msg build-msg-stale">Denah berubah sejak build terakhir. Build ulang untuk memperbarui 3D.</span>
+            <span class="build-msg build-msg-none">Belum ada 3D. Bangun model dari Room Layout &amp; Installation yang sudah disimpan.</span>
+            <span class="build-msg build-msg-stale">Room Layout atau Installation berubah sejak build terakhir. Build ulang untuk memperbarui 3D.</span>
             <button type="button" id="btnBuild3D" class="btn-save">Build 3D</button>
           </div>
           <div class="pane-badge">3D ARCHITECTURAL &amp; TELCO DIGITAL TWIN</div>
@@ -795,9 +802,9 @@
     <ol class="tl-steps">
       <li><button type="button" class="tl-step" data-step="1" aria-label="Stage 1: Input"><span class="tl-num">1</span><span class="tl-label">Input</span></button></li>
       <li><button type="button" class="tl-step" data-step="2" aria-label="Stage 2: Process Extraction"><span class="tl-num">2</span><span class="tl-label">Extraction</span></button></li>
-      <li><button type="button" class="tl-step" data-step="3" aria-label="Stage 3: Review Annotation"><span class="tl-num">3</span><span class="tl-label">Review</span></button></li>
-      <li><button type="button" class="tl-step" data-step="4" aria-label="Stage 4: Build 3D"><span class="tl-num">4</span><span class="tl-label">Build 3D</span></button></li>
-      <li><button type="button" class="tl-step" data-step="5" aria-label="Stage 5: Installation Equipment"><span class="tl-num">5</span><span class="tl-label">Installation</span></button></li>
+      <li><button type="button" class="tl-step" data-step="3" aria-label="Stage 3: Room Layout"><span class="tl-num">3</span><span class="tl-label">Room Layout</span></button></li>
+      <li><button type="button" class="tl-step" data-step="4" aria-label="Stage 4: Installation"><span class="tl-num">4</span><span class="tl-label">Installation</span></button></li>
+      <li><button type="button" class="tl-step" data-step="5" aria-label="Stage 5: Result"><span class="tl-num">5</span><span class="tl-label">Result</span></button></li>
     </ol>
     <button type="button" id="tlNext" class="tl-nav tl-next" aria-label="Stage berikutnya">Next &rarr;</button>
   </nav>

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { SitestryStore } from "../../frontend/js/store.js";
 
 const STRUCTURAL = ["node", "wall", "opening", "column", "stair", "room"];
-const INSTALL = ["equipment", "tray"];
+const INSTALL = ["equipment", "tray", "pipe", "cable"];
 
 function atStep(step) {
   const store = new SitestryStore();
@@ -17,14 +17,14 @@ test("step 3 edits structural kinds only", () => {
   for (const k of INSTALL) assert.equal(store.canEdit(k), false, k);
 });
 
-test("step 5 edits equipment and tray only", () => {
-  const store = atStep(5);
+test("step 4 edits installation kinds only", () => {
+  const store = atStep(4);
   for (const k of INSTALL) assert.equal(store.canEdit(k), true, k);
   for (const k of STRUCTURAL) assert.equal(store.canEdit(k), false, k);
 });
 
-test("steps 1, 2 and 4 edit nothing", () => {
-  for (const step of [1, 2, 4]) {
+test("steps 1, 2 and 5 (Result) edit nothing", () => {
+  for (const step of [1, 2, 5]) {
     const store = atStep(step);
     for (const k of [...STRUCTURAL, ...INSTALL]) assert.equal(store.canEdit(k), false, `${step}:${k}`);
   }

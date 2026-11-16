@@ -206,9 +206,8 @@ export class Viewer3DEngine {
   }
 
   /**
-   * In the v4 workspace the structure (walls, rooms, openings, columns, stairs) comes from the
-   * snapshot taken by Build 3D; otherwise it is the live project. Equipment and cable trays are
-   * always live. `null` means nothing has been built yet.
+   * In the v4 workspace the entire Result scene (Room Layout + Installation) comes from the
+   * snapshot taken by Build 3D; otherwise it uses the live project. `null` means not built yet.
    */
   usesBuiltProject() {
     return document.body.dataset.ui === "v4" && document.body.dataset.workspace === "on";
@@ -336,20 +335,20 @@ export class Viewer3DEngine {
       this.buildColumns3D(scale, sel);
     }
 
-    // 4. Build Stage 5 Telco CME / MEP Equipments
-    if (layers.equipments) {
+    // 4. Build Stage 4 Telco CME / MEP Equipments
+    if (hasStructure && layers.equipments) {
       this.buildEquipments3D(scale, sel);
     }
 
     // 5. Build 3D Overhead/Underfloor Cable Trays, Cooling Pipes & Stepped Staircases
-    if (layers.trays) {
+    if (hasStructure && layers.trays) {
       this.buildCableTrays3D(scale, sel);
-      if (hasStructure) this.buildStairs3D(scale, sel);
+      this.buildStairs3D(scale, sel);
     }
-    if (layers.pipes !== false) {
+    if (hasStructure && layers.pipes !== false) {
       this.buildPipes3D(scale, sel);
     }
-    if (layers.cables !== false) {
+    if (hasStructure && layers.cables !== false) {
       this.buildCables3D(sel);
     }
 
@@ -767,7 +766,7 @@ export class Viewer3DEngine {
     const hasBaseFloor = this.store.ui.layers.baseFloor !== false;
     const baseFaces = hasBaseFloor ? buildRoomFaces(structProj) : [];
 
-    for (const eq of this.store.project.equipments) {
+    for (const eq of structProj.equipments || []) {
       const pos = this.pxToMeter3D(eq.x_px, eq.y_px);
       const w = Number(eq.width_m) || 1.2;
       const d = Number(eq.depth_m) || 0.9;
@@ -819,7 +818,7 @@ export class Viewer3DEngine {
   }
 
   buildCableTrays3D(scale, sel) {
-    const project = this.store.project;
+    const project = this.structureProject();
     const fittings = deriveFittings(project, scale);
     const trayById = new Map(project.cable_trays.map((t) => [t.id, t]));
 
@@ -889,7 +888,7 @@ export class Viewer3DEngine {
 
   buildPipes3D(scale, sel) {
     void scale;
-    const project = this.store.project;
+    const project = this.structureProject();
     const nodeDegree = new Map();
     for (const pipe of project.pipe_runs || []) {
       const ids = pipe.node_ids || [];
@@ -990,7 +989,7 @@ export class Viewer3DEngine {
   }
 
   buildCables3D(sel) {
-    const project = this.store.project;
+    const project = this.structureProject();
     const trayById = new Map((project.cable_trays || []).map((t) => [t.id, t]));
     const wfGroups = resolveWaterfallGroups(project);
     for (const cab of project.cables || []) {

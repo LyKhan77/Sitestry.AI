@@ -4,9 +4,9 @@ import { gotoAppV4, loadStage } from "./helpers.mjs";
 const VIEWPORT = { width: 1440, height: 960 };
 const TYPES = ["perforated", "ladder", "duct", "wiremesh"];
 
-async function bootStage5(page) {
+async function bootStage4(page) {
   await gotoAppV4(page, VIEWPORT);
-  await loadStage(page, 5);
+  await loadStage(page, 4);
 }
 
 /** One 4 m tray per type on separate rows, then rebuild the 3D scene and describe every tray group. */
@@ -20,6 +20,7 @@ const buildAndDescribe = (page) =>
     ["perforated", "ladder", "duct", "wiremesh"].forEach((type, i) => {
       store.addCableTray([[600, 600 + i * 40], [600 + 4 * scale, 600 + i * 40]], { type });
     });
+    store.builtProject = structuredClone(store.project);
     app.viewer3d.rebuildScene();
     const groups = app.viewer3d.selectableMeshes.filter((g) => g.userData?.sitestryKind === "tray");
     return groups.map((g) => {
@@ -41,7 +42,7 @@ const buildAndDescribe = (page) =>
 
 test.describe("3D tray profiles", () => {
   test("each type builds its own profile with the top at the tray elevation", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     const trays = await buildAndDescribe(page);
     expect(trays).toHaveLength(4);
     for (const t of trays) {
@@ -54,7 +55,7 @@ test.describe("3D tray profiles", () => {
   });
 
   test("GLB export still works with every tray type in the scene", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await buildAndDescribe(page);
     const info = await page.evaluate(async () => {
       const buffer = await window.sitestryApp.viewer3d.exportGLB("trays.glb", { download: false });
@@ -90,6 +91,7 @@ const buildFittingScenes = (page) =>
     // Reducer: collinear runs of different width
     store.addCableTray([[1000, 900], [1100, 900]], { width_m: 0.4 });
     store.addCableTray([[1100, 900], [1200, 900]], { width_m: 0.6 });
+    store.builtProject = structuredClone(store.project);
     app.viewer3d.rebuildScene();
     const nodeAt = (x, y) => store.project.tray_nodes.find((n) => Math.hypot(n.x_px - x, n.y_px - y) < 1);
     const fittings = app.viewer3d.selectableMeshes
@@ -121,7 +123,7 @@ const buildFittingScenes = (page) =>
 
 test.describe("3D tray fittings", () => {
   test("elbow, tee, cross and reducer are built once each at the right nodes", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     const { fittings } = await buildFittingScenes(page);
     const byKind = Object.fromEntries(fittings.map((f) => [f.kind, f]));
     expect(fittings.map((f) => f.kind).sort()).toEqual(["cross", "elbow", "reducer", "tee"]);
@@ -136,14 +138,14 @@ test.describe("3D tray fittings", () => {
   });
 
   test("straight segments stop at the fitting instead of overlapping it", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     const { segDistances } = await buildFittingScenes(page);
     expect(segDistances).toHaveLength(2);
     for (const d of segDistances) expect(d).toBeGreaterThan(0.24);
   });
 
   test("GLB export includes the fitting groups", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await buildFittingScenes(page);
     const info = await page.evaluate(async () => {
       const app = window.sitestryApp;

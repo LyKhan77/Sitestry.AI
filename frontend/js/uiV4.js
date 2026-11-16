@@ -231,7 +231,7 @@ export function renderBoqPanel(boq, equipments, collapsed = false) {
 }
 
 // ==================== COMMAND PALETTE ====================
-const STAGE_NAMES = ["Input", "Process Extraction", "Review Annotation", "Build 3D", "Installation Equipment"];
+const STAGE_NAMES = ["Input", "Process Extraction", "Room Layout", "Installation", "Result"];
 const LAYER_ACTIONS = [
   ["chkLayerBlueprint", "Blueprint asli"],
   ["chkLayerRoi", "Batas ROI"],
@@ -258,7 +258,7 @@ export const PALETTE_ACTIONS = [
     id: `view-${mode}`,
     label: `Tampilan: ${name}`,
     keywords: "view tampilan",
-    when: () => store.ui.step >= 4,
+    when: () => store.ui.step === 5,
     run: (app) => app.setViewMode(mode),
   })),
   {
@@ -300,14 +300,14 @@ export const PALETTE_ACTIONS = [
     id: "export-json",
     label: "Export JSON",
     keywords: "download simpan",
-    when: () => store.ui.step >= 4,
+    when: () => store.ui.step === 5,
     run: () => document.getElementById("btnExportJson")?.click(),
   },
   {
     id: "export-glb",
     label: "Export .GLB",
     keywords: "download 3d model",
-    when: () => store.ui.step >= 4,
+    when: () => store.ui.step === 5,
     run: () => document.getElementById("btnExportGlb")?.click(),
   },
   ...LAYER_ACTIONS.map(([checkboxId, name]) => ({
@@ -541,8 +541,7 @@ export function initV4Dock(app) {
   if (!isV4()) return;
   decorateToolButtons();
   buildDockFlyout(3, [".wall-assist-bar", "#stairSettingsCard", "#roomSettingsCard", ".layer-card"]);
-  buildDockFlyout(4, [".cam-toggles-row", ".surface-card:has(#stage4SummaryGrid)"]);
-  buildDockFlyout(5, [
+  buildDockFlyout(4, [
     "#traySettingsCard",
     "#pipeSettingsCard",
     "#cableSettingsCard",
@@ -550,8 +549,8 @@ export function initV4Dock(app) {
     ".eq-subtype-row",
     ".preset-cme-row",
     "label.layer-check-row",
-    "#rowTransparentFloor",
   ]);
+  buildDockFlyout(5, [".cam-toggles-row", "#rowTransparentFloor", ".surface-card:has(#stage4SummaryGrid)"]);
   initExportMenu();
   initPalette(app);
   document.getElementById("btnRetryExtract")?.addEventListener("click", () => app.startExtractionV4());

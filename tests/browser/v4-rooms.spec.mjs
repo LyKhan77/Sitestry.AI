@@ -198,7 +198,7 @@ test.describe("room zones: click inside a closed room", () => {
     const spot = await interior(page);
     await setTool(page, "room");
     await clickWorld(page, spot);
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     await page.locator("#btnBuild3D").click();
     await expect.poll(() => page.evaluate(() => document.body.dataset.build)).toBe("fresh");
     expect(await sceneCount(page, "room")).toBeGreaterThanOrEqual(1);

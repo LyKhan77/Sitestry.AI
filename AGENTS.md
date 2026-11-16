@@ -32,9 +32,9 @@ The system prioritizes **structural precision first** (Topological Walls, Small-
 1. **5-Stage Segmented Page Workflow**:
    - `1. Input` (Sample Loader, Multi-Page PDF Picker, ROI Crop Box excluding Kop Surat, 2-Point Metric Scale Ruler)
    - `2. Process Extraction` (4-Stage Procedural Vision & CAD Vector Extraction Workbench)
-   - `3. Review Annotation` (Interactive 2D CAD Editor for Walls, Doors + Door Tags, Windows, Pillars, Stairs, and Room Zones)
-   - `4. Build 3D` (Real-time 3D WebGL Digital Twin with `three-bvh-csg` boolean door/window cutouts, window sills/lintels, swinging door leaves, stepped stairs with handrails, and 60x60cm raised floor tiles)
-   - `5. Installation Equipment` (Manual Telco CME & 3D Cable Ladder placement, live BoQ calculator, and `.GLB` / `.JSON` export)
+   - `3. Room Layout` (Sub-Editor 1: 2D Structural CAD Editor for Walls, Doors + Door Tags, Windows, Pillars, Stairs, and Room Zones)
+   - `4. Installation` (Sub-Editor 2: 2D CME Equipment, Cable Tray, Cooling Pipe & Auto-Cabling Editor)
+   - `5. Result` (Read-Only 3D WebGL Digital Twin with `2D | Split | 3D` view switcher, live BoQ, Rebuild guard, and `.GLB` / `.JSON` export)
 2. **Procedural Architectural CAD Vector Engine (`backend/cad_parser.py`)**:
    - Extracts periodic parallel stair treads, H-Beam/cross structural columns, quarter-circle (`90°`) door swing arcs + thin door leaves aligned with drawing **Door Tags** (`DD-xx`, `D-xx`, `TD-xx`), perimeter window mullions (`W-xx`), and double-line/filled-quad walls with automatic door-gap bridging and L/T/X corner snapping.
 3. **Hybrid ORB+RANSAC & Morphological Raster Engine (`backend/vectorizer.py`)**:

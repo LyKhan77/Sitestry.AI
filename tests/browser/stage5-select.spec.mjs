@@ -13,9 +13,9 @@ const store = (page, fn, arg) =>
     [fn.toString(), arg]
   );
 
-async function bootStage5(page) {
+async function bootStage4(page) {
   await gotoAppV4(page, VIEWPORT);
-  await loadStage(page, 5);
+  await loadStage(page, 4);
 }
 
 async function click(page, world) {
@@ -29,24 +29,24 @@ async function click(page, world) {
 const selected = (page) => store(page, (s) => s.ui.selected?.kind ?? null);
 const tool = (page) => store(page, (s) => s.ui.activeTool);
 
-test.describe("stage 5 select tool", () => {
-  test("entering stage 5 starts in Select with a visible Select button", async ({ page }) => {
-    await bootStage5(page);
+test.describe("stage 4 (Installation) select tool", () => {
+  test("entering stage 4 starts in Select with a visible Select button", async ({ page }) => {
+    await bootStage4(page);
     expect(await tool(page)).toBe("select");
-    const button = page.locator('#stagePanel5 [data-tool="select"]');
+    const button = page.locator('#stagePanel4 [data-tool="select"]');
     await expect(button).toHaveCount(1);
     await expect(button).toHaveClass(/active/);
   });
 
   test("the Select button switches back from a drawing tool", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await setTool(page, "tray");
-    await page.evaluate(() => document.querySelector('#stagePanel5 [data-tool="select"]').click());
+    await page.evaluate(() => document.querySelector('#stagePanel4 [data-tool="select"]').click());
     expect(await tool(page)).toBe("select");
   });
 
   test("Select picks equipment, clears on empty click and places nothing", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await store(page, (s, p) => s.addEquipment(p.x, p.y), EQ);
     await store(page, (s) => s.selectObject(null, null));
     await setTool(page, "select");
@@ -58,7 +58,7 @@ test.describe("stage 5 select tool", () => {
   });
 
   test("Select picks a tray", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await store(page, (s, pts) => s.addCableTray(pts), [[TRAY_A.x, TRAY_A.y], [TRAY_B.x, TRAY_B.y]]);
     await store(page, (s) => s.selectObject(null, null));
     await setTool(page, "select");
@@ -67,14 +67,14 @@ test.describe("stage 5 select tool", () => {
   });
 
   test("the equipment tool still places equipment on empty canvas", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await setTool(page, "equipment");
     await click(page, BLANK);
     expect(await store(page, (s) => s.project.equipments.length)).toBe(1);
   });
 
   test("Escape returns equipment and tray tools to Select; a tray draft is cleared first", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await setTool(page, "equipment");
     await page.keyboard.press("Escape");
     expect(await tool(page)).toBe("select");
@@ -90,7 +90,7 @@ test.describe("stage 5 select tool", () => {
   });
 
   test("Select drags equipment with the mouse and keeps it selected", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await store(page, (s, p) => s.addEquipment(p.x, p.y), EQ);
     await store(page, (s) => s.selectObject(null, null));
     await setTool(page, "select");

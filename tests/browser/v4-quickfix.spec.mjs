@@ -78,20 +78,18 @@ test.describe("v4 stair parameter card", () => {
   });
 });
 
-test.describe("v4 stage 3 is 2D only", () => {
-  test("view pill is hidden in stages 1-3 and shown in 4-5", async ({ page }) => {
+test.describe("v4 stages 1-4 are 2D only", () => {
+  test("view pill is hidden in stages 1-4 and shown in 5", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    for (const stage of [1, 2, 3]) {
+    for (const stage of [1, 2, 3, 4]) {
       await loadStage(page, stage);
       await expect(page.locator(".view-mode-group")).toBeHidden();
     }
-    for (const stage of [4, 5]) {
-      await loadStage(page, stage);
-      await expect(page.locator(".view-mode-group")).toBeVisible();
-    }
+    await loadStage(page, 5);
+    await expect(page.locator(".view-mode-group")).toBeVisible();
   });
 
-  test("palette view actions are offered only from stage 4", async ({ page }) => {
+  test("palette view actions are offered only in stage 5", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
     const enabled = () =>
       page.evaluate(async () => {
@@ -100,11 +98,11 @@ test.describe("v4 stage 3 is 2D only", () => {
           a.when ? a.when() : true
         );
       });
-    await loadStage(page, 3);
-    const atStage3 = await enabled();
-    expect(atStage3.length).toBe(3);
-    expect(atStage3.every((v) => v === false)).toBe(true);
     await loadStage(page, 4);
+    const atStage4 = await enabled();
+    expect(atStage4.length).toBe(3);
+    expect(atStage4.every((v) => v === false)).toBe(true);
+    await loadStage(page, 5);
     expect((await enabled()).every((v) => v === true)).toBe(true);
   });
 
@@ -315,8 +313,8 @@ test.describe("v4 tool isolation", () => {
     expect(after.selected?.kind).toBe("opening");
   });
 
-  test("stage 5 equipment stays selectable", async ({ page }) => {
-    await loadStage(page, 5);
+  test("stage 4 equipment stays selectable", async ({ page }) => {
+    await loadStage(page, 4);
     const eq = await page.evaluate(() => {
       const { store } = window.sitestryApp.canvas2d;
       const wall = store.project.walls[0];

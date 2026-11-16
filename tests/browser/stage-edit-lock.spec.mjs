@@ -70,9 +70,9 @@ async function bootWithZone(page) {
 }
 
 test.describe("drawing tools click through zoned rooms", () => {
-  test("stage 5: a cable tray can be drawn inside a zoned room", async ({ page }) => {
+  test("stage 4: a cable tray can be drawn inside a zoned room", async ({ page }) => {
     const spot = await bootWithZone(page);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
     await setTool(page, "tray");
     await clickWorld(page, spot);
     await page.waitForTimeout(500);
@@ -82,9 +82,9 @@ test.describe("drawing tools click through zoned rooms", () => {
     expect(await store(page, (s) => s.project.cable_trays.length)).toBe(1);
   });
 
-  test("stage 5: equipment can be placed inside a zoned room and is selected", async ({ page }) => {
+  test("stage 4: equipment can be placed inside a zoned room and is selected", async ({ page }) => {
     const spot = await bootWithZone(page);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
     await setTool(page, "equipment");
     const before = await store(page, (s) => s.project.equipments.length);
     await clickWorld(page, spot);
@@ -129,9 +129,9 @@ async function bootWithZoneAndEquipment(page) {
 }
 
 test.describe("edit lock per stage", () => {
-  test("stage 4: nothing in the 2D canvas can be dragged, but objects can still be selected", async ({ page }) => {
+  test("stage 5 (Result): nothing in the 2D canvas can be dragged, but objects can still be selected", async ({ page }) => {
     await bootWithZoneAndEquipment(page);
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     await setTool(page, "select");
     await store(page, (s) => s.selectObject("room", s.project.rooms[0].id));
     for (const layer of ["roomsLayer", "cadLayer", "cmeLayer", "overlayLayer"]) {
@@ -141,14 +141,14 @@ test.describe("edit lock per stage", () => {
     expect(await layerListening(page, "roomsLayer")).toBe(true);
   });
 
-  test("stage 5: annotation is click-through and only equipment can be dragged", async ({ page }) => {
+  test("stage 4 (Installation): annotation is click-through and only equipment can be dragged", async ({ page }) => {
     await bootWithZoneAndEquipment(page);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
     await setTool(page, "select");
     expect(await layerListening(page, "cadLayer")).toBe(false);
     expect(await layerListening(page, "roomsLayer")).toBe(false);
     expect(await draggableCount(page, "cadLayer")).toBe(0);
-    // cmeLayer also draws stairs; in stage 5 only the single equipment may be draggable.
+    // cmeLayer also draws stairs; in stage 4 only the single equipment may be draggable.
     expect(await draggableCount(page, "cmeLayer")).toBe(1);
     const mid = await store(page, (s) => {
       const w = s.project.walls[0];
@@ -160,9 +160,9 @@ test.describe("edit lock per stage", () => {
     expect(await store(page, (s) => s.ui.selected)).toBeNull();
   });
 
-  test("stage 3: annotation is editable again after visiting stage 5", async ({ page }) => {
+  test("stage 3: annotation is editable again after visiting stage 4", async ({ page }) => {
     await bootWithZoneAndEquipment(page);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
     await loadStage(page, 3);
     await setTool(page, "select");
     expect(await layerListening(page, "cadLayer")).toBe(true);
@@ -179,9 +179,9 @@ test.describe("delete and inspector follow the stage rule", () => {
       () => document.querySelectorAll("#inspectorContent input:not([disabled]), #inspectorContent select:not([disabled]), #inspectorContent button:not([disabled])").length
     );
 
-  test("stage 4: Delete key, Hapus button and inspector are inert for a selected wall", async ({ page }) => {
+  test("stage 5 (Result): Delete key, Hapus button and inspector are inert for a selected wall", async ({ page }) => {
     await bootWithZoneAndEquipment(page);
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     await setTool(page, "select");
     await store(page, (s) => s.selectObject("wall", s.project.walls[0].id));
     const before = await wallCount(page);
@@ -191,9 +191,9 @@ test.describe("delete and inspector follow the stage rule", () => {
     expect(await enabledFields(page)).toBe(0);
   });
 
-  test("stage 4: equipment is read-only too", async ({ page }) => {
+  test("stage 5 (Result): equipment is read-only too", async ({ page }) => {
     await bootWithZoneAndEquipment(page);
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     await setTool(page, "select");
     await store(page, (s) => s.selectObject("equipment", s.project.equipments[0].id));
     await page.keyboard.press("Backspace");
@@ -211,9 +211,9 @@ test.describe("delete and inspector follow the stage rule", () => {
     expect(await wallCount(page)).toBe(before - 1);
   });
 
-  test("stage 5: equipment inspector is editable and Delete removes it", async ({ page }) => {
+  test("stage 4 (Installation): equipment inspector is editable and Delete removes it", async ({ page }) => {
     await bootWithZoneAndEquipment(page);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
     await setTool(page, "select");
     await store(page, (s) => s.selectObject("equipment", s.project.equipments[0].id));
     expect(await enabledFields(page)).toBeGreaterThan(0);
@@ -227,7 +227,7 @@ test.describe("delete and inspector follow the stage rule", () => {
     await store(page, (s) => s.selectObject("wall", s.project.walls[0].id));
     expect(await enabledFields(page)).toBeGreaterThan(0);
     await page.evaluate(() => document.querySelector("#inspectorContent input").focus());
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     expect(await enabledFields(page)).toBe(0);
   });
 });

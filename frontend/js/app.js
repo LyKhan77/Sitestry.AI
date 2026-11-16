@@ -44,7 +44,7 @@ import {
   normalizeWaterfallStyle,
   resolveCableRoute,
 } from "./cableRouter.js";
-import { countsOf, structureHash, workspaceFlags } from "./workspaceState.js";
+import { countsOf, projectHash, workspaceFlags } from "./workspaceState.js";
 import {
   hideExtractionLayers,
   initUiFlag,
@@ -69,7 +69,9 @@ const TOOL_HINTS = {
   select:
     "Mode: <strong>Select / Move Vertex [V]</strong> — Geser titik sudut dinding, geser pintu di sepanjang dinding, atau klik elemen untuk edit properti.",
   select_install:
-    "Mode: <strong>Select [V]</strong> — Klik perangkat atau tray untuk memilih dan mengedit properti, geser perangkat untuk memindahkan, klik area kosong untuk batal pilih. Pilih Equipment atau Tray untuk memasang yang baru.",
+    "Mode: <strong>Select [V]</strong> — Klik perangkat, tray, pipa, atau kabel untuk edit properti, geser perangkat untuk memindahkan, klik area kosong untuk batal pilih.",
+  select_result:
+    "Mode: <strong>Inspect [V] (Read-Only)</strong> — Klik elemen di 2D atau 3D untuk melihat properti dan BoQ tanpa mengubah data.",
   pan:
     "Mode: <strong>Pan View [H]</strong> — Geser viewport 2D dengan bebas untuk inspeksi tanpa risiko mengklik atau memilih elemen.",
   roi: "Mode: <strong>ROI Crop Box [C]</strong> — Geser sudut kanan-bawah kotak hijau untuk mengecualikan Kop Surat / Title Block.",
@@ -128,6 +130,8 @@ class SitestryStudioApp {
     this.saveChain = Promise.resolve();
     this.saving = false;
     this.saveError = false;
+    this.autoSaveEnabled = this.readAutoSavePref();
+    this.autoSaveTimer = null;
     this.thumbCache = null;
     this.sessionLoaded = false;
     this.guideSession = new BlueprintGuideSession(store, (args) => api.fetchBlueprintGuides(args));
@@ -287,8 +291,12 @@ class SitestryStudioApp {
       this.setWorkflowStage(4);
     });
 
+    document.getElementById("btnSkipToStage5")?.addEventListener("click", () => {
+      this.goToResult({ autoBuild: true });
+    });
+
     document.getElementById("btnNextToStage5")?.addEventListener("click", () => {
-      this.setWorkflowStage(5);
+      this.goToResult({ autoBuild: true });
     });
 
     document.getElementById("btnExportJson")?.addEventListener("click", () => {
@@ -300,13 +308,43 @@ class SitestryStudioApp {
     });
   }
 
+  async goToResult({ autoBuild = true } = {}) {
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+    if (this.workspaceActive() && this.hasUnsavedChanges()) {
+      if (!this.autoSaveEnabled) {
+        this.showToast("Simpan dulu sebelum lanjut ke Result");
+        const save = document.getElementById("btnSave");
+        save?.classList.add("pulse");
+        setTimeout(() => save?.classList.remove("pulse"), 1200);
+        return false;
+      }
+      const savedOk = await this.saveWorkspace();
+      if (!savedOk) return false;
+    }
+    if (autoBuild && this.workspaceActive()) {
+      await this.buildFromSaved();
+    }
+    return this.setWorkflowStage(5);
+  }
+
   setWorkflowStage(step) {
-    if (this.workspaceActive() && step >= 4 && store.ui.step <= 3 && this.hasUnsavedChanges()) {
-      this.showToast("Simpan dulu sebelum lanjut ke 3D");
-      const save = document.getElementById("btnSave");
-      save?.classList.add("pulse");
-      setTimeout(() => save?.classList.remove("pulse"), 1200);
-      return false;
+    if (this.workspaceActive() && step === 5 && store.ui.step <= 4 && this.hasUnsavedChanges()) {
+      if (this.autoSaveEnabled && !store.activeTransaction) {
+        if (this.autoSaveTimer) {
+          clearTimeout(this.autoSaveTimer);
+          this.autoSaveTimer = null;
+        }
+        this.saveWorkspace();
+      } else {
+        this.showToast("Simpan dulu sebelum lanjut ke Result");
+        const save = document.getElementById("btnSave");
+        save?.classList.add("pulse");
+        setTimeout(() => save?.classList.remove("pulse"), 1200);
+        return false;
+      }
     }
     this.abortReveal();
     this.syncCalib();
@@ -353,36 +391,41 @@ class SitestryStudioApp {
       this.setViewMode("2d");
       store.setActiveTool("select");
     } else if (step === 3) {
-      // Stage 3: Review Annotation -> Full 2D Structural CAD Editor + Right Inspector
+      // Stage 3: Room Layout -> Sub-Editor 1 (2D Structural CAD Editor)
       store.ui.layers.walls = true;
       store.ui.layers.columns = true;
       store.ui.layers.rooms = true;
       store.ui.layers.trays = true;
       store.ui.layers.equipments = false;
       store.ui.layers.roi = false;
-      if (badge2D) badge2D.textContent = "STAGE 3: REVIEW ANNOTATION (2D CAD STRUCTURAL EDITOR)";
+      if (badge2D) badge2D.textContent = "STAGE 3: ROOM LAYOUT (2D STRUCTURAL CAD EDITOR)";
       this.setViewMode("2d");
       store.setActiveTool("select");
     } else if (step === 4) {
-      // Stage 4: Build 3D -> 3D Structural Digital Twin Viewport
+      // Stage 4: Installation -> Sub-Editor 2 (2D CME Equipment, Tray, Pipe & Cabling)
       store.ui.layers.walls = true;
       store.ui.layers.columns = true;
       store.ui.layers.rooms = true;
       store.ui.layers.trays = true;
-      store.ui.layers.equipments = store.project.equipments.length > 0;
-      if (badge2D) badge2D.textContent = "STAGE 4: 2D / 3D STRUCTURAL SYNC";
-      this.setViewMode("3d");
-      store.setActiveTool("select");
-      this.viewer3d.rebuildScene();
-    } else if (step === 5) {
-      // Stage 5: Installation Equipment -> Split 2D | 3D Sync for Manual Equipment Placement
-      store.ui.layers.walls = true;
-      store.ui.layers.columns = true;
-      store.ui.layers.rooms = true;
-      store.ui.layers.trays = true;
+      store.ui.layers.pipes = true;
+      store.ui.layers.cables = true;
       store.ui.layers.equipments = true;
-      if (badge2D) badge2D.textContent = "STAGE 5: MANUAL CME & CABLE LADDER INSTALLATION";
-      this.setViewMode("split");
+      store.ui.layers.roi = false;
+      if (badge2D) badge2D.textContent = "STAGE 4: INSTALLATION (2D CME & CABLING EDITOR)";
+      this.setViewMode("2d");
+      store.setActiveTool("select");
+    } else if (step === 5) {
+      // Stage 5: Result -> Read-Only 3D Digital Twin & 2D/Split/3D Inspection
+      store.ui.layers.walls = true;
+      store.ui.layers.columns = true;
+      store.ui.layers.rooms = true;
+      store.ui.layers.trays = true;
+      store.ui.layers.pipes = true;
+      store.ui.layers.cables = true;
+      store.ui.layers.equipments = true;
+      store.ui.layers.roi = false;
+      if (badge2D) badge2D.textContent = "STAGE 5: RESULT (READ-ONLY 2D / 3D INSPECTION)";
+      this.setViewMode("3d");
       store.setActiveTool("select");
       this.viewer3d.rebuildScene();
     }
@@ -417,10 +460,63 @@ class SitestryStudioApp {
     api.patchProjectMeta(this.workspace.id, { stage_reached: step }).catch(() => {});
   }
 
+  readAutoSavePref() {
+    try {
+      const v = window.localStorage.getItem("sitestry.autosave");
+      return v === null ? true : v !== "0" && v !== "false";
+    } catch {
+      return true;
+    }
+  }
+
+  setAutoSaveEnabled(enabled) {
+    this.autoSaveEnabled = Boolean(enabled);
+    try {
+      window.localStorage.setItem("sitestry.autosave", this.autoSaveEnabled ? "1" : "0");
+    } catch {
+      // Ignore storage errors
+    }
+    const chk = document.getElementById("chkAutoSave");
+    if (chk) chk.checked = this.autoSaveEnabled;
+    if (this.autoSaveEnabled && this.workspaceActive() && this.hasUnsavedChanges() && !store.activeTransaction) {
+      this.saveWorkspace();
+    } else if (!this.autoSaveEnabled && this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
+  }
+
+  scheduleAutoSave() {
+    if (!this.autoSaveEnabled || !this.workspaceActive() || !this.sessionLoaded) return;
+    if (store.ui.step !== 3 && store.ui.step !== 4) return;
+    if (this.autoSaveTimer) clearTimeout(this.autoSaveTimer);
+    this.autoSaveTimer = setTimeout(() => {
+      this.autoSaveTimer = null;
+      if (
+        this.autoSaveEnabled &&
+        this.workspaceActive() &&
+        !store.activeTransaction &&
+        this.hasUnsavedChanges()
+      ) {
+        this.saveWorkspace();
+      }
+    }, 1200);
+  }
+
   // ==================== WORKSPACE: SAVE ====================
   initWorkspaceSave() {
     document.body.dataset.save = "off";
     document.body.dataset.workspace = "off";
+    const chkAutoSave = document.getElementById("chkAutoSave");
+    if (chkAutoSave) {
+      chkAutoSave.checked = this.autoSaveEnabled;
+      chkAutoSave.addEventListener("change", () => {
+        this.setAutoSaveEnabled(chkAutoSave.checked);
+        this.showToast(
+          this.autoSaveEnabled ? "Auto-Save aktif (otomatis simpan)." : "Auto-Save nonaktif (simpan manual)."
+        );
+      });
+    }
     document.getElementById("btnSave")?.addEventListener("click", () => this.saveWorkspace());
     document.getElementById("btnBuild3D")?.addEventListener("click", () => this.buildFromSaved());
     document.getElementById("btnReextract")?.addEventListener("click", async () => {
@@ -429,7 +525,10 @@ class SitestryStudioApp {
         this.showToast("ROI dan skala terbuka. Atur ulang lalu lanjut ke ekstraksi.");
       }
     });
-    store.addEventListener("geometryChanged", () => this.scheduleFlagRefresh());
+    store.addEventListener("geometryChanged", () => {
+      this.scheduleFlagRefresh();
+      this.scheduleAutoSave();
+    });
     window.addEventListener("beforeunload", (e) => {
       if (this.hasUnsavedChanges()) {
         e.preventDefault();
@@ -444,7 +543,7 @@ class SitestryStudioApp {
 
   currentFlags() {
     return workspaceFlags({
-      liveHash: structureHash(store.project),
+      liveHash: projectHash(store.project),
       savedHash: this.workspace.savedHash,
       builtHash: this.workspace.builtHash,
     });
@@ -629,7 +728,7 @@ class SitestryStudioApp {
     }
     const projectId = this.workspace.id;
     const project = structuredClone(store.project);
-    const hash = structureHash(project);
+    const hash = projectHash(project);
     this.saving = true;
     this.setSaveState("saving");
     try {
@@ -709,15 +808,15 @@ class SitestryStudioApp {
       ["1 Input \u2713", "done"],
       meta.extracted ? ["2 Ekstraksi \u2713", "done"] : ["2 Ekstraksi \u2014", "muted"],
       live && this.hasUnsavedChanges()
-        ? ["3 Review belum disimpan", "warn"]
+        ? ["3-4 Editor belum disimpan", "warn"]
         : savedHash
-        ? ["3 Review tersimpan", "done"]
-        : ["3 Review \u2014", "muted"],
+        ? ["3-4 Editor tersimpan", "done"]
+        : ["3-4 Editor \u2014", "muted"],
       builtHash == null
-        ? ["4 3D belum dibuild", "muted"]
+        ? ["5 Result belum dibuild", "muted"]
         : builtHash === savedHash
-        ? ["4 3D \u2713", "done"]
-        : ["4 3D usang", "warn"],
+        ? ["5 Result 3D \u2713", "done"]
+        : ["5 Result 3D usang", "warn"],
     ];
   }
 
@@ -968,7 +1067,7 @@ class SitestryStudioApp {
       document.getElementById("lblCurrentPage").textContent = `${overrides.page_number}/${overrides.total_pages}`;
       if (project) store.loadProjectData(project, true);
 
-      const savedHash = project ? structureHash(project) : null;
+      const savedHash = project ? projectHash(project) : null;
       const builtMatches = Boolean(project) && meta.built_hash != null && meta.built_hash === savedHash;
       this.workspace = {
         exists: true,
@@ -1485,7 +1584,8 @@ class SitestryStudioApp {
     });
     const hintEl = document.getElementById("lblActiveToolHint");
     let hintKey = tool === "room" && store.ui.roomMode === "polygon" ? "room_polygon" : tool;
-    if (tool === "select" && store.ui.step >= 4) hintKey = "select_install";
+    if (tool === "select" && store.ui.step === 4) hintKey = "select_install";
+    else if (tool === "select" && store.ui.step === 5) hintKey = "select_result";
     if (hintEl && TOOL_HINTS[hintKey]) {
       hintEl.innerHTML = TOOL_HINTS[hintKey];
     }
@@ -1892,13 +1992,13 @@ class SitestryStudioApp {
         column: [3],
         stair: [3],
         room: [3],
-        equipment: [5],
-        tray: [5],
-        pipe: [5],
-        cable: [5],
+        equipment: [4],
+        tray: [4],
+        pipe: [4],
+        cable: [4],
       };
-      const stage5Override = store.ui.step === 5 ? { p: "pipe", c: "cable" } : null;
-      const nextTool = (stage5Override && stage5Override[key]) || map[key];
+      const stage4Override = store.ui.step === 4 ? { p: "pipe", c: "cable" } : null;
+      const nextTool = (stage4Override && stage4Override[key]) || map[key];
       if (nextTool && toolStages[nextTool]?.includes(store.ui.step)) {
         store.setActiveTool(nextTool);
       }
@@ -1989,7 +2089,7 @@ class SitestryStudioApp {
       container.innerHTML = `
         <div class="insp-empty">
           Pilih elemen pada canvas untuk melihat properti. Pengaturan proyek tersedia di stage Input;
-          BoQ dan export tersedia pada Build 3D / Installation.
+          BoQ dan export tersedia pada Result.
         </div>
       `;
       return;

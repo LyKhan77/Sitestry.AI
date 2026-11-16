@@ -3,7 +3,7 @@ import { gotoAppV4, loadStage } from "./helpers.mjs";
 
 test("a legacy points_px tray renders in 2D and 3D after migration", async ({ page }) => {
   await gotoAppV4(page, { width: 1440, height: 960 });
-  await loadStage(page, 5);
+  await loadStage(page, 4);
   const info = await page.evaluate(() => {
     const app = window.sitestryApp;
     const store = app.canvas2d.store;
@@ -13,6 +13,7 @@ test("a legacy points_px tray renders in 2D and 3D after migration", async ({ pa
     ];
     delete data.tray_nodes;
     store.loadProjectData(data, true);
+    store.builtProject = structuredClone(store.project);
     app.canvas2d.renderAll();
     app.viewer3d.rebuildScene();
     const all = app.viewer3d.selectableMeshes.filter((g) => g.userData?.sitestryKind === "tray");

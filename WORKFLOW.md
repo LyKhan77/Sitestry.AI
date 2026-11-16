@@ -6,22 +6,23 @@ This document defines both the **5-Stage Segmented User Workflow** inside the Si
 
 ## Part 1: 5-Stage Segmented Application Workflow
 
-Sitestry.AI enforces a strict, uncluttered 5-stage architectural pipeline (`Input -> Process Extraction -> Review Annotation -> Build 3D -> Installation Equipment`). Each stage has its own dedicated sidebar panel (`#stagePanel1` .. `#stagePanel5`) and viewport mode controlled via `body[data-stage="1".."5"]`.
+Sitestry.AI enforces a strict, uncluttered 5-stage architectural pipeline (`Input -> Process Extraction -> Room Layout -> Installation -> Result`). Each stage has its own dedicated sidebar panel (`#stagePanel1` .. `#stagePanel5`) and viewport mode controlled via `body[data-stage="1".."5"]`.
 
 ```mermaid
 flowchart LR
     S1["1. Input\n(Blueprint, ROI & Skala)"] --> S2["2. Process Extraction\n(Procedural CAD & Vision)"]
-    S2 --> S3["3. Review Annotation\n(2D HITL CAD Editor)"]
-    S3 --> S4["4. Build 3D\n(CSG Structural Twin)"]
-    S4 --> S5["5. Installation Equipment\n(Manual CME, BoQ & Export)"]
+    S2 --> S3["3. Room Layout\n(2D Structural CAD Editor)"]
+    S3 --> S4["4. Installation\n(2D CME & Cabling Editor)"]
+    S4 --> S5["5. Result\n(Read-Only 3D Twin, BoQ & Export)"]
+    S3 -.->|Skip Installation| S5
 ```
 
 ### UI shell (v4 Dock + Wizard, default)
 - **Navigation**: one stage control, the bottom timeline (`Back`, five stage dots, `Next`). `Ctrl/Cmd+K` opens a command palette to jump stage, switch view, undo/redo, export, and toggle layers.
-- **Stage 1-2 are wizard cards** floating over a full-bleed canvas; **Stage 3-5 are a dock workbench**: a 56 px icon rail, a flyout for secondary controls (wall assist, layers, stair parameters, CME catalog), and a property panel that floats beside the selected object.
-- **Export** is one `Export` menu in Stage 4-5. The Stage 5 BoQ panel shows the structural summary plus a count per equipment category.
-- **Workspace (many projects)**: the app opens on a Workspace page. Empty: only an upload field (PDF, PNG, JPG). Otherwise a card grid, newest first: each card has thumbnail, title, saved time, counts, status chips (Input / Ekstraksi / Review / 3D), `Buka` (restores that project's saved source, project and furthest stage; 3D is rebuilt automatically only when it matches the saved version) and `Hapus` (asks first). The project that is open in this session is marked and says `Kembali`. A last `Project baru` card uploads a new floorplan; every upload (home or Stage 1) creates a **new** project and never overwrites another. Opening another project while the current one has unsaved edits asks first. The header `Workspace` link returns to the list without discarding the live session. Storage: `workspace/projects/<id>/` (source file, `project.json`, `meta.json`); an old single-project `workspace/` is migrated into a project when the server starts.
-- **Save and Build 3D are manual.** The header `Simpan` button (or `Ctrl/Cmd+S`) writes the project to the backend `workspace/` folder; there is no autosave and the page warns before closing with unsaved changes. Stage 4 cannot be entered while there are unsaved changes. Stage 4 shows the last built 3D with a banner (`Belum ada 3D` or `Denah berubah sejak build terakhir`) and a `Build 3D` button; a build always uses the saved version. Stage 5 equipment stays live on top of the built structure.
+- **Stage 1-2 are wizard cards** floating over a full-bleed canvas; **Stage 3-5 are a dock workbench**: a 56 px icon rail, a flyout for secondary controls (wall assist, layers, stair parameters, CME catalog, Result view toggles), and a property panel that floats beside the selected object.
+- **View Mode (`2D | Split | 3D`), Camera Presets, BoQ Panel, and `Export` Menu** appear **only in Stage 5 (`Result`)**, keeping Stages 1–4 uncluttered 2D workspaces.
+- **Workspace (many projects)**: the app opens on a Workspace page. Empty: only an upload field (PDF, PNG, JPG). Otherwise a card grid, newest first: each card has thumbnail, title, saved time, counts, status chips (`Input` / `Ekstraksi` / `3-4 Editor` / `5 Result 3D`), `Buka` (restores that project's saved source, project and furthest stage; 3D is rebuilt automatically only when `built_hash === saved_hash`) and `Hapus` (asks first). Storage: `workspace/projects/<id>/` (source file, `project.json`, `meta.json`).
+- **Auto-Save Toggle & Combined Build Snapshot**: `#chkAutoSave` (default **ON**, persisted in `localStorage`) debounces automatic saves (~1.2 s) for edits in both **Stage 3 (Room Layout)** and **Stage 4 (Installation)**, tracked via `projectHash` in `workspaceState.js`. Turning Auto-Save **OFF** reverts to manual save (`Simpan` / `Ctrl/Cmd+S`) with `beforeunload` and Stage 5 entry guards. Any edit to Room Layout or Installation after the last build marks the Result build `stale`, prompting **Build Ulang 3D** in Stage 5 (or auto-building when clicking `Build & Lihat Result`).
 - Dev/test boot: `?sample=<id>` skips the home page, loads that sample and backs it with a workspace.
 - `?ui=v3` switches to the legacy UI and remembers the choice; `?ui=v4` switches back. Below 1100 px the dock becomes the existing dismissible drawer (`Escape` closes it).
 
@@ -39,8 +40,10 @@ flowchart LR
 - **v4 flow**: `Next` from Stage 1 enters Stage 2 first, then extracts (legacy UI still extracts before entering). While the request runs the card shows an indeterminate bar, never a percentage or ETA; the result is then revealed step by step (walls + openings, columns, stairs/trays, rooms) with live counters. If the server cannot be reached, `api.extractLayout` returns a client-generated stand-in and the card states that plainly (`fallback`) with a retry button. Changing stage or re-running cancels a reveal in progress.
 - **Note**: Equipment (`equipments: []`) and cable trays (`cable_trays: []`) are intentionally kept empty during structural extraction so the structural layout remains 100% clean.
 
-### Stage 3: Review Annotation (`data-stage="3"`)
-- **Goal**: Human-in-the-Loop (HITL) 2D CAD verification and manual refinement before 3D extrusion.
+### Stage 3: Room Layout (`data-stage="3"`)
+- **Goal**: Sub-Editor 1 — Human-in-the-Loop (HITL) 2D Structural CAD verification and manual refinement (`nodes`, `walls`, `openings`, `columns`, `stairs`, `rooms`).
+- **2D-Only Workspace**: `view-mode-group` is hidden. Cable trays, pipes, equipments, and cables are hidden so structural layout edits stay clean while existing Stage 4 Installation data is preserved in the background.
+- **Skipping Installation**: Users may proceed to **Stage 4 (Installation)** or skip directly to **Stage 5 (Result)** (`Lewati ke Result`).
 - **Capabilities**:
   - Drag **Topological Nodes (`[V]`)** at any zoom; one completed drag is one undo. Shared nodes move every connected wall, and numeric meter fields provide precision editing while canonical coordinates remain source pixels.
   - Drag **Doors & Windows** directly along their host wall segment to fine-tune `offset_ratio`.
@@ -56,27 +59,26 @@ flowchart LR
   - The property inspector is docked at the top right, below the view controls (`2D Fit`, camera buttons), and does not follow the selection.
   - The inspector is hidden when nothing is selected, so the 2D canvas occupies at least 75% of the workspace at 1280 px and wider. Layer/opacity controls live in an on-demand disclosure; below 1100 px tools and properties become dismissible overlays.
 
-### Stage 4: Build 3D (`data-stage="4"`)
-- **Goal**: Procedurally extrude the verified 2D structural graph into an interactive 3D WebGL Digital Twin (`Viewer3DEngine`).
-- **2D is view-only here** (`store.canEdit(kind)` is false for every kind): pan, zoom and select to read properties; no drag, no Delete, inspector controls disabled. Annotation is edited only in Stage 3.
-- **3D CSG & Architectural Geometry**:
-  - **Base floor**: every room closed by walls (0.6 m gap tolerance) gets a thin automatic concrete slab, so corridors and unnamed rooms are not holes; zones sit on top with their raised floor. Rooms that are not closed get no base floor (layer `Lantai dasar otomatis`).
-  - Real boolean subtraction (`three-bvh-csg`) cuts door openings (`0.0m` to `2.15m`) and elevated window openings (`0.95m` sill to `2.20m` lintel, preserving bottom sill and top lintel walls).
-  - Generates 3D door frames, semi-open swinging door leaves, mullioned glass windows, steel H-Beam columns, and 60x60cm Raised Floor Plenums.
-  - Parametric stairs are built directly from the shared resolver: one mesh per riser tread, explicit landings, and guardrails along exposed edges. The same flight/riser schedule drives 2D and 3D.
-  - Scene rebuilds are commit-aware: preview drags do not rebuild 3D, several commits coalesce, and entering 3D or exporting flushes the latest revision. Generated geometry/materials are disposed on rebuild.
-  - **Export guard**: `.JSON` and `.GLB` export are refused while an edit transaction is active, so tentative geometry is never serialized.
-
-### Stage 5: Installation Equipment (`data-stage="5"`)
-- **Goal**: Manual installation of Telecommunication CME / Data Center MEP hardware, multi-service Cable Trays, Cooling Pipe runs, and automatic Source-to-Target Cabling inside the verified 3D building structure (`Split 2D | 3D Sync` view).
-- **Select & Pan tools**: Stage 5 starts in `Select (V)`, the first tool of the rail. Stages 3–5 include **`Pan View (H)`** right beside `Select (V)` to pan 2D or rotate 3D freely on left-drag without selecting elements or opening the Property Inspector. `Equipment (E)`, `Tray (T)`, `Pipe (P)`, and `Cabling (C)` operate cleanly per tool; `Esc` clears any draft in progress first, then returns to Select.
-- **Edit rule**: only `equipment`, `tray`, `pipe`, and `cable` can be drawn, selected, dragged, deleted or edited in Stage 5. Walls, doors, windows, columns, stairs and room zones are locked and click-through (`cadLayer`/`roomsLayer` do not listen), so installation tools work inside zoned rooms.
+### Stage 4: Installation (`data-stage="4"`)
+- **Goal**: Sub-Editor 2 — 2D CME / MEP Installation (`equipment`, `cable_trays`, `pipe_runs`, `cables`) overlaid on the read-only, click-through Room Layout.
+- **2D-Only Workspace**: `view-mode-group` remains hidden so drawing tools are unobstructed.
+- **Edit rule**: only `equipment`, `tray`, `pipe`, and `cable` can be drawn, selected, dragged, deleted, or edited in Stage 4. Structural layers (`cadLayer`, `roomsLayer`, and stairs) are click-through.
+- **Rotated Equipment Labels**: Rotating an equipment rotates only its footprint and front-face indicator (`#fbbf24`), while its name label remains horizontally fixed (`0°`) with a compact readable backdrop pill.
+- **Auto-Cabling UX**: When `Cabling (C)` is active, existing cable lines disable pointer hit-testing (`listening: false`), all existing cables hide while connecting `Source -> Target`, and hovering an equipment renders a system-colored highlight ring + action badge (`Source:` / `Hubungkan ke ...` / `Batal Source:`) with snapped dashed preview.
 - **Capabilities**:
-  - **5 Generic Equipment Categories (Style A)**: Choose from **Rack**, **Power**, **Data**, **Cooling**, and **Security**, refine the specific hardware subtype (e.g., `42U Server Rack`, `ACPDB/SDP/PDU Panel`, `Colokan Listrik / Outlet`, `Grounding Busbar`, `Power/Data Riser (Link)`, `PAC`, `Chiller / CDU`, `In-Row Cooling`, `Fan`, `CCTV`, `Access Control`, `Fire Sensor`), and place on the floorplan. Wall-mounted devices snap to nearby walls automatically, and every 2D footprint shows a bright front-face indicator synced with 3D orientation.
-  - **Cable Tray (`[T]`)**: Pick tray construction (`perforated` default, `ladder`, `duct`, `wiremesh`) and service category (`unified` `-0.45 m`, `power` `-0.55 m`, `data` `-0.35 m`); click route points (`Shift` = straight 90°), finish with `Enter`, double click, or right click. Crossing runs of different service categories remain isolated. Default elevation adjusts per service and is editable in the inspector alongside width and side height.
-  - **Cooling Pipe (`[P]`) & `Transparan Lantai`**: Draw hollow 3D cooling pipe runs under the raised floor (`underfloor`, default `0.15 m`) or overhead (`overhead`, wall height - `0.70 m`), and toggle **Transparan Lantai** to inspect underfloor piping through X-ray raised-floor tiles in 3D.
-  - **Auto-Cabling (`[C]`, Source -> Target)**: Choose system (`Power` Path A Red / Path B Blue, `Grounding` Green, `Link` Orange, `Cooling` Cyan via Pipe, `Security` Purple) and drop style (**`Tray Waterfall`** default physical 3D chute accessory or **`Direct Drop`**), click Source equipment, then click Target equipment. The router runs shortest-path traversal over matching trays or pipes with parallel side-by-side & tiered bundling inside the tray trough, and falls back orthogonally along the nearest wall when infrastructure is outside snap range. Grouped `Tray Waterfall` accessories automatically blend with the host tray's color/finish and adapt their 3D geometry to the host tray's Draw Cable Tray type (`perforated` oval-slotted quarter-round plate + cheek flanges, `ladder` deep rail clamp, `wiremesh` bent wire-rib chute, or `duct` solid enclosed radius chute).
-  - Review collapsible live Bill of Quantities (BoQ show/hide toggle — Tray Power/Data/Unified meters, Cooling Pipe meters, per-system Cable meters, Tray Waterfall / Direct Drop count, and equipment breakdown by group) and export standardized `.JSON` schema or binary `.GLB` 3D model.
+  - **5 Generic Equipment Categories (Style A)**: Choose from **Rack**, **Power**, **Data**, **Cooling**, and **Security**, refine the subtype, and click to place (wall-mounted items snap automatically).
+  - **Cable Tray (`[T]`)**: Pick tray construction (`perforated`, `ladder`, `duct`, `wiremesh`) and service category (`unified`, `power`, `data`); click route points (`Shift` = straight 90°), finish with `Enter`, double click, or right click.
+  - **Cooling Pipe (`[P]`)**: Draw underfloor (`0.15 m`) or overhead cooling pipe runs.
+  - **Auto-Cabling (`[C]`, Source -> Target)**: Choose system (`Power` Path A/B, `Grounding`, `Link`, `Cooling`, `Security`) and drop style (`Tray Waterfall` or `Direct Drop`), click Source then Target.
+- **CTA**: `Build & Lihat Result` saves pending changes, snapshots the full project (Room Layout + Installation) into `builtProject`, and opens Stage 5 (`Result`).
+
+### Stage 5: Result (`data-stage="5"`)
+- **Goal**: Read-Only 3D Digital Twin, 2D/Split/3D inspection, live BoQ review, and `.JSON`/`.GLB` export.
+- **Strictly Read-Only**: `store.canEdit(kind)` returns `false` for all kinds (`nodes`, `walls`, `openings`, `columns`, `stairs`, `rooms`, `equipments`, `tray`, `pipe`, `cable`). Both 2D and 3D allow selecting elements to inspect properties, panning/orbiting, toggling X-Ray walls or `Transparan Lantai`, and switching `view-mode-group` (`2D Blueprint & CAD` | `Split 2D | 3D Sync` | `3D Digital Twin`), with zero dragging, deleting, or editing.
+- **Build Snapshot & Rebuild**: `Viewer3DEngine` renders `store.builtProject` (combined Room Layout + Installation). Any edit in Stage 3 or Stage 4 changes `projectHash` relative to `built_hash`, displaying the Build Banner (`Build Ulang 3D`) upon entering Stage 5 via timeline/stepper.
+- **3D CSG & Architectural/CME Geometry**:
+  - **Base floor**, boolean door/window CSG cutouts, swinging doors, mullioned windows, H-Beam columns, 60x60cm Raised Floor Plenums, parametric stairs, 3D equipment, typed Cable Trays + Fittings, hollow-bore Cooling Pipes, and Auto-Cabling + adaptive `Tray Waterfall` chutes.
+  - Review collapsible live BoQ (`#boqPanel`) and export `.JSON` or `.GLB`.
 
 ---
 

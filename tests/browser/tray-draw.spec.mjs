@@ -12,9 +12,9 @@ const store = (page, fn, arg) =>
     [fn.toString(), arg]
   );
 
-async function bootStage5(page) {
+async function bootStage4(page) {
   await gotoAppV4(page, VIEWPORT);
-  await loadStage(page, 5);
+  await loadStage(page, 4);
   await setTool(page, "tray");
 }
 
@@ -32,7 +32,7 @@ const trays = (page) => store(page, (s) => JSON.parse(JSON.stringify(s.project.c
 
 test.describe("tray drawing reliability", () => {
   test("a click on the dashed preview of the run still adds a point", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     const [a, b, m] = await screen(page, [A, B, MID]);
     await click(page, a);
     await click(page, b);
@@ -44,7 +44,7 @@ test.describe("tray drawing reliability", () => {
   });
 
   test("a click on an existing tray strip still adds a point", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     await store(page, (s) => s.addCableTray([[1420, 1100], [1620, 1100]]));
     await setTool(page, "tray");
     const [onStrip] = await screen(page, [{ x: 1500, y: 1100 }]);
@@ -53,7 +53,7 @@ test.describe("tray drawing reliability", () => {
   });
 
   test("double click on the last point finishes without a duplicate point", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     const [a, b] = await screen(page, [A, B]);
     await click(page, a);
     await click(page, b);
@@ -65,7 +65,7 @@ test.describe("tray drawing reliability", () => {
   });
 
   test("right click finishes a run with two points and Escape clears the draft", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     const [a, b] = await screen(page, [A, B]);
     await click(page, a);
     await click(page, b);
@@ -79,7 +79,7 @@ test.describe("tray drawing reliability", () => {
   });
 
   test("a run started near the middle of a tray splits it and joins at that vertex", async ({ page }) => {
-    await bootStage5(page);
+    await bootStage4(page);
     const [a, b, nearMid, far] = await screen(page, [A, B, { x: MID.x, y: MID.y + 3 }, { x: MID.x, y: MID.y + 120 }]);
     await click(page, a);
     await click(page, b);

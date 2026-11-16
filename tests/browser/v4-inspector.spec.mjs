@@ -90,11 +90,17 @@ for (const viewport of [
 
     test("stage 5 BoQ panel moves left of an open inspector", async ({ page }) => {
       await gotoAppV4(page, viewport);
-      await loadStage(page, 5);
+      await loadStage(page, 4);
       await page.evaluate(() => {
         const { store } = window.sitestryApp.canvas2d;
         const n = store.project.nodes[0];
         const eq = store.addEquipment(n.x_px + 60, n.y_px + 60, "rack");
+        store.selectObject("equipment", eq.id);
+      });
+      await loadStage(page, 5);
+      await page.evaluate(() => {
+        const { store } = window.sitestryApp.canvas2d;
+        const eq = store.project.equipments[0];
         store.selectObject("equipment", eq.id);
       });
       await page.waitForTimeout(400);

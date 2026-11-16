@@ -119,7 +119,7 @@ export async function worldToScreen(page, wx, wy, zoom = 1) {
       const stage = engine.stage;
       stage.scale({ x: z, y: z });
       stage.position({ x: stage.width() / 2 - x * z, y: stage.height() / 2 - y * z });
-      stage.batchDraw();
+      stage.draw();
       const box = stage.container().getBoundingClientRect();
       return { x: box.left + stage.width() / 2, y: box.top + stage.height() / 2 };
     },
@@ -135,7 +135,7 @@ export async function worldPointsToScreen(page, points, zoom = 1) {
       const anchor = pts[0];
       stage.scale({ x: z, y: z });
       stage.position({ x: stage.width() / 2 - anchor.x * z, y: stage.height() / 2 - anchor.y * z });
-      stage.batchDraw();
+      stage.draw();
       const box = stage.container().getBoundingClientRect();
       const originX = box.left + stage.position().x;
       const originY = box.top + stage.position().y;

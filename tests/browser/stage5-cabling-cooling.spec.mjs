@@ -6,20 +6,20 @@ const VIEWPORT = { width: 1440, height: 960 };
 test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling", () => {
   test("creates generic equipment, power/data trays, cooling pipe, and auto-cabling with 3D & GLB", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
 
     // 1. Generic 5-category UI + subtype selector
     await page.locator('.eq-catalog-card[data-eq-group="power"]').click();
     await page.locator("#selEqSubtype").selectOption("panel");
     await expect(page.locator("#selEqSubtype")).toHaveValue("panel");
 
-    // 2. Tray service selector + Pipe mounting + Transparent Floor
+    // 2. Tray service selector + Pipe mounting
     await page.locator('[data-tray-service="power"]').click();
     await expect(page.locator('[data-tray-service="power"]')).toHaveAttribute("aria-pressed", "true");
     await page.locator('[data-pipe-mounting="underfloor"]').click();
     await expect(page.locator('[data-pipe-mounting="underfloor"]')).toHaveAttribute("aria-pressed", "true");
 
-    // 3. Programmatically add equipment, trays, pipe, and cables via store and verify BoQ + 3D + GLB
+    // 3. Programmatically add equipment, trays, pipe, and cables via store and verify BoQ + 3D + GLB in Result
     const metrics = await page.evaluate(async () => {
       const { store } = await import("/js/store.js");
       const app = window.sitestryApp;
@@ -42,8 +42,7 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
       store.ui.cableSystem = "security";
       store.addCable(rack.id, cctv.id);
 
-      app.setViewMode("3d");
-      app.viewer3d.rebuildScene();
+      await app.goToResult({ autoBuild: true });
 
       const boq = store.computeBoQSummary();
       const cableMeshes = app.viewer3d.selectableMeshes.filter((m) => m.userData?.sitestryKind === "cable").length;
@@ -78,17 +77,17 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
     await expect(page.locator("#boqPanel")).toContainText("Cooling Pipe");
     await expect(page.locator("#boqPanel")).toContainText("Tray Waterfall Drop");
 
-    // 4. BoQ Show/Hide toggle + tool icons for Pan, Pipe, and Cable
-    await expect(page.locator('#stagePanel5 [data-tool="pan"] .tool-ico')).toHaveCount(1);
-    await expect(page.locator('#stagePanel5 [data-tool="pipe"] .tool-ico')).toHaveCount(1);
-    await expect(page.locator('#stagePanel5 [data-tool="cable"] .tool-ico')).toHaveCount(1);
+    // 4. BoQ Show/Hide toggle + tool icons for Pan, Pipe, and Cable in Stage 4 Installation
+    await expect(page.locator('#stagePanel4 [data-tool="pan"] .tool-ico')).toHaveCount(1);
+    await expect(page.locator('#stagePanel4 [data-tool="pipe"] .tool-ico')).toHaveCount(1);
+    await expect(page.locator('#stagePanel4 [data-tool="cable"] .tool-ico')).toHaveCount(1);
     await page.locator("#btnToggleBoq").click();
     await expect(page.locator("#boqPanel")).toHaveClass(/collapsed/);
     await expect(page.locator("#boqPanel .boq-panel-body")).toBeHidden();
     await page.locator("#btnToggleBoq").click();
     await expect(page.locator("#boqPanel .boq-panel-body")).toBeVisible();
 
-    // 5. Toggle Transparan Lantai
+    // 5. Toggle Transparan Lantai in Stage 5 Result
     await page.locator("#chkTransparentFloor").check({ force: true });
     const transparentOn = await page.evaluate(() => window.sitestryApp.canvas2d.store.ui.transparentFloor);
     expect(transparentOn).toBe(true);
@@ -96,7 +95,7 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
 
   test("Pan tool inspects without selecting equipment on canvas", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
 
     const eqPos = await page.evaluate(async () => {
       const { store } = await import("/js/store.js");
@@ -117,6 +116,8 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
     const res3d = await page.evaluate(async () => {
       const THREE = await import("three");
       const app = window.sitestryApp;
+      await app.goToResult({ autoBuild: true });
+      app.canvas2d.store.setActiveTool("pan");
       app.setViewMode("split");
       app.viewer3d.rebuildScene();
       const el = app.viewer3d.renderer.domElement;
@@ -142,7 +143,7 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
 
   test("groups nearby cable drops into shared edge-mounted Tray Waterfall chutes", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
 
     const grouped = await page.evaluate(async () => {
       const { store } = await import("/js/store.js");
@@ -156,8 +157,7 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
       store.addCable(pdu.id, rack.id);
       store.ui.cablePathLabel = "B";
       store.addCable(pdu.id, rack.id);
-      app.setViewMode("3d");
-      app.viewer3d.rebuildScene();
+      await app.goToResult({ autoBuild: true });
       const boq = store.computeBoQSummary();
       const chuteMeshes = app.viewer3d.selectableMeshes.filter((m) => m.userData?.role === "tray_waterfall").length;
       return { trayWaterfallCount: boq.trayWaterfallCount, chuteMeshes };
@@ -168,7 +168,7 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
 
   test("cable tool connects source to target equipment on canvas click", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
 
     const pts = await page.evaluate(async () => {
       const { store } = await import("/js/store.js");
@@ -205,7 +205,7 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
 
   test("Tray Waterfall adapts geometry to tray type and blends with host tray color", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
 
     const report = await page.evaluate(async () => {
       const { store } = await import("/js/store.js");
@@ -230,6 +230,7 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
         store.ui.cableSystem = service === "data" ? "security" : "power";
         store.addCable(pdu.id, rack.id);
 
+        store.builtProject = structuredClone(store.project);
         app.setViewMode("3d");
         app.viewer3d.rebuildScene();
 
@@ -272,7 +273,7 @@ test.describe("Stage 5 generic equipment, tray services, cooling pipes & cabling
 
   test("3D floor-mounted equipment touches room or base floor even when saved with stale elevation", async ({ page }) => {
     await gotoAppV4(page, VIEWPORT);
-    await loadStage(page, 5);
+    await loadStage(page, 4);
 
     const ys = await page.evaluate(async () => {
       const { store } = await import("/js/store.js");

@@ -69,6 +69,7 @@ export class Canvas2DEngine {
     this.trayDraftPoints = [];
     this.pipeDraftPoints = [];
     this.cableDraftSourceId = null;
+    this.hoveredCableEqId = null;
     this.cursorPosPx = { x: 0, y: 0 };
     this.isDraggingNode = false;
     this.dragTransaction = null;
@@ -315,9 +316,10 @@ export class Canvas2DEngine {
   syncLayerListening() {
     const { step, activeTool } = this.store.ui;
     const isPan = activeTool === "pan";
-    this.roomsLayer.listening(!isPan && (step === 3 || step === 4) && activeTool === "select");
-    // Stage 5 installs on top of the blueprint: annotation (rooms above too) must not take clicks.
-    this.cadLayer.listening(!isPan && step !== 5);
+    this.roomsLayer.listening(!isPan && (step === 3 || step === 5) && activeTool === "select");
+    // Stage 4 (Installation) installs on top of the blueprint: structural annotation must not take clicks.
+    // Stage 5 (Result) allows read-only selection/inspection across all layers.
+    this.cadLayer.listening(!isPan && step !== 4);
     // The tray and pipe tools must hit the stage, never an existing tray, pipe, equipment or stair shape.
     this.cmeLayer.listening(!isPan && activeTool !== "tray" && activeTool !== "pipe");
     const container = this.stage?.container?.();
@@ -477,9 +479,32 @@ export class Canvas2DEngine {
     this.pipeDraftRepeated = false;
     this.trayDraftPoints = [];
     this.pipeDraftPoints = [];
+    const hadCableDraft = Boolean(this.cableDraftSourceId || this.hoveredCableEqId);
     this.cableDraftSourceId = null;
+    this.hoveredCableEqId = null;
     this.overlayLayer.destroyChildren();
     this.overlayLayer.batchDraw();
+    if (hadCableDraft) this.renderCmeAndTrays();
+  }
+
+  findEquipmentAt(pt) {
+    if (!pt || !this.store.ui.layers.equipments) return null;
+    const scale = this.store.project.metadata.scale_px_per_meter || 30.68;
+    const list = this.store.project.equipments || [];
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const eq = list[i];
+      const wPx = Math.max(12, (eq.width_m || 1.2) * scale);
+      const dPx = Math.max(10, (eq.depth_m || 0.9) * scale);
+      const dx = pt.x - eq.x_px;
+      const dy = pt.y - eq.y_px;
+      const rad = -((eq.rotation_deg || 0) * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const lx = dx * cos - dy * sin;
+      const ly = dx * sin + dy * cos;
+      if (Math.abs(lx) <= wPx / 2 && Math.abs(ly) <= dPx / 2) return eq;
+    }
+    return null;
   }
 
   // ==================== STAGE POINTER & WHEEL EVENTS ====================
@@ -517,6 +542,12 @@ export class Canvas2DEngine {
       const cursorEl = document.getElementById("lblStatusCursor");
       if (cursorEl) {
         cursorEl.textContent = `X: ${xm}m, Z: ${ym}m (${Math.round(pt.x)}, ${Math.round(pt.y)} px)`;
+      }
+      if (this.store.ui.activeTool === "cable") {
+        const hovEq = this.findEquipmentAt(pt);
+        this.hoveredCableEqId = hovEq ? hovEq.id : null;
+        const c = this.stage?.container?.();
+        if (c) c.style.cursor = hovEq ? "pointer" : "";
       }
       if (this.wallDrag) {
         this.wallDrag.cursorPx = pt;
@@ -970,7 +1001,7 @@ export class Canvas2DEngine {
     for (const handle of this.roomHandles) handle.destroy();
     this.roomHandles = [];
     const sel = this.store.ui.selected;
-    if (sel?.kind === "room" && !this.isDrawingTool() && this.store.ui.layers.rooms) {
+    if (sel?.kind === "room" && !this.isDrawingTool() && this.store.ui.layers.rooms && this.store.canEdit("room")) {
       const room = this.store.project.rooms.find((r) => r.id === sel.id);
       const scale = this.stageScale();
       (room?.polygon_px || []).forEach(([x, y], index) => {
@@ -1479,51 +1510,53 @@ export class Canvas2DEngine {
         this.cadLayer.add(opGroup);
       }
 
-      // 3. Render Draggable Topological Vertex Nodes
-      for (const node of this.store.project.nodes) {
-        const isSelected = sel?.kind === "node" && sel?.id === node.id;
-        const nodeScale = this.stageScale();
-        const radiusCss = isSelected ? 6.0 : 3.8;
-        const circle = new Konva.Circle({
-          x: node.x_px,
-          y: node.y_px,
-          // Handles and their hit stroke are screen-space: source-pixel radii
-          // would shrink below a usable target when the drawing is zoomed out.
-          radius: radiusCss / nodeScale,
-          fill: isSelected ? "#cba258" : "#ffffff",
-          stroke: isSelected ? "#006241" : "#1E3932",
-          strokeWidth: 1.8 / nodeScale,
-          draggable: this.canDrag("node"),
-          hitStrokeWidth: Math.max(0, NODE_HIT_DIAMETER_PX - radiusCss * 2) / nodeScale,
-        });
-        this.nodeVisuals.push({ circle, selected: isSelected });
+      // 3. Render Draggable Topological Vertex Nodes (Stage 3 Room Layout only)
+      if (this.store.canEdit("node")) {
+        for (const node of this.store.project.nodes) {
+          const isSelected = sel?.kind === "node" && sel?.id === node.id;
+          const nodeScale = this.stageScale();
+          const radiusCss = isSelected ? 6.0 : 3.8;
+          const circle = new Konva.Circle({
+            x: node.x_px,
+            y: node.y_px,
+            // Handles and their hit stroke are screen-space: source-pixel radii
+            // would shrink below a usable target when the drawing is zoomed out.
+            radius: radiusCss / nodeScale,
+            fill: isSelected ? "#cba258" : "#ffffff",
+            stroke: isSelected ? "#006241" : "#1E3932",
+            strokeWidth: 1.8 / nodeScale,
+            draggable: this.canDrag("node"),
+            hitStrokeWidth: Math.max(0, NODE_HIT_DIAMETER_PX - radiusCss * 2) / nodeScale,
+          });
+          this.nodeVisuals.push({ circle, selected: isSelected });
 
-        circle.on("click", (ev) => {
-          ev.cancelBubble = true;
-          if (this.isDrawingTool()) return;
-          this.store.selectObject("node", node.id);
-        });
+          circle.on("click", (ev) => {
+            ev.cancelBubble = true;
+            if (this.isDrawingTool()) return;
+            this.store.selectObject("node", node.id);
+          });
 
-        circle.on("dragstart", () => {
-          this.isDraggingNode = true;
-          this.dragTransaction = this.store.beginTransaction("vertex-drag");
-          this.store.selectObject("node", node.id);
-        });
+          circle.on("dragstart", () => {
+            this.isDraggingNode = true;
+            this.dragTransaction = this.store.beginTransaction("vertex-drag");
+            this.store.selectObject("node", node.id);
+          });
 
-        circle.on("dragmove", () => {
-          this.store.moveNode(node.id, circle.x(), circle.y(), true);
-        });
+          circle.on("dragmove", () => {
+            this.store.moveNode(node.id, circle.x(), circle.y(), true);
+          });
 
-        circle.on("dragend", () => {
-          const token = this.dragTransaction;
-          this.isDraggingNode = false;
-          this.dragTransaction = null;
-          if (token) this.store.commitTransaction(token);
-          this.store.selectObject("node", node.id);
-          this.renderAll();
-        });
+          circle.on("dragend", () => {
+            const token = this.dragTransaction;
+            this.isDraggingNode = false;
+            this.dragTransaction = null;
+            if (token) this.store.commitTransaction(token);
+            this.store.selectObject("node", node.id);
+            this.renderAll();
+          });
 
-        this.cadLayer.add(circle);
+          this.cadLayer.add(circle);
+        }
       }
     }
 
@@ -1610,6 +1643,7 @@ export class Canvas2DEngine {
       x: 0,
       y: 0,
       draggable: this.canDrag("stair"),
+      listening: this.store.ui.step !== 4,
     });
     group.userData = { sitestryKind: "stair", sitestryId: st.id };
 
@@ -1658,7 +1692,7 @@ export class Canvas2DEngine {
     );
 
     const handleRadius = 6 / Math.max(0.15, this.stage.scaleX());
-    if (isSelected) {
+    if (isSelected && this.canDrag("stair")) {
       for (const which of ["start_px", "end_px"]) {
         const point = st[which];
         const handle = new Konva.Circle({
@@ -1744,8 +1778,8 @@ export class Canvas2DEngine {
     const sel = this.store.ui.selected;
     const scale = this.store.project.metadata.scale_px_per_meter || 30.68;
 
-    // 1. Render Cable Trays
-    if (layers.trays) {
+    // 1. Render Cable Trays (Stage 4 Installation & Stage 5 Result)
+    if (layers.trays && this.store.ui.step >= 4) {
       for (const tray of this.store.project.cable_trays) {
         const trayPts = trayPoints(this.store.project, tray);
         if (trayPts.length < 2) continue;
@@ -1781,8 +1815,8 @@ export class Canvas2DEngine {
       }
     }
 
-    // 1b. Render Cooling Pipes
-    if (layers.pipes !== false) {
+    // 1b. Render Cooling Pipes (Stage 4 Installation & Stage 5 Result)
+    if (layers.pipes !== false && this.store.ui.step >= 4) {
       for (const pipe of this.store.project.pipe_runs || []) {
         const pipePts = pipePoints(this.store.project, pipe);
         if (pipePts.length < 2) continue;
@@ -1827,6 +1861,7 @@ export class Canvas2DEngine {
           x: st.x_px,
           y: st.y_px,
           draggable: this.canDrag("stair"),
+          listening: this.store.ui.step !== 4,
         });
 
         stGroup.add(
@@ -1961,11 +1996,17 @@ export class Canvas2DEngine {
         const eqGroup = new Konva.Group({
           x: eq.x_px,
           y: eq.y_px,
-          rotation: eq.rotation_deg || 0,
+          rotation: 0,
           draggable: this.canDrag("equipment"),
         });
+        eqGroup.userData = { sitestryKind: "equipment", sitestryId: eq.id };
 
-        eqGroup.add(
+        // Rotated footprint & front-face indicator (+Y local edge matches +Z accent strip in 3D)
+        const bodyGroup = new Konva.Group({
+          rotation: eq.rotation_deg || 0,
+        });
+
+        bodyGroup.add(
           new Konva.Rect({
             x: -wPx / 2,
             y: -dPx / 2,
@@ -1979,9 +2020,8 @@ export class Canvas2DEngine {
           })
         );
 
-        // Front-face indicator (+Y local edge matches +Z accent strip in 3D)
         const frontTri = Math.min(5, Math.max(3, wPx * 0.14));
-        eqGroup.add(
+        bodyGroup.add(
           new Konva.Rect({
             x: -wPx / 2 + 1.5,
             y: dPx / 2 - 3,
@@ -1999,21 +2039,54 @@ export class Canvas2DEngine {
             listening: false,
           })
         );
+        eqGroup.add(bodyGroup);
 
+        // Fixed horizontal label (never rotates with equipment)
+        const labelText = new Konva.Text({
+          y: -4.5,
+          align: "center",
+          text: eq.name,
+          fontSize: 8,
+          fontFamily: "IBM Plex Mono",
+          fontStyle: "bold",
+          fill: "#ffffff",
+          wrap: "none",
+          ellipsis: true,
+          listening: false,
+        });
+        const labelWidth = Math.min(84, Math.max(wPx - 4, labelText.getTextWidth() + 8));
+        labelText.width(labelWidth);
+        labelText.x(-labelWidth / 2);
         eqGroup.add(
-          new Konva.Text({
-            x: -wPx / 2 + 2,
-            y: -5,
-            width: wPx - 4,
-            align: "center",
-            text: eq.name,
-            fontSize: 8,
-            fontFamily: "IBM Plex Mono",
-            fill: "#ffffff",
-            wrap: "none",
-            ellipsis: true,
-          })
+          new Konva.Rect({
+            x: -labelWidth / 2,
+            y: -6.5,
+            width: labelWidth,
+            height: 12.5,
+            cornerRadius: 3,
+            fill: "rgba(15, 23, 42, 0.72)",
+            listening: false,
+          }),
+          labelText
         );
+
+        eqGroup.on("mouseenter", () => {
+          if (this.store.ui.activeTool === "cable") {
+            this.hoveredCableEqId = eq.id;
+            const c = this.stage?.container?.();
+            if (c) c.style.cursor = "pointer";
+            this.renderTempOverlay(this.cursorPosPx);
+          }
+        });
+
+        eqGroup.on("mouseleave", () => {
+          if (this.hoveredCableEqId === eq.id) {
+            this.hoveredCableEqId = null;
+            const c = this.stage?.container?.();
+            if (c) c.style.cursor = "";
+            this.renderTempOverlay(this.cursorPosPx);
+          }
+        });
 
         eqGroup.on("click", (ev) => {
           ev.cancelBubble = true;
@@ -2021,6 +2094,7 @@ export class Canvas2DEngine {
             if (!this.cableDraftSourceId) {
               this.cableDraftSourceId = eq.id;
               this.store.emit("toast", { message: `Source: ${eq.name}. Klik perangkat tujuan (Target).` });
+              this.renderCmeAndTrays();
               this.renderTempOverlay(this.cursorPosPx);
             } else if (this.cableDraftSourceId === eq.id) {
               this.clearTempDrawing();
@@ -2044,8 +2118,10 @@ export class Canvas2DEngine {
       }
     }
 
-    // 4. Render Automatic Cables & Grouped Side-Mounted Waterfall Brackets
-    if (layers.cables !== false) {
+    // 4. Render Automatic Cables & Grouped Side-Mounted Waterfall Brackets (Stage 4 & 5)
+    const isCableTool = this.store.ui.activeTool === "cable";
+    const hideCablesForConnecting = isCableTool && Boolean(this.cableDraftSourceId);
+    if (layers.cables !== false && this.store.ui.step >= 4 && !hideCablesForConnecting) {
       const wfGroups = resolveWaterfallGroups(this.store.project);
       const s = Math.max(0.5, this.stageScale());
       for (const cab of this.store.project.cables || []) {
@@ -2061,6 +2137,7 @@ export class Canvas2DEngine {
           lineCap: "round",
           lineJoin: "round",
           hitStrokeWidth: 10,
+          listening: !isCableTool,
         });
         line.on("click", (ev) => {
           ev.cancelBubble = true;
@@ -2397,29 +2474,106 @@ export class Canvas2DEngine {
           })
         );
       }
-    } else if (tool === "cable" && this.cableDraftSourceId) {
-      const src = this.store.project.equipments.find((e) => e.id === this.cableDraftSourceId);
+    } else if (tool === "cable") {
+      const previewColor = cableColorFor({
+        system: this.store.ui.cableSystem,
+        path_label: this.store.ui.cablePathLabel,
+      });
+      const invScale = 1 / this.stageScale();
+      const scale = this.store.project.metadata.scale_px_per_meter || 30.68;
+      const src = this.cableDraftSourceId
+        ? this.store.project.equipments.find((e) => e.id === this.cableDraftSourceId)
+        : null;
+      const hov = this.hoveredCableEqId
+        ? this.store.project.equipments.find((e) => e.id === this.hoveredCableEqId)
+        : null;
+
       if (src) {
-        const previewColor = cableColorFor({
-          system: this.store.ui.cableSystem,
-          path_label: this.store.ui.cablePathLabel,
-        });
+        const endPt = hov && hov.id !== src.id ? { x: hov.x_px, y: hov.y_px } : cursorPt;
         this.overlayLayer.add(
           new Konva.Circle({
             x: src.x_px,
             y: src.y_px,
-            radius: 12 / this.stageScale(),
+            radius: 12 * invScale,
             stroke: previewColor,
-            strokeWidth: 2.5 / this.stageScale(),
+            strokeWidth: 2.5 * invScale,
             listening: false,
           })
         );
         this.overlayLayer.add(
           new Konva.Line({
-            points: [src.x_px, src.y_px, cursorPt.x, cursorPt.y],
+            points: [src.x_px, src.y_px, endPt.x, endPt.y],
             stroke: previewColor,
             strokeWidth: 2.5,
             dash: [6, 4],
+            listening: false,
+          })
+        );
+      }
+
+      if (hov) {
+        const wPx = Math.max(12, (hov.width_m || 1.2) * scale);
+        const dPx = Math.max(10, (hov.depth_m || 0.9) * scale);
+        const pad = 5 * invScale;
+        const hovGroup = new Konva.Group({
+          x: hov.x_px,
+          y: hov.y_px,
+          rotation: hov.rotation_deg || 0,
+          listening: false,
+        });
+        hovGroup.add(
+          new Konva.Rect({
+            x: -wPx / 2 - pad,
+            y: -dPx / 2 - pad,
+            width: wPx + pad * 2,
+            height: dPx + pad * 2,
+            stroke: previewColor,
+            strokeWidth: 2.4 * invScale,
+            dash: [4 * invScale, 3 * invScale],
+            cornerRadius: 4 * invScale,
+            fill: "rgba(0, 117, 74, 0.12)",
+            listening: false,
+          })
+        );
+        this.overlayLayer.add(hovGroup);
+
+        const badgeStr = !src
+          ? `Source: ${hov.name}`
+          : src.id === hov.id
+            ? `Batal Source: ${hov.name}`
+            : `Hubungkan ke ${hov.name}`;
+        const badgeText = new Konva.Text({
+          text: badgeStr,
+          fontSize: 10 * invScale,
+          fontFamily: "IBM Plex Mono",
+          fontStyle: "bold",
+          fill: "#ffffff",
+          padding: 4 * invScale,
+          listening: false,
+        });
+        const bw = badgeText.width();
+        const bh = badgeText.height();
+        const by = hov.y_px - Math.max(wPx, dPx) / 2 - bh - 10 * invScale;
+        this.overlayLayer.add(
+          new Konva.Rect({
+            x: hov.x_px - bw / 2,
+            y: by,
+            width: bw,
+            height: bh,
+            fill: src && src.id === hov.id ? "#b91c1c" : previewColor,
+            cornerRadius: 4 * invScale,
+            listening: false,
+          }),
+          new Konva.Text({
+            x: hov.x_px - bw / 2,
+            y: by,
+            width: bw,
+            text: badgeStr,
+            fontSize: 10 * invScale,
+            fontFamily: "IBM Plex Mono",
+            fontStyle: "bold",
+            fill: "#ffffff",
+            padding: 4 * invScale,
             listening: false,
           })
         );

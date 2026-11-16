@@ -22,8 +22,11 @@ const saveState = (page) => page.evaluate(() => document.body.dataset.save);
 
 const savedProject = (page) => savedProjectJson(page);
 
-async function startAtStage3(page) {
+async function startAtStage3(page, { autoSave = false } = {}) {
   await gotoAppV4(page, VIEWPORT);
+  if (!autoSave) {
+    await page.locator("#chkAutoSave").uncheck();
+  }
   await loadStage(page, 3);
   await page.waitForFunction(() => document.body.dataset.save === "clean");
 }
@@ -53,8 +56,8 @@ test.describe("v4 save", () => {
     await expect.poll(() => saveState(page)).toBe("clean");
     const live = await page.evaluate(async () => {
       const { store } = window.sitestryApp.canvas2d;
-      const { structureHash } = await import("/js/workspaceState.js");
-      return { columns: store.project.columns.length, hash: structureHash(store.project) };
+      const { projectHash } = await import("/js/workspaceState.js");
+      return { columns: store.project.columns.length, hash: projectHash(store.project) };
     });
     expect((await savedProject(page)).columns.length).toBe(live.columns);
     const meta = (await currentProject(page)).meta;
@@ -79,25 +82,23 @@ test.describe("v4 save", () => {
     });
   }
 
-  test("stage 4 is blocked while dirty and allowed after save", async ({ page }) => {
-    await startAtStage3(page);
+  test("stage 5 (Result) is blocked while dirty when auto-save is off and allowed after save", async ({ page }) => {
+    await startAtStage3(page, { autoSave: false });
     await edit(page);
     await expect.poll(() => saveState(page)).toBe("dirty");
 
-    const blocked = await page.evaluate(() => window.sitestryApp.setWorkflowStage(4));
+    const blocked = await page.evaluate(() => window.sitestryApp.setWorkflowStage(5));
     expect(blocked).toBe(false);
     expect(await page.evaluate(() => window.sitestryApp.canvas2d.store.ui.step)).toBe(3);
     await expect(page.locator("#toastContainer")).toContainText("Simpan dulu");
 
-    await page.locator('.tl-step[data-step="4"]').click();
-    expect(await page.evaluate(() => window.sitestryApp.canvas2d.store.ui.step)).toBe(3);
-    await page.locator("#tlNext").click();
+    await page.locator('.tl-step[data-step="5"]').click();
     expect(await page.evaluate(() => window.sitestryApp.canvas2d.store.ui.step)).toBe(3);
 
     await page.locator("#btnSave").click();
     await expect.poll(() => saveState(page)).toBe("clean");
-    await page.locator("#tlNext").click();
-    await expect.poll(() => page.evaluate(() => window.sitestryApp.canvas2d.store.ui.step)).toBe(4);
+    await page.locator('.tl-step[data-step="5"]').click();
+    await expect.poll(() => page.evaluate(() => window.sitestryApp.canvas2d.store.ui.step)).toBe(5);
   });
 
   test("beforeunload warns only when dirty", async ({ page }) => {
@@ -152,17 +153,17 @@ const sceneCount = (page, kind) =>
 const savedColumns = (page) => page.evaluate(() => window.sitestryApp.workspace.savedProject.columns.length);
 const buildState = (page) => page.evaluate(() => document.body.dataset.build);
 
-async function builtAtStage4(page) {
-  await startAtStage3(page);
-  await loadStage(page, 4);
+async function builtAtStage5(page) {
+  await startAtStage3(page, { autoSave: false });
+  await loadStage(page, 5);
   await page.locator("#btnBuild3D").click();
   await expect.poll(() => buildState(page)).toBe("fresh");
 }
 
 test.describe("v4 build 3d", () => {
-  test("stage 4 shows an empty 3D with a Build button before the first build", async ({ page }) => {
-    await startAtStage3(page);
-    await loadStage(page, 4);
+  test("stage 5 shows an empty 3D with a Build button before the first build", async ({ page }) => {
+    await startAtStage3(page, { autoSave: false });
+    await loadStage(page, 5);
     expect(await buildState(page)).toBe("none");
     await expect(page.locator("#buildBanner")).toBeVisible();
     await expect(page.locator("#buildBanner")).toContainText("Belum ada 3D");
@@ -171,7 +172,7 @@ test.describe("v4 build 3d", () => {
   });
 
   test("Build creates 3D from the saved project", async ({ page }) => {
-    await builtAtStage4(page);
+    await builtAtStage5(page);
     await expect(page.locator("#buildBanner")).toBeHidden();
     expect(await sceneCount(page, "column")).toBe(await savedColumns(page));
     const meta = (await currentProject(page)).meta;
@@ -179,7 +180,7 @@ test.describe("v4 build 3d", () => {
   });
 
   test("stage 3 edits do not change 3D", async ({ page }) => {
-    await builtAtStage4(page);
+    await builtAtStage5(page);
     const before = await page.evaluate(() => window.sitestryApp.viewer3d.builtRevision);
     const columns = await sceneCount(page, "column");
     await loadStage(page, 3);
@@ -189,16 +190,16 @@ test.describe("v4 build 3d", () => {
     expect(await page.evaluate(() => window.sitestryApp.viewer3d.builtRevision)).toBe(before);
   });
 
-  test("after save the stage 4 banner says stale and 3D is unchanged until Build", async ({ page }) => {
-    await builtAtStage4(page);
+  test("after save the stage 5 banner says stale and 3D is unchanged until Build", async ({ page }) => {
+    await builtAtStage5(page);
     const oldColumns = await sceneCount(page, "column");
     await loadStage(page, 3);
     await edit(page);
     await page.locator("#btnSave").click();
     await expect.poll(() => saveState(page)).toBe("clean");
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     expect(await buildState(page)).toBe("stale");
-    await expect(page.locator("#buildBanner")).toContainText("Denah berubah sejak build terakhir");
+    await expect(page.locator("#buildBanner")).toContainText("berubah sejak build terakhir");
     expect(await sceneCount(page, "column")).toBe(oldColumns);
     await page.locator("#btnBuild3D").click();
     await expect.poll(() => buildState(page)).toBe("fresh");
@@ -206,7 +207,7 @@ test.describe("v4 build 3d", () => {
   });
 
   test("build uses the saved version, not unsaved edits", async ({ page }) => {
-    await builtAtStage4(page);
+    await builtAtStage5(page);
     await loadStage(page, 3);
     await edit(page);
     await page.locator("#btnSave").click();
@@ -220,17 +221,23 @@ test.describe("v4 build 3d", () => {
     expect(live).toBe(saved + 1);
   });
 
-  test("equipment stays live in stage 5", async ({ page }) => {
-    await builtAtStage4(page);
-    const columns = await sceneCount(page, "column");
-    await loadStage(page, 5);
+  test("installation edits in stage 4 also require rebuild in stage 5", async ({ page }) => {
+    await builtAtStage5(page);
+    await loadStage(page, 4);
     await page.evaluate(() => {
       const { store } = window.sitestryApp.canvas2d;
       const n = store.project.nodes[0];
       store.addEquipment(n.x_px + 60, n.y_px + 60, "rack");
     });
-    await expect.poll(() => sceneCount(page, "equipment")).toBe(1);
-    expect(await sceneCount(page, "column")).toBe(columns);
+    await expect.poll(() => saveState(page)).toBe("dirty");
+    await page.locator("#btnSave").click();
+    await expect.poll(() => saveState(page)).toBe("clean");
+    await loadStage(page, 5);
+    expect(await buildState(page)).toBe("stale");
+    expect(await sceneCount(page, "equipment")).toBe(0);
+    await page.locator("#btnBuild3D").click();
+    await expect.poll(() => buildState(page)).toBe("fresh");
+    expect(await sceneCount(page, "equipment")).toBe(1);
   });
 });
 
@@ -328,8 +335,8 @@ test.describe("v4 project list", () => {
     await page.reload();
     await expect(cards(page)).toHaveCount(2);
     await expect(cardOf(page, "alpha.png").locator(".pc-counts")).toContainText("1 pilar");
-    await expect(cardOf(page, "alpha.png").locator(".pc-chips")).toContainText("Review tersimpan");
-    await expect(cardOf(page, "beta.png").locator(".pc-chips")).not.toContainText("Review tersimpan");
+    await expect(cardOf(page, "alpha.png").locator(".pc-chips")).toContainText("Editor tersimpan");
+    await expect(cardOf(page, "beta.png").locator(".pc-chips")).not.toContainText("Editor tersimpan");
   });
 
   test("Buka restores that project and stage", async ({ page }) => {
@@ -343,8 +350,8 @@ test.describe("v4 project list", () => {
     expect(await stepOf(page)).toBe(3);
     expect(await workspaceId(page)).toBe(alpha);
     const hash = await page.evaluate(async () => {
-      const { structureHash } = await import("/js/workspaceState.js");
-      return structureHash(window.sitestryApp.canvas2d.store.project);
+      const { projectHash } = await import("/js/workspaceState.js");
+      return projectHash(window.sitestryApp.canvas2d.store.project);
     });
     expect(hash).toBe((await projectMeta(page, alpha)).saved_hash);
 
@@ -473,12 +480,12 @@ test.describe("v4 project list", () => {
 
   test("restore auto-builds 3D only when the saved and built hashes match", async ({ page }) => {
     await openHome(page);
-    await createViaHome(page, "alpha.png", { edit: true, stage: 4 });
+    await createViaHome(page, "alpha.png", { edit: true, stage: 5 });
     await page.locator("#btnBuild3D").click();
     await expect.poll(() => buildState(page)).toBe("fresh");
     await page.reload();
     await cards(page).first().locator(".pc-open").click();
-    await expect.poll(() => stepOf(page)).toBe(4);
+    await expect.poll(() => stepOf(page)).toBe(5);
     expect(await buildState(page)).toBe("fresh");
     expect(await sceneCount(page, "column")).toBe(1);
 
@@ -488,7 +495,7 @@ test.describe("v4 project list", () => {
     await expect.poll(() => saveState(page)).toBe("clean");
     await page.reload();
     await cards(page).first().locator(".pc-open").click();
-    await expect.poll(() => stepOf(page)).toBe(4);
+    await expect.poll(() => stepOf(page)).toBe(5);
     expect(await buildState(page)).toBe("stale");
     expect(await sceneCount(page, "column")).toBe(0);
   });
@@ -505,7 +512,7 @@ test.describe("v4 project list", () => {
     await edit(page);
     await page.locator("#btnSave").click();
     await expect.poll(() => saveState(page)).toBe("clean");
-    await loadStage(page, 4);
+    await loadStage(page, 5);
     await page.locator("#btnBuild3D").click();
     await expect.poll(() => buildState(page)).toBe("fresh");
     const after = await projectMeta(page, beta);
@@ -588,7 +595,7 @@ test.describe("v4 stage 1 upload-only and locked calibration", () => {
   });
 
   test("confirming unlocks the controls and clears the project and built 3D", async ({ page }) => {
-    await builtAtStage4(page);
+    await builtAtStage5(page);
     await loadStage(page, 1);
     await page.locator("#btnReextract").click();
     await page.locator("#confirmOk").click();

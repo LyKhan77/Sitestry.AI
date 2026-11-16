@@ -4,6 +4,22 @@ All notable architectural, backend extraction, and frontend UI/UX changes to **S
 
 ---
 
+## [v3.5.0] — 2026-11-16
+
+### Changed — Procedural 5-Stage Flow, Auto-Save Toggle & Installation Polish
+- **Separated Sub-Editors & Read-Only Result (`index.html`, `style.css`, `app.js`, `uiV4.js`, `store.js`, `viewer3d.js`)**:
+  - Reordered stages into **1. Input -> 2. Process Extraction -> 3. Room Layout (2D) -> 4. Installation (2D) -> 5. Result (Read-Only 3D & Inspection)**.
+  - Hid `.view-mode-group` (`2D | Split | 3D`) and 3D camera presets in Stages 1–4 so drawing and annotation stay uncluttered; `.view-mode-group`, Export menu, BoQ panel, and Build Banner now appear exclusively in Stage 5 (`Result`).
+  - Locked Stage 5 (`Result`) as strictly **Read-Only** (`store.canEdit()` returns `false` for all kinds; edit handles hidden, drag/delete disabled, Property Inspector locked across 2D, Split, and 3D).
+  - Combined Room Layout + Installation into `projectHash()` (`workspaceState.js`) and `store.builtProject` (`viewer3d.js`): editing either Stage 3 or Stage 4 preserves the other's work and marks the Result 3D build `stale` until rebuilt (`Build Ulang 3D` or `Build & Lihat Result`). Stage 3 also supports skipping Installation (`Lewati ke Result`).
+- **Auto-Save Toggle (`app.js`, `index.html`, `style.css`)**: Added `#chkAutoSave` toggle in the header (default **ON**, persisted in `localStorage` under `sitestry.autosave`) with 1.2s debounced saving for both Stage 3 and Stage 4; turning it OFF restores explicit manual save mode.
+- **Equipment Rotation Labels & Auto-Cabling UX (`canvas2d.js`)**:
+  - Rotated equipment footprints and front-face indicators independently from `Konva.Text` labels so names remain horizontal (`0°`) inside a readable centered pill.
+  - Disabled pointer hit-testing (`listening: false`) on existing cables while `cable` tool is active, hid existing cables/waterfalls during active `Source -> Target` connection, and added geometric hover detection (`findEquipmentAt`) with a system-colored highlight outline, action badge, and snapped preview line.
+  - Fixed `#boqPanel` / `#buildBanner` overlap in Stage 5 by offsetting `.boq-panel` below the Build Banner when `none`/`stale`.
+
+---
+
 ## [v3.4.0] — 2026-11-13
 
 ### Added — Stage 5 Cabling, Generic Equipment, Tray Services & Cooling Pipes
